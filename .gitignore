@@ -1,7 +1,14 @@
+# python stuff
+*/__pycache__/*
+
+# non-sources 
+tensorboard_graphs/*
 docs/*
 obsolete/*
 opticalFlow/*
+# emacs autostuff
 *~
+# IDE
 .idea
 # no model weights
 models/*/*.npy
