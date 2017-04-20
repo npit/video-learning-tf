@@ -27,7 +27,7 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group
 
 
 
-def define(xdim, weightsFile):
+def define(xdim, weightsFile, num_classes, final_layer ="prob"):
     net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
     #net_data = load("bvlc_alexnet.npy").item()
     x = tf.placeholder(tf.float32, (None,) + xdim, name='x')
@@ -153,20 +153,43 @@ def define(xdim, weightsFile):
     fc6b = tf.Variable(net_data["fc6"][1],name="fc6b")
     fc6 = tf.nn.relu_layer(tf.reshape(maxpool5, [-1, int(prod(maxpool5.get_shape()[1:]))]), fc6W, fc6b,name="fc6")
 
+    if final_layer == "fc6":
+        return x, fc6
     # fc7
     # fc(4096, name='fc7')
     fc7W = tf.Variable(net_data["fc7"][0],name="fc7W")
     fc7b = tf.Variable(net_data["fc7"][1],name="fc7b")
     fc7 = tf.nn.relu_layer(fc6, fc7W, fc7b,name="fc7")
 
+    if final_layer == "fc7":
+        return x, fc7
+    # original imagenet fc8 layer
+    # ---------------------------
     # fc8
     # fc(1000, relu=False, name='fc8')
-    fc8W = tf.Variable(net_data["fc8"][0],name="fc8W")
-    fc8b = tf.Variable(net_data["fc8"][1],name="fc8b")
+    # fc8W = tf.Variable(net_data["fc8"][0],name="fc8W")
+    # fc8b = tf.Variable(net_data["fc8"][1],name="fc8b")
+    # fc8 = tf.nn.xw_plus_b(fc7, fc8W, fc8b,name="fc8")
+    # ---------------------------
+
+    # new fc8 layer for 101 classes
+    # ---------------------------
+    # fc8
+    w_init = tf.truncated_normal((4096, num_classes), stddev=0.1)
+    b_init = tf.constant(0.1, shape =(101,))
+
+    fc8W = tf.Variable(w_init, name="fc8W")
+    fc8b = tf.Variable(b_init, name="fc8b")
     fc8 = tf.nn.xw_plus_b(fc7, fc8W, fc8b,name="fc8")
+    # ---------------------------
+
+    # omitting the rest. Softmax will be applied during  the loss calculation
+    # or the evaluation procedure
+    # if final_layer == "fc8":
+    #     return x, fc6
 
     # prob
     # softmax(name='prob'))
-    prob = tf.nn.softmax(fc8,name="softmax")
+    # prob = tf.nn.softmax(fc8,name="softmax")
 
-    return x, prob
+    return x, fc8

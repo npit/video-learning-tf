@@ -1,14 +1,20 @@
 import tensorflow as tf
+
 from random import shuffle
+import datetime
 
 import os
 from scipy.misc import imread, imresize, imsave # TODO remove imsage
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-
+import math
+# models
 from models.alexnet import alexnet
 from models.lstm import lstm
+from utils import *
+
+import argparse
 # settings class
 class Settings:
     networkName = "alexnet"
@@ -16,16 +22,23 @@ class Settings:
     batchSize = 128
     tensorboard_folder = "/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs"
 
+    # data input format
     dataFormat = "TFRecord" # TFRecord or raw
+    dataFormat = "raw"  # TFRecord or raw
 
+    # run modes
+    BASELINE = "baseline"
+    LSTM = "lstm"
+    lstm_input_layer = "fc7"
 
-    #dataFormat = "raw"  # TFRecord or raw
-
+    # optimization method and params
+    optimizer = "SGD"
+    learning_rate = 0.9
 
 # dataset class
 class Dataset:
     useImageMean = False
-    numClasses = 101
+    num_classes = 101
     allImages = []
     # video -based annotation
     videoPathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoPaths.txt"
@@ -46,8 +59,7 @@ class Dataset:
     meanImagePath = outputFolder + "/meanImage_" + str(numFramesPerVideo)
     trainSetPath = outputFolder + "/traiset_" + str(numFramesPerVideo)
     valSetPath = outputFolder + "/valset_" + str(numFramesPerVideo)
-    batchConfigPathTrain = outputFolder + "/batchPlanTrain_" + str(numFramesPerVideo)
-    batchConfigPathVal = outputFolder + "/batchPlanVal_" + str(numFramesPerVideo)
+
 
     imageShape = (224,224,3)
 
@@ -65,11 +77,17 @@ class Dataset:
     batchSizeTrain = 1
     batchesTrain = []
     batchIndexTrain = None
+    batchConfigPathTrain = "%s/batches_train_sz%d_frv%d" % (outputFolder, batchSizeTrain,numFramesPerVideo)
+    train_iterator = None
+
     batchSizeVal = 1
     batchesVal = []
     batchIndexVal = None
-    train_iterator = None  # to read serialized image data
-    val_iterator = None  # to read serialized image data
+    batchConfigPathVal = "%s/batches_val_sz%d_frv%d" % (outputFolder, batchSizeTrain,numFramesPerVideo)
+    val_iterator = None
+
+
+
 
     # get class name from class index
     def getClassName(self,classIndex):
@@ -88,18 +106,12 @@ class Dataset:
     # split to trainval, on a video-based shuffling scheme
     def partition_to_train_val(self):
         if os.path.isfile(self.trainSetPath) \
-                and os.path.isfile(self.valSetPath) \
-                and os.path.isfile(self.batchConfigPathTrain) \
-                and os.path.isfile(self.batchConfigPathVal):
+                and os.path.isfile(self.valSetPath):
             print('Loading training/validation partition from file.')
             with open(self.trainSetPath,'rb') as f:
                 self.trainSet, self.trainLabels = pickle.load(f)
             with open(self.valSetPath,'rb') as f:
                 self.valSet, self.valLabels = pickle.load(f)
-            with open(self.batchConfigPathTrain,'rb') as f:
-                self.batchesTrain = pickle.load(f)
-            with open(self.batchConfigPathVal,'rb') as f:
-                self.batchesVal = pickle.load(f)
             return
 
         print("Partitioning training/validation sets with a ratio of ",str(self.trainValRatio))
@@ -107,7 +119,7 @@ class Dataset:
         #  videos per class histogram
         #
         videoLabels = []
-        videoIndexesPerClass = [[] for i in range(self.numClasses)]
+        videoIndexesPerClass = [[] for i in range(self.num_classes)]
 
         with open(self.videoClassesFile) as f:
             videoidx = 0
@@ -119,7 +131,7 @@ class Dataset:
 
         # partition to training & validation
         # for each class
-        for cl in range(self.numClasses):
+        for cl in range(self.num_classes):
             # shuffle videos and respective labels
             shuffle(videoIndexesPerClass[cl])
             numVideosForClass = len(videoIndexesPerClass[cl])
@@ -134,7 +146,7 @@ class Dataset:
         # training data  - no need to shuffle for the validation set though
         totalTrain = []
         totalTrainLabels = []
-        for i in range(self.numClasses):
+        for i in range(self.num_classes):
             totalTrain.extend(self.trainPerClass[i])
             totalTrainLabels.extend([i for _ in range(len(self.trainPerClass[i]))])
             self.valSet.extend(self.valPerClass[i])
@@ -150,36 +162,49 @@ class Dataset:
             self.trainSet[i] = totalTrain[idx[i]]
             self.trainLabels[i] = totalTrainLabels[idx[i]]
 
+        # save data
+        with open(self.trainSetPath,'wb') as f:
+            pickle.dump([self.trainSet, self.trainLabels],f)
+        with open(self.valSetPath,'wb') as f:
+            pickle.dump([self.valSet, self.valLabels],f)
 
+
+    # partition to batches
+    def calculate_batches(self):
         # arrange training set to batches
+        if os.path.isfile(self.batchConfigPathTrain) \
+                and os.path.isfile(self.batchConfigPathVal):
+            with open(self.batchConfigPathTrain, 'rb') as f:
+                self.batchesTrain = pickle.load(f)
+            with open(self.batchConfigPathVal, 'rb') as f:
+                self.batchesVal = pickle.load(f)
+
+
         # training set
         for vididx in range(0, len(self.trainSet), self.batchSizeTrain):
             firstVideoInBatch = vididx
             lastVideoInBatch = min(firstVideoInBatch + self.batchSizeTrain, len(self.trainSet))
-            videos = self.trainSet[firstVideoInBatch : lastVideoInBatch]
-            lbls = self.trainLabels[firstVideoInBatch : lastVideoInBatch]
+            videos = self.trainSet[firstVideoInBatch: lastVideoInBatch]
+            lbls = self.trainLabels[firstVideoInBatch: lastVideoInBatch]
             self.batchesTrain.append([videos, lbls])
         print('Calculated ', str(len(self.batchesTrain)), "batches for ", str(len(self.trainSet)), " videos, where ", \
-              str(len(self.batchesTrain)), " x ", str(self.batchSizeTrain), " = ", str(len(self.batchesTrain) * self.batchSizeTrain), \
+              str(len(self.batchesTrain)), " x ", str(self.batchSizeTrain), " = ",
+              str(len(self.batchesTrain) * self.batchSizeTrain), \
               " and #videos = ", str(len(self.trainSet)), ". Last batch has ", str(len(self.batchesTrain[-1][0])))
 
         # validation set
         for vididx in range(0, len(self.valSet), self.batchSizeVal):
             firstVideoInBatch = vididx
             lastVideoInBatch = min(firstVideoInBatch + self.batchSizeVal, len(self.valSet))
-            videos = self.valSet[firstVideoInBatch : lastVideoInBatch]
-            lbls = self.valLabels[firstVideoInBatch : lastVideoInBatch]
+            videos = self.valSet[firstVideoInBatch: lastVideoInBatch]
+            lbls = self.valLabels[firstVideoInBatch: lastVideoInBatch]
             self.batchesVal.append([videos, lbls])
         print('Calculated ', str(len(self.batchesVal)), "batches for ", str(len(self.valSet)), " videos, where ", \
-              str(len(self.batchesVal)), " x ", str(self.batchSizeVal), " = ", str(len(self.batchesVal) * self.batchSizeVal), \
+              str(len(self.batchesVal)), " x ", str(self.batchSizeVal), " = ",
+              str(len(self.batchesVal) * self.batchSizeVal), \
               " and #videos = ", str(len(self.valSet)), ". Last batch has ", str(len(self.batchesVal[-1][0])))
 
-
-        # save data
-        with open(self.trainSetPath,'wb') as f:
-            pickle.dump([self.trainSet, self.trainLabels],f)
-        with open(self.valSetPath,'wb') as f:
-            pickle.dump([self.valSet, self.valLabels],f)
+        # save config
         with open(self.batchConfigPathTrain,'wb') as f:
             pickle.dump(self.batchesTrain, f)
         with open(self.batchConfigPathVal,'wb') as f:
@@ -206,8 +231,8 @@ class Dataset:
 
 
     # display image
-    def display_image(self,image,label=''):
-        print(label, " ", self.videoClassNames[int(label)])
+    def display_image(self,image,label=None):
+        print(label)
         plt.imshow(image)
         plt.show()
         # plt.waitforbuttonpress()
@@ -220,11 +245,10 @@ class Dataset:
         return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
     def write_images_tfrecord(self, sett, mode="train"):
-        print('Writing images for mode: [',mode,'] to TFRecord format.')
+
 
         if not self.videoPaths:
-            print('No video paths stored.')
-            exit (1)
+            error('No video paths stored.')
         # read class per video
         videoClasses = []
         with open(self.videoClassesFile,'r') as f:
@@ -233,6 +257,7 @@ class Dataset:
                 videoClasses.append(int(line))
         if mode == 'train':
             if not os.path.isfile(self.serializedTrainSetFile):
+                print('Writing images for mode: [', mode, '] to TFRecord format.')
                 self.serialize_to_tfrecord(self.trainSet, self.trainLabels, self.serializedTrainSetFile, "train")
             self.train_iterator = tf.python_io.tf_record_iterator(path=self.serializedTrainSetFile)
         elif mode == 'val':
@@ -240,8 +265,7 @@ class Dataset:
                 self.serialize_to_tfrecord(self.valSet, self.valLabels, self.serializedValSetFile, "val")
             self.val_iterator = tf.python_io.tf_record_iterator(path=self.serializedValSetFile)
         else:
-            print("Use train or val mode for TFRecord serialization. Undefined mode :",mode)
-            exit(1)
+            error("Use train or val mode for TFRecord serialization. Undefined mode: [%s]" % mode)
 
     def serialize_to_tfrecord(self, vididxs, labels, outfile, descr=""):
 
@@ -336,8 +360,10 @@ class Dataset:
             # read images from the TFrecord
             images = self.deserialize_from_tfrecord(iterator, batchSize)
 
-        labels = [ l for l in currentBatch[1] for _ in range(self.numFramesPerVideo) ] # duplicate label, er frame
-        return images,labels
+        labels = currentBatch[1]
+        labels_onehot = labels_to_one_hot(labels, self.num_classes)
+        #labels = [ l for l in labels for _ in range(self.numFramesPerVideo) ] # duplicate label, er frame
+        return images,labels_onehot,labels
 
     # read all frames for a video
     def get_video_frames(self,videoidx,useMeanCorrection=True):
@@ -370,6 +396,7 @@ class Dataset:
     def initialize(self, sett):
         self.read_video_metadata()
         self.partition_to_train_val()
+        self.calculate_batches()
         if self.useImageMean:
             self.compute_image_mean()
 
@@ -377,95 +404,107 @@ class Dataset:
             self.record_iterator = self.write_images_tfrecord(sett, "train")
             self.record_iterator = self.write_images_tfrecord(sett, "val")
 
-# class Network:
-#     inputTensor = None
-#     outputTensor = None
-#     prob = None
-#
-#     def define(self,dataset,settings,networkName):
-#
-#
-#         print("Loading network: [",networkName, "]")
-#
-#         if networkName == "alexnet":
-#             # specify dimensions
-#             imageW = dataset.imageShape[1]
-#             imageH = dataset.imageShape[0]
-#             imageD = dataset.imageShape[2]
-#             train_x = np.zeros((1, imageW, imageH, imageD)).astype(np.float32)
-#             xdim = train_x.shape[1:]
-#             inputTensor = tf.placeholder(tf.float32, (None,) + xdim)
-#             weightsFile = "/home/nik/Software/tensorflow-tutorials/alexnet/models/alexnet_converted/bvlc_alexnet.npy"
-#             self.inputTensor, self.outputTensor = alexnet.define(xdim, weightsFile)
-#         elif networkName == "lstm":
-#             if self.inputTensor == None:
-#                 print("Input tensor not set.")
-#                 exit(1)
-#             print(self.inputTensor.shape)
-#             self.prob = lstm.define_lstm(self.outputTensor)
-#         else:
-#
-#            print("Undefined network ", networkName)
-#            return
 
 class LRCN:
-    def create(self):
+    logits = None
+    inputData = None
+    inputLabels = None
+    outputTensor = None
+
+    loss = None
+    optimizer = None
+    def create(self, settings, dataset, run_mode):
         # specify dimensions
-        imageW = dataset.imageShape[1]
-        imageH = dataset.imageShape[0]
-        imageD = dataset.imageShape[2]
-        train_x = np.zeros((1, imageW, imageH, imageD)).astype(np.float32)
-        xdim = train_x.shape[1:]
-        inputTensor = tf.placeholder(tf.float32, (None,) + xdim)
+        # imageW = dataset.imageShape[1]
+        # imageH = dataset.imageShape[0]
+        # imageD = dataset.imageShape[2]
+        # train_x = np.zeros((1, imageW, imageH, imageD)).astype(np.float32)
+        # xdim = train_x.shape[1:]
+        # self.inputData = tf.placeholder(tf.float32, (None,) + xdim, name="input_frames")
+
+        batchImagesShape = [None]; batchImagesShape.extend(list(dataset.imageShape))
+        self.inputData = tf.placeholder(tf.float32, batchImagesShape, name="input_frames")
+        print('fix the labels tensor?')
+        batchLabelsShape = [None, dataset.num_classes]
+        self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
         weightsFile = "/home/nik/Software/tensorflow-tutorials/alexnet/models/alexnet_converted/bvlc_alexnet.npy"
-        self.inputTensor, self.outputTensor = alexnet.define(xdim, weightsFile)
-        self.prob = lstm.define_lstm(self.outputTensor)
+
+        if run_mode == settings.BASELINE:
+            # single DCNN, classifying individual frames
+            self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
+            # average the logits on the frames dimension
+            self.logits = tf.scalar_mul(dataset.numFramesPerVideo,tf.reduce_sum(framesLogits,axis=0))
+            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits = self.logits, labels = self.inputLabels)
+        elif run_mode == settings.LSTM:
+            #  DCNN for frame encoding
+            self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
+            # LSTM for frame sequence classification for frame encoding
+            framesLogits = lstm.define_lstm(self.outputTensor, dataset.num_classes)
+            # average the logits on the frames dimension
+            self.logits = tf.mul(tf.reduce_sum(framesLogits, axis=0), dataset.numFramesPerVideo)
+            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits = self.logits, labels = self.inputLabels)
+
+        else:
+            error("Unknown run mode [%s]" % run_mode)
+        if settings.optimizer == "SGD":
+            self.optimizer = tf.train.GradientDescentOptimizer(settings.learning_rate).minimize(self.loss)
 
 # run the process
 ##################
 
-# create and initialize settings and dataset objects
-settings = Settings()
-dataset = Dataset()
-# initialize & pre-process dataset
-dataset.initialize(settings)
+def main():
+    parser = argparse.ArgumentParser(description="Run the activity recognition task.")
+    parser.add_argument("run_mode", metavar='mode', type=str,
+                    help='an integer for the accumulator')
 
-# create and configure the CNN and the lstm
-lrcn = LRCN()
-lrcn.create()
-# dcnn = Network()
-# dcnn.define(dataset,settings,"alexnet")
-# group up activations into list of tensors
+    args = parser.parse_args()
+    print('Running the activity recognition task in mode: [%s]' % args.run_mode)
+    # create and initialize settings and dataset objects
+    settings = Settings()
+    dataset = Dataset()
+    # initialize & pre-process dataset
+    dataset.initialize(settings)
 
-# create and configure the lstm
-# lstm = Network()
-# lstm.inputTensor = dcnn.outputTensor
-#lstm.define(dataset,settings,"lstm")
+    # create and configure the CNN and the lstm
+    lrcn = LRCN()
+    lrcn.create(settings, dataset, args.run_mode)
+    # dcnn = Network()
+    # dcnn.define(dataset,settings,"alexnet")
+    # group up activations into list of tensors
 
-# specify loss and optimization
-# how is the loss specified for the average pooling case??
-#loss =
-# create and init. session and visualization
-sess = tf.Session()
-sess.run(tf.global_variables_initializer())
-tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
+    # create and configure the lstm
+    # lstm = Network()
+    # lstm.inputTensor = dcnn.outputTensor
+    #lstm.define(dataset,settings,"lstm")
 
-
-# train
-for epochIdx in range(settings.epochs):
-    # iterate over the dataset. batchsize refers tp the number of videos
-    # frames in batch is batchsize x numFramesperVideo
-    # eval all, average pool after eveal
-    # OR add it at the network ?
-    # read  batch
-    images, labels = dataset.readNextBatch(settings)
-
-    # feed the batch through the network to get activations per frame
-    inputTensor = network.inputTensor
-    sess.run(network.prob, feed_dict={inputTensor:images})
-    c=0
-    for im in images:
-        dataset.display_image(im,label=str(labels[c]))
-        c+=1
+    # specify loss and optimization
+    # how is the loss specified for the average pooling case??
+    #loss =
+    # create and init. session and visualization
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+    tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
 
 
+    # train
+    for epochIdx in range(settings.epochs):
+        # iterate over the dataset. batchsize refers tp the number of videos
+        # frames in batch is batchsize x numFramesperVideo
+        # eval all, average pool after eveal
+        # OR add it at the network ?
+        # read  batch
+        images, labels_onehot, labels = dataset.readNextBatch(settings)
+
+        # feed the batch through the network to get activations per frame
+        print("Running batch of %d images, %d labels." % ( len(images) , len(labels)))
+        sess.run(lrcn.optimizer, feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+        c=0
+        for im in images:
+            dataset.display_image(im,label=dataset.getClassName(np.argmax(labels_onehot[math.floor(c/dataset.numFramesPerVideo)])))
+            c+=1
+
+    tboard_writer.close()
+    sess.close()
+
+if __name__ == "__main__":
+    main()

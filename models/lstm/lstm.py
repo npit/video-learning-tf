@@ -2,10 +2,11 @@ import tensorflow as tf
 import tflearn
 
 
-def define_lstm(inputTensor):
-    num_hidden = 2  # number of hidden layers
+def define_lstm(inputTensor, num_classes):
+    num_hidden = 2  # number of hidden neurons for the lstm layer. like dim of a fc layer
     batchsize = 2  # number of data instances in incoming ndarray
-    sequence_len = 16
+    sequence_len = 16 # specifies sequence len for a weight update to take place. after that, we reset the state
+    # the above perhaps should be handled on the training loop. prolly. This implies that sequence length has to be <= the batch size
     num_classes = 101
     input_dim=2
     state = None  # state vector
@@ -27,7 +28,9 @@ def define_lstm(inputTensor):
     listTensor = tf.split(inputTensor,sequence_len,axis=0)
 
     output, state = tf.contrib.rnn.static_rnn(cell, listTensor, dtype=tf.float32)
-    predictions = tf.nn.softmax(output)
+
+    # add a final fc layer to convert from num_hidden to num_classes
+
     # val = tf.transpose(output, [1, 0, 2])
     # last = tf.gather(val, int(val.get_shape()[0]) - 1)
     # pass activations to a softmax
