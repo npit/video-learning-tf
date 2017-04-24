@@ -1,10 +1,9 @@
 import tensorflow as tf
 
 from random import shuffle
-import datetime
 
 import os
-from scipy.misc import imread, imresize, imsave # TODO remove imsage
+from scipy.misc import imread, imresize, imsave
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
@@ -17,10 +16,13 @@ from utils import *
 import argparse
 # settings class
 class Settings:
+    run_id = "test"
     networkName = "alexnet"
     epochs = 10
     batchSize = 128
     tensorboard_folder = "/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs"
+
+    verbosity = False
 
     # data input format
     dataFormat = "TFRecord" # TFRecord or raw
@@ -33,19 +35,80 @@ class Settings:
 
     # optimization method and params
     optimizer = "SGD"
-    learning_rate = 0.9
+    learning_rate = 0.001
+
+    saver = tf.train.Saver()
+    do_resume = False
+    resumeFile = "/home/nik/uoa/msc-thesis/implementation/checkpoints/test_23.04.17_23:31:25"
+    saveFolder = "/home/nik/uoa/msc-thesis/implementation/checkpoints"
+
+    def resume_metadata(self, dataset):
+        if self.do_resume:
+            savefile_metapars = self.resumeFile + ".snap"
+            print2("Resuming iteration snap from file:")
+            print2(savefile_metapars, indent=1)
+            try:
+                # load saved parameters pickle
+                with open(savefile_metapars, 'rb') as f:
+                    params = pickle.load(f)
+                    dataset.load_metaparams(params)
+            except Exception as ex:
+                error(ex)
+
+
+    def resume_graph(self, sess):
+        if self.do_resume:
+            savefile_graph = self.resumeFile + ".graph"
+            print2("Resuming run data from file:")
+            print2(savefile_graph,indent=1)
+
+            try:
+                # load saved graph file
+                self.saver.restore(sess, savefile_graph)
+            except Exception as ex:
+                error(ex)
+
+
+
+    def save(self, sess, dataset):
+        try:
+            # save the graph
+            now = get_datetime_str()
+            savefile_graph = self.saveFolder + os.path.sep + self.run_id + "_" + now + ".graph"
+            savefile_metapars = self.saveFolder + os.path.sep + self.run_id + "_"  + now + ".snap"
+
+            print2("Saving graph to [%s]" % savefile_graph, indent=1)
+            self.saver.save(sess, savefile_graph)
+            # save dataset metaparams
+
+            print2("Saving params to [%s]" % savefile_graph, indent=1)
+            params2save = []
+            params2save.extend([ dataset.batchIndexTrain, dataset.batchIndexVal])
+
+            with open(savefile_metapars,'wb') as f:
+                params = [dataset.batchIndexTrain, dataset.batchIndexVal, dataset.outputFolder]
+                pickle.dump(params,f)
+        except Exception as ex:
+            error(ex)
+
 
 # dataset class
 class Dataset:
     useImageMean = False
-    num_classes = 101
+    num_classes = None
     allImages = []
-    # video -based annotation
-    videoPathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoPaths.txt"
-    videoClassesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoClasses.txt"
-    classIndexesNamesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoIndexesNames.txt"
 
-    outputFolder = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/"
+    # test files
+    videoFramePathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoPaths.txt"
+    frameClassesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoClasses.txt"
+    classIndexesNamesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoIndexesNames.txt"
+
+    # video -based annotation
+    # videoPathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoPaths.txt"
+    # videoClassesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoClasses.txt"
+    # classIndexesNamesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoIndexesNames.txt"
+
+    outputFolder = "/home/nik/uoa/msc-thesis/implementation/runData/"
     serializedTrainSetFile = outputFolder + "serializedTrain"
     serializedValSetFile = outputFolder + "serializedVal"
     numFramesPerVideo = 16
@@ -56,9 +119,9 @@ class Dataset:
     videoClassNames = []
 
     meanImage = None
-    meanImagePath = outputFolder + "/meanImage_" + str(numFramesPerVideo)
-    trainSetPath = outputFolder + "/traiset_" + str(numFramesPerVideo)
-    valSetPath = outputFolder + "/valset_" + str(numFramesPerVideo)
+    meanImagePath =  "meanImage_" + str(numFramesPerVideo)
+    trainSetPath =  "traiset_" + str(numFramesPerVideo)
+    valSetPath =  "valset_" + str(numFramesPerVideo)
 
 
     imageShape = (224,224,3)
@@ -77,15 +140,17 @@ class Dataset:
     batchSizeTrain = 1
     batchesTrain = []
     batchIndexTrain = None
-    batchConfigPathTrain = "%s/batches_train_sz%d_frv%d" % (outputFolder, batchSizeTrain,numFramesPerVideo)
+    batchConfigFileTrain = "batches_train_sz%d_frv%d" % (batchSizeTrain,numFramesPerVideo)
     train_iterator = None
 
     batchSizeVal = 1
     batchesVal = []
     batchIndexVal = None
-    batchConfigPathVal = "%s/batches_val_sz%d_frv%d" % (outputFolder, batchSizeTrain,numFramesPerVideo)
+    batchConfigFileVal = "batches_val_sz%d_frv%d" % (batchSizeTrain,numFramesPerVideo)
     val_iterator = None
 
+    # misc
+    verbosity = True
 
 
 
@@ -95,21 +160,24 @@ class Dataset:
 
     # read paths to video folders
     def read_video_metadata(self):
-        print("Reading video paths from ",self.videoPathsFile)
-        with open(self.videoPathsFile) as f:
+        print("Reading video paths from ", self.videoFramePathsFile)
+        with open(self.videoFramePathsFile) as f:
             for line in f:
                 self.videoPaths.append(line.strip())
         with open(self.classIndexesNamesFile) as f:
             for line in f:
                 self.videoClassNames.append(line.strip())
-
+        self.num_classes = len(self.videoClassNames)
     # split to trainval, on a video-based shuffling scheme
     def partition_to_train_val(self):
         if os.path.isfile(self.trainSetPath) \
                 and os.path.isfile(self.valSetPath):
-            print('Loading training/validation partition from file.')
+            print('Loading training partitioning from file:')
+            print2(self.trainSetPath,indent=1)
             with open(self.trainSetPath,'rb') as f:
                 self.trainSet, self.trainLabels = pickle.load(f)
+            print('Loading validation partitioning from file:')
+            print2(self.valSetPath, indent=1)
             with open(self.valSetPath,'rb') as f:
                 self.valSet, self.valLabels = pickle.load(f)
             return
@@ -121,13 +189,13 @@ class Dataset:
         videoLabels = []
         videoIndexesPerClass = [[] for i in range(self.num_classes)]
 
-        with open(self.videoClassesFile) as f:
-            videoidx = 0
+        with open(self.frameClassesFile) as f:
+            frameidx = 0
             for videoLabel in f:
                 label = int(videoLabel)
                 videoLabels.append(label)
-                videoIndexesPerClass[label].append(videoidx)
-                videoidx += 1
+                videoIndexesPerClass[label].append(frameidx)
+                frameidx += 1
 
         # partition to training & validation
         # for each class
@@ -136,7 +204,6 @@ class Dataset:
             shuffle(videoIndexesPerClass[cl])
             numVideosForClass = len(videoIndexesPerClass[cl])
             numTrain = round(self.trainValRatio * numVideosForClass)
-            numVal = numVideosForClass - numTrain
 
             self.trainPerClass.append(videoIndexesPerClass[cl][:numTrain])
             self.valPerClass.append(videoIndexesPerClass[cl][numTrain:])
@@ -171,13 +238,23 @@ class Dataset:
 
     # partition to batches
     def calculate_batches(self):
+        if not self.batchIndexTrain:
+            self.batchIndexTrain = 0
+        if not self.batchIndexVal:
+            self.batchIndexVal = 0
+
         # arrange training set to batches
-        if os.path.isfile(self.batchConfigPathTrain) \
-                and os.path.isfile(self.batchConfigPathVal):
-            with open(self.batchConfigPathTrain, 'rb') as f:
+        if os.path.isfile(self.batchConfigFileTrain) \
+                and os.path.isfile(self.batchConfigFileVal):
+            print('Loading training batches from file:')
+            print2(self.batchConfigFileTrain, indent=1)
+            with open(self.batchConfigFileTrain, 'rb') as f:
                 self.batchesTrain = pickle.load(f)
-            with open(self.batchConfigPathVal, 'rb') as f:
+            print('Loading validation batches from file:')
+            print2(self.batchConfigFileVal, indent=1)
+            with open(self.batchConfigFileVal, 'rb') as f:
                 self.batchesVal = pickle.load(f)
+            return
 
 
         # training set
@@ -205,9 +282,9 @@ class Dataset:
               " and #videos = ", str(len(self.valSet)), ". Last batch has ", str(len(self.batchesVal[-1][0])))
 
         # save config
-        with open(self.batchConfigPathTrain,'wb') as f:
+        with open(self.batchConfigFileTrain,'wb') as f:
             pickle.dump(self.batchesTrain, f)
-        with open(self.batchConfigPathVal,'wb') as f:
+        with open(self.batchConfigFileVal,'wb') as f:
             pickle.dump(self.batchesVal, f)
 
     # write to read images from tensorboard too
@@ -233,6 +310,7 @@ class Dataset:
     # display image
     def display_image(self,image,label=None):
         print(label)
+        plt.title(label)
         plt.imshow(image)
         plt.show()
         # plt.waitforbuttonpress()
@@ -251,7 +329,7 @@ class Dataset:
             error('No video paths stored.')
         # read class per video
         videoClasses = []
-        with open(self.videoClassesFile,'r') as f:
+        with open(self.frameClassesFile, 'r') as f:
             for line in f:
                 line  = line.strip()
                 videoClasses.append(int(line))
@@ -259,11 +337,11 @@ class Dataset:
             if not os.path.isfile(self.serializedTrainSetFile):
                 print('Writing images for mode: [', mode, '] to TFRecord format.')
                 self.serialize_to_tfrecord(self.trainSet, self.trainLabels, self.serializedTrainSetFile, "train")
-            self.train_iterator = tf.python_io.tf_record_iterator(path=self.serializedTrainSetFile)
+            self.train_iterator = tf.python_io.tf_record_iterator(path=self.serializedTrainSetFile,name = "train_iterator")
         elif mode == 'val':
             if not os.path.isfile(self.serializedValSetFile):
                 self.serialize_to_tfrecord(self.valSet, self.valLabels, self.serializedValSetFile, "val")
-            self.val_iterator = tf.python_io.tf_record_iterator(path=self.serializedValSetFile)
+            self.val_iterator = tf.python_io.tf_record_iterator(path=self.serializedValSetFile,name="val_iterator")
         else:
             error("Use train or val mode for TFRecord serialization. Undefined mode: [%s]" % mode)
 
@@ -335,21 +413,21 @@ class Dataset:
 
 
     # read next batch
-    def readNextBatch(self,trainMode=True):
-        if not self.batchIndexTrain:
-            self.batchIndexTrain = 0
+    def read_next_batch(self, trainMode=True):
         images = []
         if trainMode:
             batches = self.batchesTrain
             batchIndex = self.batchIndexTrain
             iterator = self.train_iterator
             batchSize = self.batchSizeTrain
-
+            self.batchIndexTrain += self.batchSizeTrain
         else:
             batches = self.batchesVal
             batchIndex = self.batchIndexVal
             iterator = self.val_iterator
             batchSize = self.batchSizeVal
+            self.batchIndexVal += self.batchSizeVal
+
         currentBatch = batches[batchIndex]
         if iterator == None:
             # read images from disk
@@ -363,10 +441,12 @@ class Dataset:
         labels = currentBatch[1]
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
         #labels = [ l for l in labels for _ in range(self.numFramesPerVideo) ] # duplicate label, er frame
+
         return images,labels_onehot,labels
 
     # read all frames for a video
     def get_video_frames(self,videoidx,useMeanCorrection=True):
+        print2("Reading frames of video idx %d from disk." % videoidx, verbose=self.verbosity)
         videoPath = self.videoPaths[videoidx]
         frames = []
         for im in range(self.numFramesPerVideo):
@@ -377,6 +457,8 @@ class Dataset:
     # read image from disk
     def read_image(self,imagepath, useMeanCorrection=False):
         image = imread(imagepath)
+
+        print2("Reading image %s" % imagepath, verbose=self.verbosity)
         # for grayscale images, duplicate
         # intensity to color channels
         if len(image.shape) <= 2:
@@ -394,6 +476,19 @@ class Dataset:
 
     # do preparatory work
     def initialize(self, sett):
+        self.verbosity = sett.verbosity
+        if not sett.do_resume:
+            self.outputFolder = self.outputFolder + os.path.sep + sett.run_id + "_" + get_datetime_str()
+            print2("Initializing run on folder [%s]" % self.outputFolder)
+            # make output dir
+            if not os.path.exists(self.outputFolder):
+                try:
+                    os.makedirs(self.outputFolder)
+                except Exception as ex:
+                    error(ex)
+
+            self.set_file_paths()
+
         self.read_video_metadata()
         self.partition_to_train_val()
         self.calculate_batches()
@@ -404,6 +499,22 @@ class Dataset:
             self.record_iterator = self.write_images_tfrecord(sett, "train")
             self.record_iterator = self.write_images_tfrecord(sett, "val")
 
+    # load saved parameters
+    def load_metaparams(self, params):
+        i = 0
+        self.batchIndexTrain = params[i]; i+=1
+        self.batchIndexVal = params[i]; i+=1
+        self.outputFolder = params[i]; i+=1
+        self.set_file_paths()
+
+    # set file paths
+    def set_file_paths(self):
+        self.batchConfigFileTrain = self.outputFolder + os.path.sep + self.batchConfigFileTrain
+        self.batchConfigFileVal = self.outputFolder + os.path.sep + self.batchConfigFileVal
+
+        self.meanImagePath = self.outputFolder + os.path.sep + self.meanImagePath
+        self.trainSetPath = self.outputFolder + os.path.sep + self.trainSetPath
+        self.valSetPath = self.outputFolder + os.path.sep + self.valSetPath
 
 class LRCN:
     logits = None
@@ -424,30 +535,29 @@ class LRCN:
 
         batchImagesShape = [None]; batchImagesShape.extend(list(dataset.imageShape))
         self.inputData = tf.placeholder(tf.float32, batchImagesShape, name="input_frames")
-        print('fix the labels tensor?')
         batchLabelsShape = [None, dataset.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
         weightsFile = "/home/nik/Software/tensorflow-tutorials/alexnet/models/alexnet_converted/bvlc_alexnet.npy"
 
+        framesLogits = None
         if run_mode == settings.BASELINE:
             # single DCNN, classifying individual frames
             self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
-            # average the logits on the frames dimension
-            self.logits = tf.scalar_mul(dataset.numFramesPerVideo,tf.reduce_sum(framesLogits,axis=0))
-            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits = self.logits, labels = self.inputLabels)
         elif run_mode == settings.LSTM:
             #  DCNN for frame encoding
             self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
             # LSTM for frame sequence classification for frame encoding
-            framesLogits = lstm.define_lstm(self.outputTensor, dataset.num_classes)
-            # average the logits on the frames dimension
-            self.logits = tf.mul(tf.reduce_sum(framesLogits, axis=0), dataset.numFramesPerVideo)
-            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits = self.logits, labels = self.inputLabels)
+            framesLogits = lstm.define(self.outputTensor, dataset.num_classes)
 
         else:
             error("Unknown run mode [%s]" % run_mode)
+        # average the logits on the frames dimension
+        with tf.name_scope("video_class_pooling") as scope:
+            self.logits = tf.scalar_mul(1/dataset.numFramesPerVideo, tf.reduce_sum(framesLogits, axis=0))
+        self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
         if settings.optimizer == "SGD":
-            self.optimizer = tf.train.GradientDescentOptimizer(settings.learning_rate).minimize(self.loss)
+            with tf.name_scope("optimizer") as scope:
+                self.optimizer = tf.train.GradientDescentOptimizer(settings.learning_rate).minimize(self.loss)
 
 # run the process
 ##################
@@ -458,10 +568,13 @@ def main():
                     help='an integer for the accumulator')
 
     args = parser.parse_args()
-    print('Running the activity recognition task in mode: [%s]' % args.run_mode)
+    print2('Running the activity recognition task in mode: [%s]' % args.run_mode, type="banner")
+    print()
+
     # create and initialize settings and dataset objects
     settings = Settings()
     dataset = Dataset()
+    settings.resume_metadata(dataset)
     # initialize & pre-process dataset
     dataset.initialize(settings)
 
@@ -485,6 +598,8 @@ def main():
     sess.run(tf.global_variables_initializer())
     tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
 
+    # set graph tf variables,
+    settings.resume_graph(sess)
 
     # train
     for epochIdx in range(settings.epochs):
@@ -492,16 +607,32 @@ def main():
         # frames in batch is batchsize x numFramesperVideo
         # eval all, average pool after eveal
         # OR add it at the network ?
-        # read  batch
-        images, labels_onehot, labels = dataset.readNextBatch(settings)
+        print2('Epoch %d / %d ' % (1 + epochIdx, settings.epochs), type="banner")
 
-        # feed the batch through the network to get activations per frame
-        print("Running batch of %d images, %d labels." % ( len(images) , len(labels)))
-        sess.run(lrcn.optimizer, feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
-        c=0
-        for im in images:
-            dataset.display_image(im,label=dataset.getClassName(np.argmax(labels_onehot[math.floor(c/dataset.numFramesPerVideo)])))
-            c+=1
+
+
+
+        # loop for all batches in the epoch
+        while dataset.batchIndexTrain <= len(dataset.batchesTrain):
+            print2("Batch %d / %d " % (1+dataset.batchIndexTrain , len(dataset.batchesTrain)))
+            # read  batch
+            images, labels_onehot, labels = dataset.read_next_batch(settings)
+
+            # feed the batch through the network to get activations per frame and run optimizer
+            print("Running batch of %d images, %d labels: %s , %s." % ( len(images) ,len(labels_onehot), str(labels[0]),str(labels_onehot[0])))
+
+            print(sess.run(lrcn.logits,feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot}))
+            batch_loss, _ = sess.run([lrcn.loss , lrcn.optimizer], feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+
+            print ("Epoch %2d, batch %2d / %2d, loss: %4.3f" % ( epochIdx, dataset.batchIndexTrain, len(dataset.batchesTrain), batch_loss ))
+            # c=0
+            # for im in images:
+            #     # dataset.display_image(im,label=dataset.getClassName(np.argmax(labels_onehot[math.floor(c/dataset.numFramesPerVideo)])))
+            #     # c+=1
+            #     pass
+
+
+        # settings.save(sess,dataset)
 
     tboard_writer.close()
     sess.close()

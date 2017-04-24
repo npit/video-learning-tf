@@ -1,11 +1,16 @@
 # python stuff
-*/__pycache__/*
+*.pyc
 
 # non-sources 
 tensorboard_graphs/*
 docs/*
 obsolete/*
 opticalFlow/*
+start.sh
+runData/*
+checkpoints/*
+todos
+
 # emacs autostuff
 *~
 # IDE
