@@ -13,7 +13,7 @@ def define(inputTensor, num_classes):
         state = None  # state vector
 
 
-        cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True)
+        cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True,name="lstm_cell")
         # Initial state of the LSTM memory.
         state = tf.zeros([batchsize, cell.state_size[0]])
         # IO placeholders
@@ -26,9 +26,9 @@ def define(inputTensor, num_classes):
         # dynamic is useful only when the input is different than 16
         #output, state = tf.nn.dynamic_rnn(cell,x,dtype=tf.float32)
         print(inputTensor.shape)
-        listTensor = tf.split(inputTensor,sequence_len,axis=0)
+        listTensor = tf.split(inputTensor,sequence_len,axis=0,name = "split_rnn_input")
 
-        output, state = tf.contrib.rnn.static_rnn(cell, listTensor, dtype=tf.float32)
+        output, state = tf.contrib.rnn.static_rnn(cell, listTensor, dtype=tf.float32,name="static_rnn_run")
 
         # add a final fc layer to convert from num_hidden to num_classes
 

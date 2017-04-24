@@ -9,20 +9,21 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group
     '''From https://github.com/ethereon/caffe-tensorflow
     '''
     # print (kernel.shape)
-    c_i = input.get_shape()[-1]
-    assert c_i%group==0
-    assert c_o%group==0
-    convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding,name=name)
+    with tf.name_scope(name):
+        c_i = input.get_shape()[-1]
+        assert c_i%group==0
+        assert c_o%group==0
+        convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)
 
 
-    if group==1:
-        conv = convolve(input, kernel)
-    else:
-        input_groups =  tf.split(input, group, 3)   #tf.split(3, group, input)
-        kernel_groups = tf.split(kernel, group, 3)  #tf.split(3, group, kernel)
-        output_groups = [convolve(i, k) for i,k in zip(input_groups, kernel_groups)]
-        conv = tf.concat(output_groups, 3)          #tf.concat(3, output_groups)
-    return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:])
+        if group==1:
+            conv = convolve(input, kernel)
+        else:
+            input_groups =  tf.split(input, group, 3,name="conv_internal")   #tf.split(3, group, input)
+            kernel_groups = tf.split(kernel, group, 3)  #tf.split(3, group, kernel)
+            output_groups = [convolve(i, k) for i,k in zip(input_groups, kernel_groups)]
+            conv = tf.concat(output_groups, 3)          #tf.concat(3, output_groups)
+    return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:], name=name+"_final_reshape")
 
 
 
@@ -30,7 +31,7 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group
 def define(xdim, weightsFile, num_classes, final_layer ="prob"):
     net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
     #net_data = load("bvlc_alexnet.npy").item()
-    x = tf.placeholder(tf.float32, (None,) + xdim, name='x')
+    x = tf.placeholder(tf.float32, (None,) + xdim, name='input_frames')
 
     with tf.name_scope("dcnn") as scope:
         # conv1
@@ -77,7 +78,7 @@ def define(xdim, weightsFile, num_classes, final_layer ="prob"):
         conv2W = tf.Variable(net_data["conv2"][0],name="conv2W")
         conv2b = tf.Variable(net_data["conv2"][1],name="conv2b")
         conv2_in = conv(maxpool1, conv2W, conv2b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group,name="conv2")
-        conv2 = tf.nn.relu(conv2_in)
+        conv2 = tf.nn.relu(conv2_in,name="relu_2")
 
         # lrn2
         # lrn(2, 2e-05, 0.75, name='norm2')
@@ -152,7 +153,7 @@ def define(xdim, weightsFile, num_classes, final_layer ="prob"):
         # fc(4096, name='fc6')
         fc6W = tf.Variable(net_data["fc6"][0],name="fc6W")
         fc6b = tf.Variable(net_data["fc6"][1],name="fc6b")
-        fc6 = tf.nn.relu_layer(tf.reshape(maxpool5, [-1, int(prod(maxpool5.get_shape()[1:]))]), fc6W, fc6b,name="fc6")
+        fc6 = tf.nn.relu_layer(tf.reshape(maxpool5, [-1, int(prod(maxpool5.get_shape()[1:]))],name="fc6_relu_reshape"), fc6W, fc6b,name="fc6")
 
         if final_layer == "fc6":
             return x, fc6
@@ -177,8 +178,8 @@ def define(xdim, weightsFile, num_classes, final_layer ="prob"):
         # ---------------------------
         # fc8
         # stdev of 0.05 seems to work s.t. loss does not diverge to hell
-        w_init = tf.truncated_normal((4096, num_classes), stddev=0.05)
-        b_init = tf.constant(0.1, shape =(num_classes,))
+        w_init = tf.truncated_normal((4096, num_classes), stddev=0.05, name="fc8_init")
+        b_init = tf.constant(0.1, shape =(num_classes,), name = "fc8_bias")
 
         fc8W = tf.Variable(w_init, name="fc8W")
         fc8b = tf.Variable(b_init, name="fc8b")

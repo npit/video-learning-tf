@@ -525,16 +525,7 @@ class LRCN:
     loss = None
     optimizer = None
     def create(self, settings, dataset, run_mode):
-        # specify dimensions
-        # imageW = dataset.imageShape[1]
-        # imageH = dataset.imageShape[0]
-        # imageD = dataset.imageShape[2]
-        # train_x = np.zeros((1, imageW, imageH, imageD)).astype(np.float32)
-        # xdim = train_x.shape[1:]
-        # self.inputData = tf.placeholder(tf.float32, (None,) + xdim, name="input_frames")
 
-        batchImagesShape = [None]; batchImagesShape.extend(list(dataset.imageShape))
-        self.inputData = tf.placeholder(tf.float32, batchImagesShape, name="input_frames")
         batchLabelsShape = [None, dataset.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
         weightsFile = "/home/nik/Software/tensorflow-tutorials/alexnet/models/alexnet_converted/bvlc_alexnet.npy"
@@ -552,11 +543,14 @@ class LRCN:
         else:
             error("Unknown run mode [%s]" % run_mode)
         # average the logits on the frames dimension
-        with tf.name_scope("video_class_pooling") as scope:
+        with tf.name_scope("video_level_pooling"):
             self.logits = tf.scalar_mul(1/dataset.numFramesPerVideo, tf.reduce_sum(framesLogits, axis=0))
-        self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
+        with tf.name_scope("cross_entropy_loss"):
+            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
+            add_descriptive_summary(self.loss)
+
         if settings.optimizer == "SGD":
-            with tf.name_scope("optimizer") as scope:
+            with tf.name_scope("optimizer"):
                 self.optimizer = tf.train.GradientDescentOptimizer(settings.learning_rate).minimize(self.loss)
 
 # run the process
@@ -596,12 +590,18 @@ def main():
     # create and init. session and visualization
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
-    tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
+
 
     # set graph tf variables,
     settings.resume_graph(sess)
 
+    # mop up summaries
+    merged = tf.summary.merge_all()
+
+    tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
+
     # train
+    globalBatchCount = 0
     for epochIdx in range(settings.epochs):
         # iterate over the dataset. batchsize refers tp the number of videos
         # frames in batch is batchsize x numFramesperVideo
@@ -613,6 +613,7 @@ def main():
 
 
         # loop for all batches in the epoch
+
         while dataset.batchIndexTrain <= len(dataset.batchesTrain):
             print2("Batch %d / %d " % (1+dataset.batchIndexTrain , len(dataset.batchesTrain)))
             # read  batch
@@ -622,7 +623,7 @@ def main():
             print("Running batch of %d images, %d labels: %s , %s." % ( len(images) ,len(labels_onehot), str(labels[0]),str(labels_onehot[0])))
 
             print(sess.run(lrcn.logits,feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot}))
-            batch_loss, _ = sess.run([lrcn.loss , lrcn.optimizer], feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+            summaries, batch_loss, _ = sess.run([merged, lrcn.loss , lrcn.optimizer], feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
             print ("Epoch %2d, batch %2d / %2d, loss: %4.3f" % ( epochIdx, dataset.batchIndexTrain, len(dataset.batchesTrain), batch_loss ))
             # c=0
@@ -630,6 +631,11 @@ def main():
             #     # dataset.display_image(im,label=dataset.getClassName(np.argmax(labels_onehot[math.floor(c/dataset.numFramesPerVideo)])))
             #     # c+=1
             #     pass
+
+            # pass stuff to tensorboard
+            tboard_writer.add_summary(summaries,global_step=globalBatchCount)
+            tboard_writer.flush()
+            globalBatchCount += 1
 
 
         # settings.save(sess,dataset)
