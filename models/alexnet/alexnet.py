@@ -1,13 +1,14 @@
 import tensorflow as tf
 from numpy import *
 
+# Alexnet and weights from
+# http://www.cs.toronto.edu/~guerzhoy/tf_alexnet/
+# and
+# https://github.com/ethereon/caffe-tensorflow
 
 
-
-
+# helper convolution definer
 def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group=1,name=None):
-    '''From https://github.com/ethereon/caffe-tensorflow
-    '''
     # print (kernel.shape)
     with tf.name_scope(name):
         c_i = input.get_shape()[-1]
@@ -27,7 +28,7 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group
 
 
 
-
+# specify the layers
 def define(xdim, weightsFile, num_classes, final_layer ="prob"):
     net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
     #net_data = load("bvlc_alexnet.npy").item()

@@ -1,20 +1,32 @@
+# essential
 import tensorflow as tf
-
-from random import shuffle
-
-import os
-from scipy.misc import imread, imresize, imsave
 import numpy as np
-import matplotlib.pyplot as plt
-import pickle
 import math
+import os
+import argparse
+
+# shufflin'
+from random import shuffle
+# image IO
+from scipy.misc import imread, imresize, imsave
+# displaying
+import matplotlib.pyplot as plt
+# generic IO
+import pickle
+
 # models
 from models.alexnet import alexnet
 from models.lstm import lstm
+
+# utils
 from utils import *
 
-import argparse
+
 # settings class
+################
+# Generic run settings and parameters should go here
+#
+
 class Settings:
     run_id = "test"
     networkName = "alexnet"
@@ -42,6 +54,8 @@ class Settings:
     resumeFile = "/home/nik/uoa/msc-thesis/implementation/checkpoints/test_23.04.17_23:31:25"
     saveFolder = "/home/nik/uoa/msc-thesis/implementation/checkpoints"
 
+    # restore dataset parameters to continue a run
+    # this is separate from graph resuming, as the latter requires a session instance
     def resume_metadata(self, dataset):
         if self.do_resume:
             savefile_metapars = self.resumeFile + ".snap"
@@ -55,7 +69,7 @@ class Settings:
             except Exception as ex:
                 error(ex)
 
-
+    # restore graph variables to continue a run
     def resume_graph(self, sess):
         if self.do_resume:
             savefile_graph = self.resumeFile + ".graph"
@@ -69,7 +83,7 @@ class Settings:
                 error(ex)
 
 
-
+    # save graph and dataset stuff
     def save(self, sess, dataset):
         try:
             # save the graph
@@ -80,7 +94,6 @@ class Settings:
             print2("Saving graph to [%s]" % savefile_graph, indent=1)
             self.saver.save(sess, savefile_graph)
             # save dataset metaparams
-
             print2("Saving params to [%s]" % savefile_graph, indent=1)
             params2save = []
             params2save.extend([ dataset.batchIndexTrain, dataset.batchIndexVal])
@@ -93,6 +106,8 @@ class Settings:
 
 
 # dataset class
+###############
+# Everything concerning the dataset is here
 class Dataset:
     useImageMean = False
     num_classes = None
@@ -516,6 +531,9 @@ class Dataset:
         self.trainSetPath = self.outputFolder + os.path.sep + self.trainSetPath
         self.valSetPath = self.outputFolder + os.path.sep + self.valSetPath
 
+# LRCN class
+############
+# Despite its name, this class holds all instances of networks for each run type. splitting it is a far away TODO
 class LRCN:
     logits = None
     inputData = None
@@ -524,6 +542,8 @@ class LRCN:
 
     loss = None
     optimizer = None
+
+    # let there be network
     def create(self, settings, dataset, run_mode):
 
         batchLabelsShape = [None, dataset.num_classes]
@@ -553,67 +573,51 @@ class LRCN:
             with tf.name_scope("optimizer"):
                 self.optimizer = tf.train.GradientDescentOptimizer(settings.learning_rate).minimize(self.loss)
 
-# run the process
+# the main function
 ##################
-
 def main():
+    # argparse is quite overkill, but future proof
     parser = argparse.ArgumentParser(description="Run the activity recognition task.")
     parser.add_argument("run_mode", metavar='mode', type=str,
                     help='an integer for the accumulator')
-
     args = parser.parse_args()
+
     print2('Running the activity recognition task in mode: [%s]' % args.run_mode, type="banner")
-    print()
+    print() # newline from Lidl
 
     # create and initialize settings and dataset objects
     settings = Settings()
     dataset = Dataset()
+    # resume first
     settings.resume_metadata(dataset)
-    # initialize & pre-process dataset
+    # initialize & pre-process dataset; checks and respects resumed vars
     dataset.initialize(settings)
 
-    # create and configure the CNN and the lstm
+    # create and configure the nets : CNN and / or lstm
     lrcn = LRCN()
     lrcn.create(settings, dataset, args.run_mode)
-    # dcnn = Network()
-    # dcnn.define(dataset,settings,"alexnet")
-    # group up activations into list of tensors
 
-    # create and configure the lstm
-    # lstm = Network()
-    # lstm.inputTensor = dcnn.outputTensor
-    #lstm.define(dataset,settings,"lstm")
-
-    # specify loss and optimization
-    # how is the loss specified for the average pooling case??
-    #loss =
     # create and init. session and visualization
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
 
-
-    # set graph tf variables,
+    # restore graph variables,
     settings.resume_graph(sess)
 
-    # mop up summaries
+    # mop up all summaries
     merged = tf.summary.merge_all()
-
+    # create the writer for visualizashuns
     tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
 
-    # train
+    # train. Specifying validation and training as separate functions, classes or sth is an essential TODO
     globalBatchCount = 0
     for epochIdx in range(settings.epochs):
         # iterate over the dataset. batchsize refers tp the number of videos
         # frames in batch is batchsize x numFramesperVideo
-        # eval all, average pool after eveal
-        # OR add it at the network ?
+
         print2('Epoch %d / %d ' % (1 + epochIdx, settings.epochs), type="banner")
 
-
-
-
-        # loop for all batches in the epoch
-
+        # loop for all batches in the epoch. Noobish, rework needed in line of the above TODO
         while dataset.batchIndexTrain <= len(dataset.batchesTrain):
             print2("Batch %d / %d " % (1+dataset.batchIndexTrain , len(dataset.batchesTrain)))
             # read  batch
@@ -632,14 +636,14 @@ def main():
             #     # c+=1
             #     pass
 
-            # pass stuff to tensorboard
+            # pass stuff to tensorboard and write
             tboard_writer.add_summary(summaries,global_step=globalBatchCount)
             tboard_writer.flush()
-            globalBatchCount += 1
+            globalBatchCount += 1   # are you even trying
 
-
+        # save a checkpoint
         # settings.save(sess,dataset)
-
+    # mop up
     tboard_writer.close()
     sess.close()
 

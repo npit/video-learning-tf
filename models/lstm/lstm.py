@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tflearn
 
-
+# loads of TODO
 def define(inputTensor, num_classes):
     with tf.name_scope("LSTM") as scope:
         num_hidden = 101  # number of hidden neurons for the lstm layer. like dim of a fc layer
