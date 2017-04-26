@@ -10,6 +10,8 @@ start.sh
 runData/*
 checkpoints/*
 todos
+clean.sh
+
 
 # emacs autostuff
 *~

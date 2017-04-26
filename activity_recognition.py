@@ -22,6 +22,14 @@ from models.lstm import lstm
 from utils import *
 
 
+# global variables
+##################
+# tensor list to print
+print_tensors = []
+# summaries for training & validation
+train_summaries_list = []
+val_summaries_list = []
+
 # settings class
 ################
 # Generic run settings and parameters should go here
@@ -34,7 +42,7 @@ class Settings:
     batchSize = 128
     tensorboard_folder = "/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs"
 
-    verbosity = False
+    verbosity = 1
 
     # data input format
     dataFormat = "TFRecord" # TFRecord or raw
@@ -49,6 +57,9 @@ class Settings:
     optimizer = "SGD"
     learning_rate = 0.001
 
+    phase = None
+    # test interval
+    testEvery = 50
     saver = tf.train.Saver()
     do_resume = False
     resumeFile = "/home/nik/uoa/msc-thesis/implementation/checkpoints/test_23.04.17_23:31:25"
@@ -84,12 +95,13 @@ class Settings:
 
 
     # save graph and dataset stuff
-    def save(self, sess, dataset):
+    def save(self, sess, dataset,progress):
         try:
             # save the graph
             now = get_datetime_str()
-            savefile_graph = self.saveFolder + os.path.sep + self.run_id + "_" + now + ".graph"
-            savefile_metapars = self.saveFolder + os.path.sep + self.run_id + "_"  + now + ".snap"
+            basename = self.saveFolder + os.path.sep + self.run_id + "_" + progress + "_" + now
+            savefile_graph = basename + ".graph"
+            savefile_metapars = basename + ".snap"
 
             print2("Saving graph to [%s]" % savefile_graph, indent=1)
             self.saver.save(sess, savefile_graph)
@@ -126,7 +138,7 @@ class Dataset:
     outputFolder = "/home/nik/uoa/msc-thesis/implementation/runData/"
     serializedTrainSetFile = outputFolder + "serializedTrain"
     serializedValSetFile = outputFolder + "serializedVal"
-    numFramesPerVideo = 16
+    num_frames_per_video = 16
     imageFormat = "jpg"
     trainValRatio = 2.0 / 3.0
 
@@ -134,9 +146,9 @@ class Dataset:
     videoClassNames = []
 
     meanImage = None
-    meanImagePath =  "meanImage_" + str(numFramesPerVideo)
-    trainSetPath =  "traiset_" + str(numFramesPerVideo)
-    valSetPath =  "valset_" + str(numFramesPerVideo)
+    meanImagePath =  "meanImage_" + str(num_frames_per_video)
+    trainSetPath =  "traiset_" + str(num_frames_per_video)
+    valSetPath =  "valset_" + str(num_frames_per_video)
 
 
     imageShape = (224,224,3)
@@ -151,21 +163,22 @@ class Dataset:
     valSet = []
     valLabels = []
 
+    phase = None
     # batches
-    batchSizeTrain = 1
+    batchSizeTrain = 3
     batchesTrain = []
     batchIndexTrain = None
-    batchConfigFileTrain = "batches_train_sz%d_frv%d" % (batchSizeTrain,numFramesPerVideo)
+    batchConfigFileTrain = "batches_train_sz%d_frv%d" % (batchSizeTrain, num_frames_per_video)
     train_iterator = None
 
-    batchSizeVal = 1
+    batchSizeVal = 2
     batchesVal = []
     batchIndexVal = None
-    batchConfigFileVal = "batches_val_sz%d_frv%d" % (batchSizeTrain,numFramesPerVideo)
+    batchConfigFileVal = "batches_val_sz%d_frv%d" % (batchSizeTrain, num_frames_per_video)
     val_iterator = None
 
     # misc
-    verbosity = True
+    verbosity = 1
 
 
 
@@ -316,7 +329,7 @@ class Dataset:
             frames = self.get_video_frames(vi, useMeanCorrection=False)
             for frame in frames:
                 meanImage += frame
-        self.meanImage = meanImage / ( len(self.trainSet) * self.numFramesPerVideo)
+        self.meanImage = meanImage / (len(self.trainSet) * self.num_frames_per_video)
         with open(self.meanImagePath,'wb') as f:
             pickle.dump(meanImage,f)
         imsave(self.meanImagePath + "." + self.imageFormat, self.meanImage )
@@ -386,7 +399,7 @@ class Dataset:
 
         images = []
         labels = []
-        for _ in range(numVideos * self.numFramesPerVideo):
+        for _ in range(numVideos * self.num_frames_per_video):
             try:
                 string_record = next(iterator)
                 example = tf.train.Example()
@@ -428,9 +441,9 @@ class Dataset:
 
 
     # read next batch
-    def read_next_batch(self, trainMode=True):
+    def read_next_batch(self):
         images = []
-        if trainMode:
+        if self.phase == "train":
             batches = self.batchesTrain
             batchIndex = self.batchIndexTrain
             iterator = self.train_iterator
@@ -455,16 +468,16 @@ class Dataset:
 
         labels = currentBatch[1]
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
-        #labels = [ l for l in labels for _ in range(self.numFramesPerVideo) ] # duplicate label, er frame
+        #labels = [ l for l in labels for _ in range(self.num_frames_per_video) ] # duplicate label, er frame
 
         return images,labels_onehot,labels
 
     # read all frames for a video
     def get_video_frames(self,videoidx,useMeanCorrection=True):
-        print2("Reading frames of video idx %d from disk." % videoidx, verbose=self.verbosity)
+        print2("Reading frames of video idx %d from disk." % videoidx,req_lvl=1 ,lvl=self.verbosity)
         videoPath = self.videoPaths[videoidx]
         frames = []
-        for im in range(self.numFramesPerVideo):
+        for im in range(self.num_frames_per_video):
             impath = videoPath + os.sep + str(1+im) + "." + self.imageFormat
             frames.append(self.read_image(impath,useMeanCorrection))
         return frames
@@ -473,7 +486,7 @@ class Dataset:
     def read_image(self,imagepath, useMeanCorrection=False):
         image = imread(imagepath)
 
-        print2("Reading image %s" % imagepath, verbose=self.verbosity)
+        print2("Reading image %s" % imagepath, req_lvl=2 ,lvl=self.verbosity)
         # for grayscale images, duplicate
         # intensity to color channels
         if len(image.shape) <= 2:
@@ -514,6 +527,9 @@ class Dataset:
             self.record_iterator = self.write_images_tfrecord(sett, "train")
             self.record_iterator = self.write_images_tfrecord(sett, "val")
 
+        print("Initialized dataset.")
+        self.tell()
+
     # load saved parameters
     def load_metaparams(self, params):
         i = 0
@@ -531,18 +547,36 @@ class Dataset:
         self.trainSetPath = self.outputFolder + os.path.sep + self.trainSetPath
         self.valSetPath = self.outputFolder + os.path.sep + self.valSetPath
 
+    # print active settings
+    def tell(self):
+        print2("Dataset settings:", pr_type="banner-")
+
+        print("TRAIN:")
+        print("batch_size: %d\nnum_batches: %d" % (self.batchSizeTrain, len(self.batchesTrain)))
+
+        print("VAL:")
+        print("batch_size: %d\nnum_batches: %d" % (self.batchSizeVal, len(self.batchesVal)))
+        print();print()
+
+    # get the batch size
+    def get_batch_size(self):
+        if self.phase == "train":
+            return self.batchSizeTrain
+        else:
+            return self.batchSizeVal
 # LRCN class
 ############
 # Despite its name, this class holds all instances of networks for each run type. splitting it is a far away TODO
 class LRCN:
-    logits = None
+    logitsTrain = None
+    logitsTest = None
     inputData = None
     inputLabels = None
     outputTensor = None
-
+    accuracy = None
     loss = None
     optimizer = None
-
+    logits = None
     # let there be network
     def create(self, settings, dataset, run_mode):
 
@@ -551,6 +585,7 @@ class LRCN:
         weightsFile = "/home/nik/Software/tensorflow-tutorials/alexnet/models/alexnet_converted/bvlc_alexnet.npy"
 
         framesLogits = None
+
         if run_mode == settings.BASELINE:
             # single DCNN, classifying individual frames
             self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
@@ -559,19 +594,56 @@ class LRCN:
             self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
             # LSTM for frame sequence classification for frame encoding
             framesLogits = lstm.define(self.outputTensor, dataset.num_classes)
+            print2("Outputs shape:" + str(self.outputTensor.shape), req_lvl=1 ,lvl=dataset.verbosity)
 
         else:
             error("Unknown run mode [%s]" % run_mode)
-        # average the logits on the frames dimension
-        with tf.name_scope("video_level_pooling"):
-            self.logits = tf.scalar_mul(1/dataset.numFramesPerVideo, tf.reduce_sum(framesLogits, axis=0))
-        with tf.name_scope("cross_entropy_loss"):
-            self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
-            add_descriptive_summary(self.loss)
 
+        # print2("Inputs shape:" + str(self.inputData.shape), req_lvl=1 ,lvl=settings.verbosity)
+        # print2("Input labels shape:" + str(self.inputLabels.shape), req_lvl=1 ,lvl=settings.verbosity)
+        # print2("Frame-Logits shape:" + str(framesLogits.shape), req_lvl=1 ,lvl=settings.verbosity)
+
+
+        # average the logits on the frames dimension
+        with tf.name_scope("video_level_pooling_train"):
+            # -1 on the number of videos (batchsize) to deal with varying values for test and train
+            frameLogits = tf.reshape(framesLogits,(-1, dataset.num_frames_per_video,dataset.num_classes),name = "reshape_framelogits_pervideo")
+            self.logits = tf.scalar_mul(1/dataset.num_frames_per_video, tf.reduce_sum(frameLogits, axis=1))
+
+        # loss
+        with tf.name_scope("cross_entropy_loss"):
+            loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
+            with tf.name_scope('total'):
+                self.loss = tf.reduce_mean(loss_per_vid)
+
+            train_summaries_list.append(add_descriptive_summary(self.loss))
+
+        # optimization
         if settings.optimizer == "SGD":
             with tf.name_scope("optimizer"):
                 self.optimizer = tf.train.GradientDescentOptimizer(settings.learning_rate).minimize(self.loss)
+
+
+        # accuracies
+        with tf.name_scope('training_accuracy'):
+            with tf.name_scope('correct_prediction_train'):
+
+                #ok for this argmax we gotta squash the labels down to video level.
+                correct_predictionTrain = tf.equal(tf.argmax(self.logits , 1), tf.argmax(self.inputLabels, 1))
+            with tf.name_scope('accuracy_train'):
+                self.accuracyTrain = tf.reduce_mean(tf.cast(correct_predictionTrain, tf.float32))
+
+        with tf.name_scope('validation_accuracy'):
+            with tf.name_scope('correct_prediction_val'):
+
+                #ok for this argmax we gotta squash the labels down to video level.
+                correct_predictionVal = tf.equal(tf.argmax(self.logits , 1), tf.argmax(self.inputLabels, 1))
+            with tf.name_scope('accuracy_val'):
+                self.accuracyVal = tf.reduce_mean(tf.cast(correct_predictionVal, tf.float32))
+
+        train_summaries_list.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
+        val_summaries_list.append(tf.summary.scalar('accuracyVal', self.accuracyVal))
+
 
 # the main function
 ##################
@@ -582,7 +654,7 @@ def main():
                     help='an integer for the accumulator')
     args = parser.parse_args()
 
-    print2('Running the activity recognition task in mode: [%s]' % args.run_mode, type="banner")
+    print2('Running the activity recognition task in mode: [%s]' % args.run_mode, pr_type="banner")
     print() # newline from Lidl
 
     # create and initialize settings and dataset objects
@@ -592,10 +664,12 @@ def main():
     settings.resume_metadata(dataset)
     # initialize & pre-process dataset; checks and respects resumed vars
     dataset.initialize(settings)
-
+    dataset.phase = "train"
     # create and configure the nets : CNN and / or lstm
     lrcn = LRCN()
     lrcn.create(settings, dataset, args.run_mode)
+
+    # view_print_tensors(lrcn,dataset,settings,lrcn.print_tensors)
 
     # create and init. session and visualization
     sess = tf.Session()
@@ -604,45 +678,68 @@ def main():
     # restore graph variables,
     settings.resume_graph(sess)
 
-    # mop up all summaries
-    merged = tf.summary.merge_all()
+    # mop up all summaries. Unless you separate val and train, the training subgraph
+    # will be executed when calling the summaries op. Which is bad.
+    train_summaries_merged = tf.summary.merge(train_summaries_list)
+    val_summaries_merged = tf.summary.merge(val_summaries_list)
+
     # create the writer for visualizashuns
     tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
 
     # train. Specifying validation and training as separate functions, classes or sth is an essential TODO
-    globalBatchCount = 0
+
+
+
+    trainBatchCount = 0
     for epochIdx in range(settings.epochs):
         # iterate over the dataset. batchsize refers tp the number of videos
         # frames in batch is batchsize x numFramesperVideo
 
-        print2('Epoch %d / %d ' % (1 + epochIdx, settings.epochs), type="banner")
+        print2('Epoch %d / %d ' % (1 + epochIdx, settings.epochs), pr_type="banner")
 
         # loop for all batches in the epoch. Noobish, rework needed in line of the above TODO
         while dataset.batchIndexTrain <= len(dataset.batchesTrain):
             print2("Batch %d / %d " % (1+dataset.batchIndexTrain , len(dataset.batchesTrain)))
             # read  batch
-            images, labels_onehot, labels = dataset.read_next_batch(settings)
+            images, labels_onehot, labels = dataset.read_next_batch()
 
             # feed the batch through the network to get activations per frame and run optimizer
-            print("Running batch of %d images, %d labels: %s , %s." % ( len(images) ,len(labels_onehot), str(labels[0]),str(labels_onehot[0])))
+            print("Running %s batch of %d images, %d labels: %s , %s." % (dataset.phase, len(images) ,len(labels_onehot), str(labels[0]),str(labels_onehot[0])))
 
-            print(sess.run(lrcn.logits,feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot}))
-            summaries, batch_loss, _ = sess.run([merged, lrcn.loss , lrcn.optimizer], feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
-
+            logits = sess.run(lrcn.logits,feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+            print(logits)
+            summaries_train, batch_loss, _, accuracy = sess.run([train_summaries_merged, lrcn.loss , lrcn.optimizer, lrcn.accuracyTrain], feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+            print("Train accuracy: ", accuracy)
             print ("Epoch %2d, batch %2d / %2d, loss: %4.3f" % ( epochIdx, dataset.batchIndexTrain, len(dataset.batchesTrain), batch_loss ))
-            # c=0
-            # for im in images:
-            #     # dataset.display_image(im,label=dataset.getClassName(np.argmax(labels_onehot[math.floor(c/dataset.numFramesPerVideo)])))
-            #     # c+=1
-            #     pass
+
+
+            # test every half epoch ?
+
+            if trainBatchCount == math.floor(len(dataset.batchesTrain)/2) or True:
+                valBatchCount = 0
+                dataset.phase = "val"
+                # validation
+                while dataset.batchIndexVal <= len(dataset.batchesVal) or True:
+
+
+                    images, labels_onehot, labels = dataset.read_next_batch()
+
+                    print("Running %s batch of %d images, %d labels: %s , %s." % (
+                    dataset.phase, len(images), len(labels_onehot), str(labels[0]), str(labels_onehot[0])))
+
+                    summaries_val, accuracy = sess.run([val_summaries_merged, lrcn.accuracyVal], feed_dict={lrcn.inputData: images, lrcn.inputLabels : labels_onehot})
+                    print("Validation accuracy: ", accuracy)
+                    tboard_writer.add_summary(summaries_val, global_step=epochIdx * len(dataset.batchesVal )  + trainBatchCount)
+
 
             # pass stuff to tensorboard and write
-            tboard_writer.add_summary(summaries,global_step=globalBatchCount)
-            tboard_writer.flush()
-            globalBatchCount += 1   # are you even trying
+            tboard_writer.add_summary(summaries_train,global_step=trainBatchCount)
 
-        # save a checkpoint
-        # settings.save(sess,dataset)
+            tboard_writer.flush()
+            trainBatchCount += 1
+        # save a checkpoint every epoch
+        settings.save(sess,dataset,progress = "ep_%d_btch_%d" % (epochIdx, trainBatchCount))
+
     # mop up
     tboard_writer.close()
     sess.close()
