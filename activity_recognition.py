@@ -582,33 +582,32 @@ class LRCN:
 
         batchLabelsShape = [None, dataset.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
-        weightsFile = "/home/nik/Software/tensorflow-tutorials/alexnet/models/alexnet_converted/bvlc_alexnet.npy"
+        weightsFile = "/home/nik/uoa/msc-thesis/implementation/models/alexnet/bvlc_alexnet.npy"
 
         framesLogits = None
 
         if run_mode == settings.BASELINE:
             # single DCNN, classifying individual frames
             self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
+
+            # average the logits on the frames dimension
+            with tf.name_scope("video_level_pooling"):
+                # -1 on the number of videos (batchsize) to deal with varying values for test and train
+                frameLogits = tf.reshape(framesLogits, (-1, dataset.num_frames_per_video, dataset.num_classes),
+                                         name="reshape_framelogits_pervideo")
+                self.logits = tf.scalar_mul(1 / dataset.num_frames_per_video, tf.reduce_sum(frameLogits, axis=1))
+
         elif run_mode == settings.LSTM:
             #  DCNN for frame encoding
             self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
             # LSTM for frame sequence classification for frame encoding
-            framesLogits = lstm.define(self.outputTensor, dataset.num_classes)
+            self.logits = lstm.define(self.outputTensor, dataset.get_batch_size(), dataset.num_classes)
             print2("Outputs shape:" + str(self.outputTensor.shape), req_lvl=1 ,lvl=dataset.verbosity)
 
         else:
             error("Unknown run mode [%s]" % run_mode)
 
-        # print2("Inputs shape:" + str(self.inputData.shape), req_lvl=1 ,lvl=settings.verbosity)
-        # print2("Input labels shape:" + str(self.inputLabels.shape), req_lvl=1 ,lvl=settings.verbosity)
-        # print2("Frame-Logits shape:" + str(framesLogits.shape), req_lvl=1 ,lvl=settings.verbosity)
 
-
-        # average the logits on the frames dimension
-        with tf.name_scope("video_level_pooling_train"):
-            # -1 on the number of videos (batchsize) to deal with varying values for test and train
-            frameLogits = tf.reshape(framesLogits,(-1, dataset.num_frames_per_video,dataset.num_classes),name = "reshape_framelogits_pervideo")
-            self.logits = tf.scalar_mul(1/dataset.num_frames_per_video, tf.reduce_sum(frameLogits, axis=1))
 
         # loss
         with tf.name_scope("cross_entropy_loss"):
