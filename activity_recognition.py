@@ -125,7 +125,7 @@ class Dataset:
     num_classes = None
     allImages = []
 
-    # test files
+    # test files, much smaller than orig
     videoFramePathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoPaths.txt"
     frameClassesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoClasses.txt"
     classIndexesNamesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoIndexesNames.txt"
@@ -587,22 +587,24 @@ class LRCN:
         framesLogits = None
 
         if run_mode == settings.BASELINE:
-            # single DCNN, classifying individual frames
-            self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
+            with tf.name_scope("dcnn_workflow"):
+                # single DCNN, classifying individual frames
+                self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
 
-            # average the logits on the frames dimension
-            with tf.name_scope("video_level_pooling"):
-                # -1 on the number of videos (batchsize) to deal with varying values for test and train
-                frameLogits = tf.reshape(framesLogits, (-1, dataset.num_frames_per_video, dataset.num_classes),
-                                         name="reshape_framelogits_pervideo")
-                self.logits = tf.scalar_mul(1 / dataset.num_frames_per_video, tf.reduce_sum(frameLogits, axis=1))
+                # average the logits on the frames dimension
+                with tf.name_scope("video_level_pooling"):
+                    # -1 on the number of videos (batchsize) to deal with varying values for test and train
+                    frameLogits = tf.reshape(framesLogits, (-1, dataset.num_frames_per_video, dataset.num_classes),
+                                             name="reshape_framelogits_pervideo")
+                    self.logits = tf.scalar_mul(1 / dataset.num_frames_per_video, tf.reduce_sum(frameLogits, axis=1))
 
         elif run_mode == settings.LSTM:
-            #  DCNN for frame encoding
-            self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
-            # LSTM for frame sequence classification for frame encoding
-            self.logits = lstm.define(self.outputTensor, dataset.get_batch_size(), dataset.num_classes)
-            print2("Outputs shape:" + str(self.outputTensor.shape), req_lvl=1 ,lvl=dataset.verbosity)
+            with tf.name_scope("lstm_workflow"):
+                #  DCNN for frame encoding
+                self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
+                # LSTM for frame sequence classification for frame encoding
+                self.logits = lstm.define(self.outputTensor, dataset.get_batch_size(), dataset.num_classes)
+
 
         else:
             error("Unknown run mode [%s]" % run_mode)
@@ -720,7 +722,7 @@ def main():
                 # validation
                 while dataset.batchIndexVal <= len(dataset.batchesVal) or True:
 
-
+                    print("seems that i've gotta create a different net for different batch size")
                     images, labels_onehot, labels = dataset.read_next_batch()
 
                     print("Running %s batch of %d images, %d labels: %s , %s." % (

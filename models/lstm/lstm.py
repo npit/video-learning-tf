@@ -2,8 +2,9 @@ import tensorflow as tf
 import tflearn
 
 # loads of TODO, shameful display
-def define(inputTensor, batch_size, num_classes):
+def define(inputTensor, input_batch_size, num_classes, keep_prob = 0.5):
     with tf.name_scope("LSTM"):
+        print(" TODO create train and test phases in network, return 2 ops for each ? ?? " )
 
         # 1 )
         # check out donahue's caffe code to get ideas
@@ -45,24 +46,44 @@ def define(inputTensor, batch_size, num_classes):
 
 
 
-        ## static rnn case, where input is a lilst of tensors
-        #listOfTensors = tf.split(inputTensor,(sequence_len,),axis=0,name = "split_rnn_input")
-        #print(listOfTensors)
-        #print(listOfTensors[0].shape)
-        #output, state = tf.contrib.rnn.static_rnn(cell, listOfTensors, sequence_length = [sequence_len] * batchsize, dtype=tf.float32)
+        # static rnn case, where input is a lilst of tensors
+        #############################################################
+        #
+        # use : http://stackoverflow.com/questions/42520418/how-to-multiply-list-of-tensors-by-single-tensor-on-tensorflow
+        # get a list of sequence_length size, where each tensor is of size batchsize x feature_dim
+        # listOfTensors = tf.split(inputTensor,sequence_len,axis=0,name = "split_lstm_input")
+        # print(len(listOfTensors))
+        # print(listOfTensors)
+        # print(listOfTensors[0].shape)
+        # output, state = tf.contrib.rnn.static_rnn(cell, listOfTensors, dtype=tf.float32)
+        # output = tf.stack(output,axis=1,name="lstm_output_stack")
+
 
         # dynamic rnn case, where input is a signle tensor
+        #############################################################
+
         inputTensor = tf.reshape(inputTensor,(-1,sequence_len,input_dim),name="lstm_input_reshape")
-        output, state = tf.nn.dynamic_rnn(cell, inputTensor, sequence_length=[sequence_len] * batch_size, dtype=tf.float32)
+
+        batch_size = tf.shape(inputTensor)[0]
+        _seq_len = tf.fill(tf.expand_dims(batch_size, 0),
+                           tf.constant(sequence_len, dtype=tf.int64))
+        output, state = tf.nn.dynamic_rnn(cell, inputTensor, sequence_length=_seq_len , dtype=tf.float32)
+
+
+
         print(output.shape)
-        # get the output of the last time step only
-        output_last_timestep = tf.slice(output,[0,sequence_len-1,0],[batch_size,1,num_hidden],name="lstm_output_reshape")
-        output_last_timestep = tf.squeeze(output_last_timestep, axis=1,name="lstm_output_squeeze")
-        print(output_last_timestep.shape)
+
+        output = tf.slice(output,[0,sequence_len-1,0],[-1,1,num_hidden],name="lstm_output_reshape")
+
+        output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
+
+        print(output.shape)
 
         # for eg 2 layers, use
         #  cell = rnn_cell.MultiRNNCell([lstm_cell] * 2)
 
+        # add dropout
+        output = tf.nn.dropout(output, keep_prob=keep_prob,name="lstm_dropout")
 
         # add a final fc layer to convert from num_hidden to num_classes
 
@@ -71,12 +92,17 @@ def define(inputTensor, batch_size, num_classes):
 
         fc_out_w = tf.Variable(fc_out__init, name="fc_out_w")
         fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
-        fc_out = tf.nn.xw_plus_b(output_last_timestep, fc_out_w, fc_out_b, name="fc_out")
+        fc_out = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
         print(fc_out.shape)
 
     return fc_out
 
 
+def length(sequence):
+    used = tf.sign(tf.reduce_max(tf.abs(sequence), reduction_indices=2))
+    length = tf.reduce_sum(used, reduction_indices=1)
+    length = tf.cast(length, tf.int32)
+    return length
 
 
 #Lstm = define_lstm()
