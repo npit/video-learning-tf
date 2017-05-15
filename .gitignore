@@ -1,21 +1,7 @@
-# python stuff
-*.pyc
+*
 
-# non-sources 
-tensorboard_graphs/*
-docs/*
-obsolete/*
-opticalFlow/*
-start.sh
-runData/*
-checkpoints/*
-todos
-clean.sh
-
-
-# emacs autostuff
-*~
-# IDE
-.idea
-# no model weights
-models/*/*.npy
+# 
+!.gitignore
+*.py
+README.md
+view-tensorboard.sh

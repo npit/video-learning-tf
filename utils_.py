@@ -1,10 +1,11 @@
 import numpy as np
 import tensorflow as tf
 import time
+from enum import Enum
 
 # datetime for timestamps
 def get_datetime_str():
-    return time.strftime("%d.%m.%y_%H:%M:%S")
+    return time.strftime("[%d|%m|%y]_[%H:%M:%S]")
 # error function
 def error(msg):
 
@@ -19,6 +20,9 @@ def labels_to_one_hot(labels,num_classes):
 
 def print2(msg, indent=0, pr_type="", req_lvl = 0, lvl = 0):
     # print according to verbosity level
+    # pr_type: set banner options
+    # banner<symbol> : underling with <symbol>
+    # banner<symbol><symbol> : wrap with <symbol>
     if req_lvl > lvl:
         return
     ind = ''
@@ -27,16 +31,25 @@ def print2(msg, indent=0, pr_type="", req_lvl = 0, lvl = 0):
 
     banner = ""
     banner_tok = "#"
+    print_over = False
+    print_under = False
 
     if pr_type.startswith("banner"):
+        print_under = True
         if len(pr_type) > 6:
             banner_tok = pr_type[6:]
+        if len(pr_type) > 7:
+            print_over = True
         for _ in msg:
-            banner+=banner_tok
+            banner = banner + banner_tok
+
+
+    if print_over:
         print(ind + banner)
     print (ind+msg)
-    if pr_type.startswith("banner"):
-        print(ind + banner)
+
+    if print_under:
+        print (ind+banner)
 
 def add_descriptive_summary(var):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
@@ -65,3 +78,33 @@ def view_print_tensors(lrcn,dataset, settings,tensorlist):
     images, labels_onehot, labels = dataset.read_next_batch(settings)
     sess.run(tensorlist, feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
     sess.close()
+
+# list of sublists of size n from list
+def sublist(list, sublist_length):
+    return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
+
+class defs:
+    class phase:
+        train, val = range(2)
+        _str = ["train", "val"]
+        def str(arg):
+            return defs.phase._str[arg]
+
+    class input_mode:
+        video, image = range(2)
+        _str = ["video", "image"]
+        def str(arg):
+            return defs.input_mode._str[arg]
+
+    class frame_format:
+        raw, tfrecord = range(2)
+        _str = ["raw", "tfrecord"]
+        def str(arg):
+            return defs.frame_format._str[arg]
+
+    images,labels = range(2)
+    _str = ["images", "labels"]
+    def str(arg):
+        return defs.frame_format._str[arg]
+
+

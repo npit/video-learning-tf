@@ -59,7 +59,7 @@ def define(inputTensor, input_batch_size, num_classes, keep_prob = 0.5):
         # output = tf.stack(output,axis=1,name="lstm_output_stack")
 
 
-        # dynamic rnn case, where input is a signle tensor
+        # dynamic rnn case, where input is a single tensor
         #############################################################
 
         inputTensor = tf.reshape(inputTensor,(-1,sequence_len,input_dim),name="lstm_input_reshape")
@@ -98,11 +98,6 @@ def define(inputTensor, input_batch_size, num_classes, keep_prob = 0.5):
     return fc_out
 
 
-def length(sequence):
-    used = tf.sign(tf.reduce_max(tf.abs(sequence), reduction_indices=2))
-    length = tf.reduce_sum(used, reduction_indices=1)
-    length = tf.cast(length, tf.int32)
-    return length
 
 
 #Lstm = define_lstm()
