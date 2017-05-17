@@ -1,56 +1,29 @@
 import numpy as np
 import tensorflow as tf
 import time
-from enum import Enum
+import logging
+import os
 
 # datetime for timestamps
 def get_datetime_str():
-    return time.strftime("[%d|%m|%y]_[%H:%M:%S]")
+    #return time.strftime("[%d|%m|%y]_[%H:%M:%S]")
+    return time.strftime("%d%m%y_%H%M%S")
+
 # error function
 def error(msg):
 
     raise Exception(msg)
 
+# onehot vector generation
 def labels_to_one_hot(labels,num_classes):
     onehots = np.zeros(shape=(len(labels),num_classes),dtype=np.int32)
 
     for l in range(len(labels)):
         onehots[l][labels[l]] = 1
+
     return onehots
 
-def print2(msg, indent=0, pr_type="", req_lvl = 0, lvl = 0):
-    # print according to verbosity level
-    # pr_type: set banner options
-    # banner<symbol> : underling with <symbol>
-    # banner<symbol><symbol> : wrap with <symbol>
-    if req_lvl > lvl:
-        return
-    ind = ''
-    for i in range(indent):
-        ind+= '\t'
-
-    banner = ""
-    banner_tok = "#"
-    print_over = False
-    print_under = False
-
-    if pr_type.startswith("banner"):
-        print_under = True
-        if len(pr_type) > 6:
-            banner_tok = pr_type[6:]
-        if len(pr_type) > 7:
-            print_over = True
-        for _ in msg:
-            banner = banner + banner_tok
-
-
-    if print_over:
-        print(ind + banner)
-    print (ind+msg)
-
-    if print_under:
-        print (ind+banner)
-
+# summary generation
 def add_descriptive_summary(var):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
     res = []
@@ -83,28 +56,44 @@ def view_print_tensors(lrcn,dataset, settings,tensorlist):
 def sublist(list, sublist_length):
     return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
 
+# constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
+
+    # run phase
     class phase:
         train, val = range(2)
         _str = ["train", "val"]
         def str(arg):
             return defs.phase._str[arg]
 
+    # input mode is framewise dataset vs videowise, each video having n frames
     class input_mode:
         video, image = range(2)
         _str = ["video", "image"]
         def str(arg):
             return defs.input_mode._str[arg]
 
+    # direct reading from disk or from packed tfrecord format
     class frame_format:
         raw, tfrecord = range(2)
         _str = ["raw", "tfrecord"]
         def str(arg):
             return defs.frame_format._str[arg]
 
-    images,labels = range(2)
+    # run type indicates usage of lstm or singleframe dcnn
+    class run_types:
+        lstm, singleframe = range(2)
+        _str=["lstm","singleframe"]
+        def str(arg):
+            return defs.run_types._str[arg]
+
+    # batch content type
+    images, labels = range(2)
     _str = ["images", "labels"]
     def str(arg):
         return defs.frame_format._str[arg]
-
-
+    class loaded:
+        run_folder, train_index, val_index, epoch_index = range(4)
+        _str = ["run_folder", "train_index", "val_index", "epoch_index"]
+        def str(arg):
+            return defs.loaded._str[arg]

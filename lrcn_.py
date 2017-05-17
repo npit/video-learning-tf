@@ -27,43 +27,43 @@ class LRCN:
         weightsFile = "/home/nik/uoa/msc-thesis/implementation/models/alexnet/bvlc_alexnet.npy"
 
 
-        if run_mode == settings.BASELINE:
+        if run_mode == defs.run_types.singleframe:
             with tf.name_scope("dcnn_workflow"):
-                print2("Dcnn workflow",pr_type="banner-")
+                self.logger.info("Dcnn workflow")
                 # single DCNN, classifying individual frames
                 self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
-                print("input : [%s]" % self.inputData.shape)
-                print("label : [%s]" % self.inputData.shape)
+                self.logger.info("input : [%s]" % self.inputData.shape)
+                self.logger.info("label : [%s]" % self.inputData.shape)
             # do video level pooling only if necessary
             if dataset.input_mode == defs.input_mode.video:
                 # average the logits on the frames dimension
                 with tf.name_scope("video_level_pooling"):
                     # -1 on the number of videos (batchsize) to deal with varying values for test and train
-                    print("raw per-frame logits : [%s]" % framesLogits.shape)
+                    self.logger.info("raw per-frame logits : [%s]" % framesLogits.shape)
                     frames_per_item = dataset.num_frames_per_video if dataset.input_mode == defs.input_mode.video else 1
                     frameLogits = tf.reshape(framesLogits, (-1, frames_per_item , dataset.num_classes),
                                              name="reshape_framelogits_pervideo")
 
                     self.logits = tf.scalar_mul(1 / frames_per_item, tf.reduce_sum(frameLogits, axis=1))
-                    print("logits out : [%s]" % self.logits.shape)
+                    self.logger.info("logits out : [%s]" % self.logits.shape)
             else:
                 self.logits = framesLogits
-                print("logits out : [%s]" % self.logits.shape)
+                self.logger.info("logits out : [%s]" % self.logits.shape)
 
 
-        elif run_mode == settings.LSTM:
+        elif run_mode == defs.run_types.lstm:
             with tf.name_scope("lstm_workflow"):
                 if dataset.input_mode!= defs.input_mode.video:
                     error("LSTM workflow only available for video input mode")
                 #  DCNN for frame encoding
                 self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
-                print("input : [%s]" % self.inputData.shape)
-                print("label : [%s]" % self.inputData.shape)
-                print("dcnn out : [%s]" % self.outputTensor.shape)
+                self.logger.info("input : [%s]" % self.inputData.shape)
+                self.logger.info("label : [%s]" % self.inputData.shape)
+                self.logger.info("dcnn out : [%s]" % self.outputTensor.shape)
 
                 # LSTM for frame sequence classification for frame encoding
                 self.logits = lstm.define(self.outputTensor, dataset.get_batch_size(), dataset.num_classes)
-                print("logits : [%s]" % self.logits.shape)
+                self.logger.info("logits : [%s]" % self.logits.shape)
 
 
         else:
@@ -93,6 +93,9 @@ class LRCN:
                 correct_predictionTrain = tf.equal(tf.argmax(self.logits , 1), tf.argmax(self.inputLabels, 1))
             with tf.name_scope('accuracy_train'):
                 self.accuracyTrain = tf.reduce_mean(tf.cast(correct_predictionTrain, tf.float32))
+
+
+
 
         with tf.name_scope('validation_accuracy'):
             with tf.name_scope('correct_prediction_val'):
