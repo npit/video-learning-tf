@@ -1,7 +1,9 @@
-*
+# ignore all files
+/*
 
-# 
+# except from:
 !.gitignore
-*.py
-README.md
-view-tensorboard.sh
+!*.py
+!README.md
+!view-tensorboard.sh
+!examples
