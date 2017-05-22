@@ -13,21 +13,27 @@ from utils_ import *
 # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
 # ]
 
-input_files = [
-    #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_train_split1.txt",
-    "/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/test_frames"
-
-]
-num_threads = 1
-num_items_per_thread = 1000
-print_every = 50
-
 # frames or videos
 frames, videos = range(2)
-input_modes = [frames, frames, videos, videos]
+
+input_files = [
+    #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_train_split1.txt",
+    #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_test_split1.txt"
+    # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
+    # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
+    "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
+    "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
+]
+input_modes = [ videos, videos]
+num_threads = 1
+num_items_per_thread = 500
+print_every = 50
+
+
+
 #input_mode = "videos"
 
-image_shape = (227,227,3)
+image_shape = (240,320,3)
 
 mean_image = [103.939, 116.779, 123.68]
 height = image_shape[0]
@@ -89,15 +95,21 @@ def _bytes_feature( value):
 def serialize_multithread(paths, labels, outfile, mode):
     # split up paths list
     num_images_per_thread_run = num_items_per_thread * num_threads
-
     paths_per_thread_run = sublist(paths, num_images_per_thread_run)
 
-    count = 0
-    for paths_in_run in paths_per_thread_run:
+    if mode == videos:
+        duplist = [ [ label for j in range(num_frames_per_video) ] for label in labels ]
+        labels = []
+        for l in duplist:
+            labels.extend(l)
 
-        logger.debug("Processing %d paths for the run." % len(paths_in_run))
+    count = 0
+    writer = tf.python_io.TFRecordWriter(outfile)
+    for paths_in_run in paths_per_thread_run:
+        tic = time.time()
+        logger.debug("Processing %d items for the run." % len(paths_in_run))
         paths_per_thread = sublist(paths_in_run, num_items_per_thread )
-        logger.debug("Frames scheduled list len : %d." % (len(paths_per_thread)))
+        logger.debug("Items scheduled list len : %d." % (len(paths_per_thread)))
         num_threads_in_run = len(paths_per_thread)
         for t in range(num_threads_in_run):
             logger.debug("Frames scheduled per thread %d : %d." % (t, len(paths_per_thread[t])))
@@ -117,13 +129,16 @@ def serialize_multithread(paths, labels, outfile, mode):
             logger.debug("Frames produced per thread %d : %d." % (t, len(frames[t])))
 
         # write the read images to the tfrecord
-        writer = tf.python_io.TFRecordWriter(outfile)
+
         for t in range(num_threads_in_run):
             serialize_to_tfrecord(frames[t], labels, outfile, writer)
             count += len(frames[t])
-        writer.close()
 
-        logger.info("Processed %d frames." % count)
+
+        logger.info("Processed %d frames, latest %d-sized batch took %s." %
+                    (count, sum(list(map(len,paths_per_thread))), elapsed_str(time.time()-tic)))
+
+    writer.close()
 
 
 
@@ -134,7 +149,7 @@ def read_item_list_threaded(paths, mode, storage, id):
             storage[id].append(read_image(p))
     else:
         for p in paths:
-            storage[id].append(get_video_frames(p))
+            storage[id].extend(get_video_frames(p))
 
 
 
@@ -283,6 +298,7 @@ def write():
         logger.info("Writing to %s" % output_file)
         tic = time.time()
         serialize_multithread(paths, labels,output_file , mode)
+        logger.info("Done serializing %s " % inp)
         logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
 def read():
     for idx in range(len(input_files)):
