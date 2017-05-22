@@ -31,7 +31,7 @@ class LRCN:
             with tf.name_scope("dcnn_workflow"):
                 self.logger.info("Dcnn workflow")
                 # single DCNN, classifying individual frames
-                self.inputData, framesLogits = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes)
+                self.inputData, framesLogits = alexnet.define(dataset.image_shape, weightsFile, dataset.num_classes)
                 self.logger.info("input : [%s]" % self.inputData.shape)
                 self.logger.info("label : [%s]" % self.inputData.shape)
             # do video level pooling only if necessary
@@ -56,7 +56,7 @@ class LRCN:
                 if dataset.input_mode!= defs.input_mode.video:
                     error("LSTM workflow only available for video input mode")
                 #  DCNN for frame encoding
-                self.inputData, self.outputTensor = alexnet.define(dataset.imageShape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
+                self.inputData, self.outputTensor = alexnet.define(dataset.image_shape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
                 self.logger.info("input : [%s]" % self.inputData.shape)
                 self.logger.info("label : [%s]" % self.inputData.shape)
                 self.logger.info("dcnn out : [%s]" % self.outputTensor.shape)

@@ -30,47 +30,62 @@ class Summaries:
 #
 
 class Settings:
+    # user - settable parameters
+    ################################
 
-    # data input format
-    frame_format = defs.frame_format.raw
-    input_mode = defs.input_mode.image
-
-    # input data files
-    input = [[],[]]
-
-    # run modes
-    run_id = "run_id"
+    # run mode and type
+    run_id = "test"
     run_type = defs.run_types.singleframe
+
+    # save / load configuration
+    resume_file = None
+    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
 
     # architecture settings
     lstm_input_layer = "fc7"
+    num_classes = 101
+    mean_image = [103.939, 116.779, 123.68]
+
+    # data input format
+    image_shape = (227,227,3)
+    frame_format = defs.data_format.tfrecord
+    input_mode = defs.input_mode.video
 
     # training settings
+    do_random_mirroring = True
     do_training = True
-    epochs = 1
-    epoch_index = None
-    train_index = None
+    epochs = 2
     optimizer = "SGD"
     learning_rate = 0.001
 
     # validation settings
     do_validation = True
     validation_interval = 50
-    val_index = None
-    # save / load configuration
-
-    resume_file = None
-    runFolder = "/home/nik/uoa/msc-thesis/implementation/runData/run_id_170517_033405/"
-
-    # tensorboard visualization folder
-    tensorboard_folder = "/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs"
 
     # logging
+
     logging_level = logging.DEBUG
     log_directory = "logs"
+    tensorboard_folder = "/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs"
+
+    ################################
+    # internal variables
+
+    # input data files
+    input = [[],[]]
+
+    # training settings
+    epoch_index = 0
+    train_index = 0
+
+    # validation settings
+    val_index = 0
+
+    # logging
     logger = None
 
     # misc
+    saver = tf.train.Saver()
 
     # should resume
     def should_resume(self):
@@ -118,7 +133,7 @@ class Settings:
 
     # initialize stuff
     def initialize(self):
-        if os.path.exists(self.runFolder):
+        if not os.path.exists(self.runFolder):
             error("Non existent run folder %s" % self.runFolder)
 
         if self.runFolder[-1] == os.path.sep:
@@ -133,6 +148,11 @@ class Settings:
             self.resume_metadata()
 
         self.set_input_files()
+        # no can do - we'd have to store the image in float if we stored the processed image
+        # if self.frame_format == defs.frame_format.tfrecord:
+        #     if self.mean_image is not None:
+        #         self.logger.warning("Turning off mean subtraction, for TFRecord image mode, since it must be already applied.")
+        #         self.mean_image = None
 
     # settings are ok
     def good(self):
@@ -190,9 +210,9 @@ class Settings:
             self.logger.info("Saving params to [%s]" % savefile_metapars)
 
             params2save = [[],[],[]]
-            params2save[defs.loaded.train_index] = dataset.batchIndexTrain
-            params2save[defs.loaded.val_index] = dataset.batchIndexVal
-            params2save[defs.loaded.epoch_index] = dataset.epochIndex
+            params2save[defs.loaded.train_index] = dataset.batch_index_train
+            params2save[defs.loaded.val_index] = dataset.batch_index_val
+            params2save[defs.loaded.epoch_index] = dataset.epoch_index
 
             with open(savefile_metapars,'wb') as f:
                 pickle.dump(params2save,f)
@@ -203,34 +223,44 @@ class Settings:
 # train the network
 def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     settings.logger.info("Starting train/test")
-    dataset.set_phase(defs.phase.train)
+    start_time = time.time()
+    timings = []
+
+
     if not settings.good():
         error("Wacky configuration, exiting.")
 
     for epochIdx in range(dataset.epochs):
-
+        dataset.set_phase(defs.phase.train)
         while dataset.loop():
             # read  batch
             images, labels_onehot = dataset.read_next_batch()
             dataset.print_iter_info( len(images) , len(labels_onehot))
-            summaries_train, batch_loss, _, accuracy = sess.run([summaries.train_merged, lrcn.loss , lrcn.optimizer, lrcn.accuracyTrain], feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+            summaries_train, batch_loss, _, accuracy = sess.run(
+                [summaries.train_merged, lrcn.loss , lrcn.optimizer, lrcn.accuracyTrain],
+                feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+
             settings.logger.info("Train accuracy: %2.5f" % accuracy)
 
             tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_step())
             tboard_writer.flush()
 
             if settings.do_validation:
-                test(dataset, lrcn, sess, tboard_writer, summaries)
+                test_ran = test(dataset, lrcn, sess, tboard_writer, summaries)
+                if test_ran:
+                    dataset.set_phase(defs.phase.train)
 
         # save a checkpoint every epoch
         settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_global_step()),
                           global_step=dataset.get_global_step())
-        dataset.epochIndex = dataset.epochIndex + 1
+        dataset.epoch_index = dataset.epoch_index + 1
+        timings.append(time.time() - start_time)
+        dataset.reset_phase(defs.phase.train)
+        settings.logger.info("Time elapsed for epoch %d : %s ." % (1+epochIdx, elapsed_str(timings[epochIdx])))
 
+    settings.logger.info("Time elapsed for %d epochs : %s ." % (settings.epochs, elapsed_str(sum(timings))))
 # tests the network on validation data
 def test(dataset, lrcn, sess, tboard_writer, summaries):
-
-
 
     if dataset.should_test_now():
         test_accuracies = []
@@ -247,6 +277,9 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
         print("Validation accuracy: %2.5f" % accuracy)
         tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
         tboard_writer.flush()
+        dataset.reset_phase(defs.phase.val)
+        return True
+    return False
 
 # the main function
 def main():

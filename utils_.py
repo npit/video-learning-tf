@@ -4,6 +4,13 @@ import time
 import logging
 import os
 
+
+# timestamp print
+def elapsed_str(seconds):
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    return "%d:%02d:%02d" % (h, m, s)
+
 # datetime for timestamps
 def get_datetime_str():
     #return time.strftime("[%d|%m|%y]_[%H:%M:%S]")
@@ -74,11 +81,11 @@ class defs:
             return defs.input_mode._str[arg]
 
     # direct reading from disk or from packed tfrecord format
-    class frame_format:
+    class data_format:
         raw, tfrecord = range(2)
         _str = ["raw", "tfrecord"]
         def str(arg):
-            return defs.frame_format._str[arg]
+            return defs.data_format._str[arg]
 
     # run type indicates usage of lstm or singleframe dcnn
     class run_types:
@@ -91,9 +98,9 @@ class defs:
     images, labels = range(2)
     _str = ["images", "labels"]
     def str(arg):
-        return defs.frame_format._str[arg]
+        return defs.data_format._str[arg]
     class loaded:
-        run_folder, train_index, val_index, epoch_index = range(4)
-        _str = ["run_folder", "train_index", "val_index", "epoch_index"]
+        train_index, val_index, epoch_index = range(3)
+        _str = ["train_index", "val_index", "epoch_index"]
         def str(arg):
             return defs.loaded._str[arg]

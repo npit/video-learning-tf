@@ -4,7 +4,7 @@ import os
 import pickle
 # utils
 from utils_ import *
-from random import shuffle
+from random import shuffle, randrange
 # image IO
 from scipy.misc import imread, imresize, imsave
 # displaying
@@ -12,58 +12,41 @@ import matplotlib.pyplot as plt
 
 
 class Dataset:
-    useImageMean = False
+
     num_classes = None
 
+    # input file names
+    input_source_files = [[], []]  # train,test
 
-    # dataset discovery parameters
-    # consequtive video frames mode
-    ##########################
-    # test files, much smaller than orig
+    # video frame paths and classes
+    video_shots = []
+    video_classes = []
 
-    videoFramePathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoPaths.txt"
-    frameClassesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoClasses.txt"
-
-    # video -based annotation
-    # videoPathsFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoPaths.txt"
-    # videoClassesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoClasses.txt"
-    # classIndexesNamesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/UCF-101_videos_frames16/videoIndexesNames.txt"
-
-    #############################
-
-    # non  consequtive video frames mode: pretty much image reconition
-    # caffe-like input file
-
-    input_source_files = [[], []]   # train,test
-
-
+    # single frame paths and classes, for raw input mode
     frame_paths = []
     frame_classes = []
+
     # file to map class indexes to their names
-    classIndexesNamesFile = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoIndexesNames.txt"
-
-
+    class_names = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoIndexesNames.txt"
 
     #
-    outputFolder = "/home/nik/uoa/msc-thesis/implementation/runData/"
-    serializedTrainSetFile = outputFolder + "serializedTrain"
-    serializedValSetFile = outputFolder + "serializedVal"
+    run_folder = "/home/nik/uoa/msc-thesis/implementation/runData/"
+    serializedTrainSetFile = run_folder + "serializedTrain"
+    serializedValSetFile = run_folder + "serializedVal"
     num_frames_per_video = 16
     imageFormat = "jpg"
     trainValRatio = 2.0 / 3.0
+    data_format = None
 
-    videoPaths = []
-    videoClassNames = []
-
-    meanImage = None
-    meanImagePath =  "meanImage_" + str(num_frames_per_video)
-    trainSetPath =  "traiset_" + str(num_frames_per_video)
-    valSetPath =  "valset_" + str(num_frames_per_video)
-
-
-    imageShape = (224,224,3)
-
+    # input frames settings
+    image_shape = None
     input_mode = None
+
+    # mean image subtraction
+    mean_image = None
+    do_mean_subtraction = None
+
+
     # video - based annotation
     # per-class video indexes
     trainPerClass = []
@@ -75,34 +58,37 @@ class Dataset:
     valLabels = []
 
     phase = None
-    epochIndex = None
+    epoch_index = None
     epochs = None
-    # batches
-    batchCount = 0
 
-    batchSize = None
-    batchIndex = 0
+    # current phase
+    batch_count = 0
+    batch_index = 0
+    batch_size = None
     batches = None
     iterator = None
 
-    batchSizeTrain = 10
-    batchesTrain = []
-    batchIndexTrain = None
-    batchConfigFileTrain = "batches_train_sz%d_frv%d" % (batchSizeTrain, num_frames_per_video)
+    # training
+    batch_size_train = 10
+    batches_train = []
+    batch_index_train = None
     train_iterator = None
 
+    # validation
     do_validation = False
     validation_interval = None
-    batchSizeVal = 10
-    batchesVal = []
-    batchIndexVal = None
-    batchConfigFileVal = "batches_val_sz%d_frv%d" % (batchSizeTrain, num_frames_per_video)
+    batch_size_val = 10
+    batches_val = []
+    batch_index_val = None
     val_iterator = None
 
+
     # misc
-    verbosity = 1
     logger = None
 
+    # mean subtraction
+    def shoud_subtract_mean(self):
+        return self.mean_image is not None
     # get class name from class index
     def getClassName(self,classIndex):
         return self.videoClassNames[classIndex]
@@ -113,7 +99,7 @@ class Dataset:
         with open(self.videoFramePathsFile) as f:
             for line in f:
                 self.videoPaths.append(line.strip())
-        with open(self.classIndexesNamesFile) as f:
+        with open(self.class_names) as f:
             for line in f:
                 self.videoClassNames.append(line.strip())
         self.num_classes = len(self.videoClassNames)
@@ -136,79 +122,10 @@ class Dataset:
                     self.frame_paths[defs.phase.val].append(impath)
                     self.frame_classes[defs.phase.val].append(imlabel)
 
-        # this assumes that instances for all classes are provided - crashy down the road but nice error check
-        self.num_classes = len(set(self.frame_classes[defs.phase.train]))
-
         self.logger.info("Done reading, %d frames for %s, %d frames for %s." % (
             len(self.frame_paths[defs.phase.train]), defs.phase.str(defs.phase.train),
             len(self.frame_paths[defs.phase.val]), defs.phase.str(defs.phase.val),
         ))
-
-    # split to trainval, on a video-based shuffling scheme
-    def partition_to_train_val_videowise(self):
-        if os.path.isfile(self.trainSetPath) \
-                and os.path.isfile(self.valSetPath):
-            self.logger.info('Loading training partitioning from file: %s' % self.trainSetPath)
-            with open(self.trainSetPath,'rb') as f:
-                self.trainSet, self.trainLabels = pickle.load(f)
-            self.logger.info('Loading validation partitioning from file: %s' % self.valSetPath)
-
-            with open(self.valSetPath,'rb') as f:
-                self.valSet, self.valLabels = pickle.load(f)
-            return
-
-        self.logger.info("Partitioning training/validation sets with a ratio of %f" % self.trainValRatio)
-        # read ground truth label per video, make containers:
-        #  videos per class histogram
-        #
-        videoLabels = []
-        videoIndexesPerClass = [[] for i in range(self.num_classes)]
-
-        with open(self.frameClassesFile) as f:
-            frameidx = 0
-            for videoLabel in f:
-                label = int(videoLabel)
-                videoLabels.append(label)
-                videoIndexesPerClass[label].append(frameidx)
-                frameidx += 1
-
-        # partition to training & validation
-        # for each class
-        for cl in range(self.num_classes):
-            # shuffle videos and respective labels
-            shuffle(videoIndexesPerClass[cl])
-            numVideosForClass = len(videoIndexesPerClass[cl])
-            numTrain = round(self.trainValRatio * numVideosForClass)
-
-            self.trainPerClass.append(videoIndexesPerClass[cl][:numTrain])
-            self.valPerClass.append(videoIndexesPerClass[cl][numTrain:])
-
-
-        # finally, concat everything,  use temp. containers as we'll shuffle the
-        # training data  - no need to shuffle for the validation set though
-        totalTrain = []
-        totalTrainLabels = []
-        for i in range(self.num_classes):
-            totalTrain.extend(self.trainPerClass[i])
-            totalTrainLabels.extend([i for _ in range(len(self.trainPerClass[i]))])
-            self.valSet.extend(self.valPerClass[i])
-            self.valLabels.extend([i for _ in range(len(self.valPerClass[i]))])
-
-        # shuffle via the index
-        idx = list(range(len(totalTrain)))
-        shuffle(idx)
-        self.trainSet = [0 for _ in idx] # idx used just for its len
-        self.trainLabels = [0 for _ in idx]
-
-        for i in range(len(idx)):
-            self.trainSet[i] = totalTrain[idx[i]]
-            self.trainLabels[i] = totalTrainLabels[idx[i]]
-
-        # save data
-        with open(self.trainSetPath,'wb') as f:
-            pickle.dump([self.trainSet, self.trainLabels],f)
-        with open(self.valSetPath,'wb') as f:
-            pickle.dump([self.valSet, self.valLabels],f)
 
     # partition to batches
     def calculate_batches_videowise(self):
@@ -217,256 +134,194 @@ class Dataset:
                 and os.path.isfile(self.batchConfigFileVal):
             self.logger.info('Loading training batches from file: %s' % self.batchConfigFileTrain)
             with open(self.batchConfigFileTrain, 'rb') as f:
-                self.batchesTrain = pickle.load(f)
+                self.batches_train = pickle.load(f)
             self.logger.info('Loading validation batches from file: %s' % self.batchConfigFileVal)
 
             with open(self.batchConfigFileVal, 'rb') as f:
-                self.batchesVal = pickle.load(f)
+                self.batches_val = pickle.load(f)
             return
 
 
         # training set
-        for vididx in range(0, len(self.trainSet), self.batchSizeTrain):
+        for vididx in range(0, len(self.trainSet), self.batch_size_train):
             firstVideoInBatch = vididx
-            lastVideoInBatch = min(firstVideoInBatch + self.batchSizeTrain, len(self.trainSet))
+            lastVideoInBatch = min(firstVideoInBatch + self.batch_size_train, len(self.trainSet))
             videos = self.trainSet[firstVideoInBatch: lastVideoInBatch]
             lbls = self.trainLabels[firstVideoInBatch: lastVideoInBatch]
-            self.batchesTrain.append([videos, lbls])
+            self.batches_train.append([videos, lbls])
         self.logger.info('Calculated %d batches for %d videos,where %d x %d = %d and #videos = %d' %
-                         (len(self.batchesTrain) , len(self.trainSet),len(self.batchesTrain), self.batchSizeTrain,
-                          len(self.batchesTrain) * self.batchSizeTrain, len(self.batchesTrain[-1][0])))
+                         (len(self.batches_train) , len(self.trainSet), len(self.batches_train), self.batch_size_train,
+                          len(self.batches_train) * self.batch_size_train, len(self.batches_train[-1][0])))
 
 
         # validation set
-        for vididx in range(0, len(self.valSet), self.batchSizeVal):
+        for vididx in range(0, len(self.valSet), self.batch_size_val):
             firstVideoInBatch = vididx
-            lastVideoInBatch = min(firstVideoInBatch + self.batchSizeVal, len(self.valSet))
+            lastVideoInBatch = min(firstVideoInBatch + self.batch_size_val, len(self.valSet))
             videos = self.valSet[firstVideoInBatch: lastVideoInBatch]
             lbls = self.valLabels[firstVideoInBatch: lastVideoInBatch]
-            self.batchesVal.append([videos, lbls])
+            self.batches_val.append([videos, lbls])
 
         self.logger.info('Calculated %d batches for %d videos,where %d x %d = %d and #videos = %d' %
-                         (len(self.batchesVal), len(self.valSet), len(self.batchesVal), self.batchSizeVal,
-                          len(self.batchesVal) * self.batchSizeVal, len(self.batchesVal[-1][0])))
+                         (len(self.batches_val), len(self.valSet), len(self.batches_val), self.batch_size_val,
+                          len(self.batches_val) * self.batch_size_val, len(self.batches_val[-1][0])))
 
         # save config
         with open(self.batchConfigFileTrain,'wb') as f:
-            pickle.dump(self.batchesTrain, f)
+            pickle.dump(self.batches_train, f)
         with open(self.batchConfigFileVal,'wb') as f:
-            pickle.dump(self.batchesVal, f)
+            pickle.dump(self.batches_val, f)
 
-    # write to read images from tensorboard too
-    def compute_image_mean_videowise(self):
-        if os.path.isfile(self.meanImagePath):
-            self.logger.info('Loading mean image from file.')
-            with open(self.meanImagePath, 'rb') as f:
-                self.meanImage= pickle.load(f)
-            return
-        meanImage = np.zeros(self.imageShape)
-        self.logger.info("Computing training image mean.")
-        for vi in range(len(self.trainSet)):
-            self.logger.info("Video %d/%d" %(vi, len(self.trainSet))  )
-            frames = self.get_video_frames(vi, useMeanCorrection=False)
-            for frame in frames:
-                meanImage += frame
-        self.meanImage = meanImage / (len(self.trainSet) * self.num_frames_per_video)
-        with open(self.meanImagePath,'wb') as f:
-            pickle.dump(meanImage,f)
-        imsave(self.meanImagePath + "." + self.imageFormat, self.meanImage )
+       # display image
 
-    # display image
     def display_image(self,image,label=None):
-        print(label)
-        plt.title(label)
-        plt.imshow(image)
+        # print(label)
+        #plt.title(label)
+        # simple casting
+        # plt.imshow(np.ndarray.astype(image,np.uint8))
+        # back to 0,255
+
+        plt.imshow(np.ndarray.astype(image, np.uint8))
         plt.show()
         # plt.waitforbuttonpress()
 
-    # helper tfrecord function
-    def _int64_feature(self,value):
-        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
-    # helper tfrecord function
-    def _bytes_feature(self,value):
-        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-    # convert images to  TFRecord
-    def write_images_tfrecord_videowise(self, sett, mode="train"):
-
-
-        if not self.videoPaths:
-            error('No video paths stored.')
-        # read class per video
-        videoClasses = []
-        with open(self.frameClassesFile, 'r') as f:
-            for line in f:
-                line  = line.strip()
-                videoClasses.append(int(line))
-        if mode == 'train':
-            if not os.path.isfile(self.serializedTrainSetFile):
-                self.logger.info('Writing images for mode: [' +  mode + '] to TFRecord format.')
-                self.serialize_to_tfrecord(self.trainSet, self.trainLabels, self.serializedTrainSetFile, "train")
-            self.train_iterator = tf.python_io.tf_record_iterator(path=self.serializedTrainSetFile,name = "train_iterator")
-        elif mode == 'val':
-            if not os.path.isfile(self.serializedValSetFile):
-                self.serialize_to_tfrecord(self.valSet, self.valLabels, self.serializedValSetFile, "val")
-            self.val_iterator = tf.python_io.tf_record_iterator(path=self.serializedValSetFile,name="val_iterator")
-        else:
-            error("Use train or val mode for TFRecord serialization. Undefined mode: [%s]" % mode)
-
-    def serialize_to_tfrecord_videowise(self, vididxs, labels, outfile, descr=""):
-
-        writer = tf.python_io.TFRecordWriter(outfile)
-
-        count = 0
-        for vi in vididxs:
-            self.logger.info("%s video %d / %d : %s" % (descr,count + 1, len(vididxs), self.videoPaths[vi]))
-            frames = self.get_video_frames(vi,useMeanCorrection=False)
-            for frame in frames:
-
-                example = tf.train.Example(features=tf.train.Features(feature={
-                    'height': self._int64_feature(self.imageShape[0]),
-                    'width': self._int64_feature(self.imageShape[1]),
-                    'depth': self._int64_feature(self.imageShape[2]),
-                    'label': self._int64_feature(int(labels[count])),
-                    'image_raw': self._bytes_feature(frame.tostring())}))
-                writer.write(example.SerializeToString())
-            count += 1
-        writer.close()
-
-        # ---------------------------
 
     def deserialize_from_tfrecord(self, iterator, images_per_iteration):
         # images_per_iteration :
         images = []
-        labels = []
-        for _ in range(images_per_iteration * self.num_frames_per_video):
+        labels  = []
+        for _ in range(images_per_iteration):
             try:
                 string_record = next(iterator)
                 example = tf.train.Example()
                 example.ParseFromString(string_record)
-                height = int(example.features.feature['height']
-                             .int64_list
-                             .value[0])
-                width = int(example.features.feature['width']
-                            .int64_list
-                            .value[0])
                 img_string = (example.features.feature['image_raw']
                               .bytes_list
                               .value[0])
-                depth = (example.features.feature['depth']
-                         .int64_list
-                         .value[0])
-                # label = (example.features.feature['label']
+                # height = int(example.features.feature['height']
+                #              .int64_list
+                #              .value[0])
+                # width = int(example.features.feature['width']
+                #             .int64_list
+                #             .value[0])
+                #
+                # depth = (example.features.feature['depth']
                 #          .int64_list
                 #          .value[0])
+                label = (example.features.feature['label']
+                         .int64_list
+                         .value[0])
                 img_1d = np.fromstring(img_string, dtype=np.uint8)
                 # watch it : hardcoding preferd dimensions according to the dataset object.
                 # it should be the shape of the stored image instead, for generic use
-                image = img_1d.reshape((self.imageShape[0], self.imageShape[1], self.imageShape[2]))
+                image = img_1d.reshape((self.image_shape[0], self.image_shape[1], self.image_shape[2]))
 
-                if self.useImageMean:
-                    image = np.ndarray.astype(image, np.float32) - self.meanImage
+                if self.do_mean_subtraction:
+                    image = self.subtract_mean(image)
                 images.append(image)
-                # labels.append(label)
-                # imsave('reconstructedBGR.JPEG', image)
-                # image = image[:, :, ::-1] # swap 1st and 3rd dimension
-                # imsave('reconstructedBGR__2.JPEG', image)
+                labels.append(label)
+
             except StopIteration:
                 break
             except Exception as ex:
                 self.logger.error('Exception at reading image, loading from scratch')
                 self.logger.error(ex)
+                error("Error reading tfrecord image.")
 
-        # return images, labels
-        return images
-
-    # read next batch
-    def read_next_batch_videowise(self):
-        images = []
-        currentBatch = self.batches[self.batchIndex]
-        if self.iterator == None:
-            # read images from disk
-            for vi in currentBatch[0]:
-                videoframes = self.get_video_frames(vi, self.useImageMean)
-                images.extend(videoframes)
-        else:
-            # read images from the TFrecord
-            images = self.deserialize_from_tfrecord(self.iterator, self.batchSize)
-
-        labels = currentBatch[1]
-        labels_onehot = labels_to_one_hot(labels, self.num_classes)
-        # labels = [ l for l in labels for _ in range(self.num_frames_per_video) ] # duplicate label, er frame
-
-        return images, labels_onehot#, labels
-
-    def read_next_batch(self):
-        if self.input_mode == "videowise":
-            images, labels =  self.read_next_batch_videowise()
-        else:
-            images, labels = self.read_next_batch_framewise()
-
-        self.batchIndex = self.batchIndex + 1
         return images, labels
+
+    def subtract_mean(self,image):
+        image = np.ndarray.astype(image, np.float32) - self.mean_image
+        # image = (image - np.min(image))
+        # image = image / np.max(image)
+        # image = image * 255
+        # image = np.ndarray.astype(image,np.uint8)
+        # self.display_image(image)
+        return image
+
+
 
     def set_phase(self, phase):
         # if the network is switching phases, store the index
         # to continue later
+        if self.phase == phase:
+            return
         if self.phase is not None:
             self.logger.info("Suspending phase [%s], on current batch index [%d]" % (defs.phase.str(self.phase),
-                                                                           self.batchIndex))
+                                                                           self.batch_index))
             if self.phase == defs.phase.train:
-                self.batchIndexTrain = self.batchIndex
+                self.batch_index_train = self.batch_index
             else:
-                self.batchIndexVal = self.batchIndex
+                self.batch_index_val = self.batch_index
 
         self.logger.info("Setting phase [%s], on batch index [%d]" % (defs.phase.str(phase),
-                                                                        self.batchIndexVal))
+                                                                        self.batch_index_val))
         # update phase variables
         self.phase = phase
         if self.phase == defs.phase.train:
-            self.batches = self.batchesTrain
-            self.batchIndex = self.batchIndexTrain
+            self.batches = self.batches_train
+            self.batch_index = self.batch_index_train
             self.iterator = self.train_iterator
-            self.batchSize = self.batchSizeTrain
+            self.batch_size = self.batch_size_train
         else:
-            self.batches = self.batchesVal
-            self.batchIndex = self.batchIndexVal
+            self.batches = self.batches_val
+            self.batch_index = self.batch_index_val
             self.iterator = self.val_iterator
-            self.batchSize = self.batchSizeVal
+            self.batch_size = self.batch_size_val
 
-    def read_next_batch_framewise(self):
+
+    def read_next_batch(self):
         images = []
-        currentBatch = self.batches[self.batchIndex]
-        if self.iterator == None:
-            # read images from disk
-            for impath in currentBatch[0]:
-                frame = self.read_image(impath,self.useImageMean)
-                images.append(frame)
-        else:
-            # read images from the TFrecord
-            images = self.deserialize_from_tfrecord(self.iterator, 1)
+        labels = []
+        currentBatch = self.batches[self.batch_index]
 
-        labels = currentBatch[1]
+        # switch read mode
+        if self.data_format == defs.data_format.raw:
+            # read stuff from disk directly
+            if self.input_mode == defs.input_mode.video:
+                # read video
+                for videopath in currentBatch[defs.images]:
+                    videoframes = self.get_video_frames(videopath)
+                    images.extend(videoframes)
+                    labels.append(currentBatch[defs.labels])
+            else:
+                # read image
+                for impath in currentBatch[0]:
+                    frame = self.read_image(impath, self.do_mean_subtraction)
+                    images.append(frame)
+                    labels = currentBatch[defs.labels]
+
+        else:
+            # read images from a TFrecord serialization file
+            num_items_in_batch = currentBatch
+            if self.input_mode == defs.input_mode.video:
+                num_items_in_batch = num_items_in_batch * self.num_frames_per_video
+            images, labels = self.deserialize_from_tfrecord(self.iterator, num_items_in_batch)
+            # limit to 1 label per video
+            if self.input_mode == defs.input_mode.video:
+                labels = [ labels[l] for l in range(0,len(labels),self.num_frames_per_video) ]
+
+
         self.logger.debug("Fetching batch of %d images and %d labels." % (len(images), len(labels)))
 
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
-
+        self.batch_index = self.batch_index + 1
         return images, labels_onehot#, labels
 
 
     # read all frames for a video
-    def get_video_frames(self,videoidx,useMeanCorrection=True):
-        self.logger.info("Reading frames of video idx %d from disk." % videoidx)
-        videoPath = self.videoPaths[videoidx]
+    def get_video_frames(self,videopath):
+        self.logger.debug("Reading frames of video idx %s from disk." % videopath)
+
         frames = []
         for im in range(self.num_frames_per_video):
-            impath = videoPath + os.sep + str(1+im) + "." + self.imageFormat
-            frames.append(self.read_image(impath,useMeanCorrection))
+            impath = "%s.%04d.%s" % (videopath, 1+im, self.imageFormat)
+            frames.append(self.read_image(impath))
         return frames
 
     # read image from disk
-    def read_image(self,imagepath, useMeanCorrection=False):
+    def read_image(self,imagepath):
         image = imread(imagepath)
 
         self.logger.debug("Reading image %s" % imagepath)
@@ -479,127 +334,238 @@ class Dataset:
         #  convert to BGR
         image = image[:, :, ::-1]
         # resize
-        image = imresize(image, self.imageShape)
+        image = imresize(image, self.image_shape)
 
-        if useMeanCorrection:
-            image = image - self.meanImage
+        if self.do_mean_subtraction:
+            image = image - self.mean_image
+        if self.do_random_mirroring:
+            if not randrange(2):
+                image = image[:,::-1,:]
+
         return image
 
     # do preparatory work
     def initialize(self, sett):
+        # transfer configuration from settings
         self.logger = sett.logger
         self.epochs = sett.epochs
+        self.do_random_mirroring = sett.do_random_mirroring
         self.do_validation = sett.do_validation
         self.validation_interval = sett.validation_interval
-
-
-        self.outputFolder = sett.runFolder
-        self.logger.info("Initializing run on folder [%s]" % self.outputFolder)
-        self.set_file_paths()
-        self.epochIndex = sett.epoch_index
-        self.batchIndexTrain = sett.train_index
-        self.batchIndexVal = sett.val_index
-
+        self.run_folder = sett.runFolder
+        self.data_format = sett.frame_format
         self.input_mode = sett.input_mode
-        if self.input_mode ==  defs.input_mode.video:
-            self.initialize_videowise(sett)
-        elif self.input_mode ==  defs.input_mode.image:
-            self.initialize_framewise(sett)
-        else:
-            error("Undefined frame format : %s " % sett.frame_format)
+        self.mean_image = sett.mean_image
+        self.image_shape = sett.image_shape
+        self.num_classes = sett.num_classes
+        self.logger.info("Initializing run on folder [%s]" % self.run_folder)
+
+        self.initialize_data(sett)
+
+        # transfer resumed snapshot settings
+        self.epoch_index = sett.epoch_index
+        self.batch_index_train = sett.train_index
+        self.batch_index_val = sett.val_index
+
+
+        self.do_mean_subtraction = (self.mean_image is not None)
+        if self.do_mean_subtraction:
+            # build it
+            height = self.image_shape[0]
+            width = self.image_shape[1]
+            blue = np.full((height, width), self.mean_image[0])
+            green = np.full((height, width), self.mean_image[1])
+            red = np.full((height, width), self.mean_image[2])
+            self.mean_image = np.ndarray.astype(np.stack([blue, green, red]),np.float32)
+            self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
+
+
 
         self.logger.info("Completed dataset initialization.")
         self.tell()
+
 
     # video-wise initialization
     def initialize_videowise(self, sett):
         # here frames are fetched video-wise, i.e. all video frames will be in order for a given video
         self.read_video_metadata()
-        self.partition_to_train_val_videowise()
         self.calculate_batches_videowise()
-        if self.useImageMean:
-            self.compute_image_mean_videowise()
-
-        if sett.dataFormat == "TFRecord":
-            self.record_iterator = self.write_images_tfrecord_videowise(sett, "train")
-            self.record_iterator = self.write_images_tfrecord_videowise(sett, "val")
 
     # framewise initialization
     def initialize_framewise(self,sett):
-
+        # read input files
         self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
         self.input_source_files[defs.phase.val] = sett.input[defs.phase.val]
-
+        # read frames and classes
         self.read_frames_metadata()
-        self.batchesTrain = []
-        self.batchesVal = []
 
+        # calculate batches - obsolete if input is tfrecord
+        self.batches_train = []
+        self.batches_val = []
 
         # train
-        imgs = sublist(self.frame_paths[defs.phase.train], self.batchSizeTrain)
-        lbls = sublist(self.frame_classes[defs.phase.train], self.batchSizeTrain)
+        imgs = sublist(self.frame_paths[defs.phase.train], self.batch_size_train)
+        lbls = sublist(self.frame_classes[defs.phase.train], self.batch_size_train)
         for l in range(len(lbls)):
-            self.batchesTrain.append([
+            self.batches_train.append([
                 imgs[l],
                 list(map(int, lbls[l]))
                      ])
         # val
-        imgs = sublist(self.frame_paths[defs.phase.val], self.batchSizeVal)
-        lbls = sublist(self.frame_classes[defs.phase.val], self.batchSizeVal)
+        imgs = sublist(self.frame_paths[defs.phase.val], self.batch_size_val)
+        lbls = sublist(self.frame_classes[defs.phase.val], self.batch_size_val)
         for l in range(len(lbls)):
-            self.batchesVal.append([
+            self.batches_val.append([
                 imgs[l],
                 list(map(int, lbls[l]))
                      ])
 
-        if sett.frame_format == "TFRecord":
-            error("TODO tfrecord framewise")
-        pass
+    def initialize_data(self, sett):
+
+        if self.data_format == defs.data_format.tfrecord:
+            # initialize tfrecord
+            self.input_source_files[defs.phase.train] = sett.input[defs.phase.train] + ".tfrecord"
+            self.input_source_files[defs.phase.val] = sett.input[defs.phase.val] + ".tfrecord"
+            self.reset_iterator(defs.phase.train)
+            self.reset_iterator(defs.phase.val)
+            # count number of items
+            num_train = 0
+            num_val = 0
+            self.logger.info("Counting tfrecord data.")
+            try:
+                while next(self.train_iterator): num_train = num_train + 1
+            except StopIteration:
+                pass
+            self.logger.info("Train tfrecord data with %d entries." % num_train)
+            try:
+                while next(self.val_iterator):  num_val = num_val + 1
+            except StopIteration:
+                pass
+            self.logger.info("Validation tfrecord data with %d entries." % num_val)
+
+            self.reset_iterator(defs.phase.train)
+            self.reset_iterator(defs.phase.val)
+
+            # restore batch index to snapshot if needed
+            if self.batch_index > 0:
+                self.fast_forward_iter(self.iterator)
+
+            # calculate batches: just batchsizes per batch; all is in the tfrecord
+            num_whole_batches = num_train // self.batch_size_train
+            self.batches_train = [ self.batch_size_train for i in range(num_whole_batches)]
+            items_left = num_train - num_whole_batches * self.batch_size_train
+            if items_left:
+                self.batches_train.append(items_left)
+
+            num_whole_batches = num_val // self.batch_size_val
+            self.batches_val = [ self.batch_size_train for i in range(num_whole_batches)]
+            items_left = num_val - num_whole_batches * self.batch_size_val
+            if items_left:
+                self.batches_val.append(items_left)
+
+
+        else:
+            # read input files
+            self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
+            self.input_source_files[defs.phase.val] = sett.input[defs.phase.val]
+            # read frames and classes
+            self.read_frames_metadata()
+
+            # for raw input mode, calculate batches for paths and labels
+
+            # train
+            imgs = sublist(self.frame_paths[defs.phase.train], self.batch_size_train)
+            lbls = sublist(self.frame_classes[defs.phase.train], self.batch_size_train)
+            for l in range(len(lbls)):
+                self.batches_train.append([
+                    imgs[l],
+                    list(map(int, lbls[l]))
+                         ])
+            # val
+            imgs = sublist(self.frame_paths[defs.phase.val], self.batch_size_val)
+            lbls = sublist(self.frame_classes[defs.phase.val], self.batch_size_val)
+            for l in range(len(lbls)):
+                self.batches_val.append([
+                    imgs[l],
+                    list(map(int, lbls[l]))
+                         ])
+
+
+
+
+
+
+    def reset_iterator(self,phase):
+        if not self.data_format == defs.data_format.tfrecord:
+            return
+        if phase == defs.phase.train:
+            self.train_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.phase.train])
+        else:
+            self.val_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.phase.val])
+
+    # move up an iterator
+    def fast_forward_iter(self):
+
+        # fast forward to batch index
+        num_forward = self.batch_index
+        if self.input_mode == defs.input_mode.image:
+            self.logger.info("Fast forwarding to the batch # %d ( image # %d)" % (self.batch_index+1, num_forward+1))
+        elif self.input_mode == defs.input_mode.video:
+            num_forward = num_forward * self.num_frames_per_video
+            self.logger.info("Fast forwarding to the batch # %d ( image # %d )" % (self.batch_index + 1, num_forward + 1))
+
+
+        for _ in range(num_forward):
+            next(self.iterator)
 
     # load saved parameters
     def load_metaparams(self, params):
         i = 0
-        self.batchIndexTrain = params[i]; i+=1
-        self.epochIndex = params[i]; i+=1
+        self.batch_index_train = params[i]; i+=1
+        self.epoch_index = params[i]; i+=1
         self.set_file_paths()
-
-    # set file paths
-    def set_file_paths(self):
-        self.batchConfigFileTrain = self.outputFolder + os.path.sep + self.batchConfigFileTrain
-        self.batchConfigFileVal = self.outputFolder + os.path.sep + self.batchConfigFileVal
-
-        self.meanImagePath = self.outputFolder + os.path.sep + self.meanImagePath
-        self.trainSetPath = self.outputFolder + os.path.sep + self.trainSetPath
-        self.valSetPath = self.outputFolder + os.path.sep + self.valSetPath
 
     # print active settings
     def tell(self):
         self.logger.info("Dataset batch information per run mode:" )
         self.logger.info("%-8s %-6s %-6s %-6s" % ("Mode","size","num","index"))
-        self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.train), self.batchSizeTrain, len(self.batchesTrain), self.batchIndexTrain))
-        self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.val), self.batchSizeVal, len(self.batchesVal), self.batchIndexVal))
+        self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.train), self.batch_size_train, len(self.batches_train), self.batch_index_train))
+        self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.val), self.batch_size_val, len(self.batches_val), self.batch_index_val))
 
 
     # get the batch size
     def get_batch_size(self):
         if self.phase == "train":
-            return self.batchSizeTrain
+            return self.batch_size_train
         else:
-            return self.batchSizeVal
+            return self.batch_size_val
 
     # get the global step
     def get_global_step(self):
-        return self.epochIndex * self.batchSizeTrain + self.batchIndexTrain
+        return self.epoch_index * self.batch_size_train + self.batch_index_train
 
 
     # print iteration information
     def print_iter_info(self, num_images, num_labels):
         self.logger.info("Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images, %3d labels" %
-             (defs.phase.str(self.phase), self.epochIndex+1, self.epochs, self.batchIndex, len(self.batches), num_images, num_labels))
+                         (defs.phase.str(self.phase), self.epoch_index + 1, self.epochs, self.batch_index, len(self.batches), num_images, num_labels))
 
     # specify valid loop iteration
     def loop(self):
-        return self.batchIndex < len(self.batches)
+        return self.batch_index < len(self.batches)
+
+    # reset data reading params for phase
+    def reset_phase(self, phase):
+
+        if phase == defs.phase.train:
+            self.batch_index_train = 0
+            self.reset_iterator(defs.phase.train)
+        else:
+            self.batch_index_val = 0
+            self.reset_iterator(defs.phase.val)
+        # pass on the values to the current phase
+        self.phase = None
+        self.set_phase(phase)
 
     def should_test_now(self):
-        return self.do_validation and (self.batchCount > 0) and ((self.batchCount // self.validation_interval) == 0 )
+        return self.do_validation and (self.batch_count > 0) and ((self.batch_count // self.validation_interval) == 0)
