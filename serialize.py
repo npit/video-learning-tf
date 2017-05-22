@@ -1,17 +1,26 @@
-import os
 import tensorflow as tf
-from scipy.misc import imread, imresize, imsave
 import numpy as np
+from scipy.misc import imread, imresize, imsave
 import matplotlib.pyplot as plt
-import logging, time
+import logging, time, threading, os
+from utils_ import *
 
 # input test/train
+# input_files = [
+#     "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
+# "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
+# "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
+# "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
+# ]
+
 input_files = [
-    "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
+    #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_train_split1.txt",
+    "/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/test_frames"
+
 ]
+num_threads = 1
+num_items_per_thread = 1000
+print_every = 50
 
 # frames or videos
 frames, videos = range(2)
@@ -41,7 +50,7 @@ def get_datetime_str():
 
 # configure logging settings
 def configure_logging():
-    logging_level = logging.INFO
+    logging_level = logging.DEBUG
 
     logfile = "serialize_" + get_datetime_str() + ".log"
     print("Using logfile: %s" % logfile)
@@ -77,26 +86,72 @@ def _bytes_feature( value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def serialize_to_tfrecord( paths, labels, outfile, mode):
-    writer = tf.python_io.TFRecordWriter(outfile + ".tfrecord")
+def serialize_multithread(paths, labels, outfile, mode):
+    # split up paths list
+    num_images_per_thread_run = num_items_per_thread * num_threads
+
+    paths_per_thread_run = sublist(paths, num_images_per_thread_run)
 
     count = 0
-    for path in paths:
-        if mode == videos:
-            frames = get_video_frames(path)
-        else:
-            frames = [ read_image(path) ]
-        for frame in frames:
+    for paths_in_run in paths_per_thread_run:
 
-            example = tf.train.Example(features=tf.train.Features(feature={
-                'height': _int64_feature(image_shape[0]),
-                'width': _int64_feature(image_shape[1]),
-                'depth': _int64_feature(image_shape[2]),
-                'label': _int64_feature(int(labels[count])),
-                'image_raw': _bytes_feature(frame.tostring())}))
-            writer.write(example.SerializeToString())
-        count += 1
-    writer.close()
+        logger.debug("Processing %d paths for the run." % len(paths_in_run))
+        paths_per_thread = sublist(paths_in_run, num_items_per_thread )
+        logger.debug("Frames scheduled list len : %d." % (len(paths_per_thread)))
+        num_threads_in_run = len(paths_per_thread)
+        for t in range(num_threads_in_run):
+            logger.debug("Frames scheduled per thread %d : %d." % (t, len(paths_per_thread[t])))
+        # start threads
+        threads = [[] for _ in range(num_threads_in_run)]
+        frames =  [[] for _ in range(num_threads_in_run)]
+        for t in range(num_threads_in_run):
+            threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],mode,frames,t))
+            threads[t].start()
+
+
+        # wait for threads to read
+        for t in range(num_threads_in_run):
+            threads[t].join()
+
+        for t in range(num_threads_in_run):
+            logger.debug("Frames produced per thread %d : %d." % (t, len(frames[t])))
+
+        # write the read images to the tfrecord
+        writer = tf.python_io.TFRecordWriter(outfile)
+        for t in range(num_threads_in_run):
+            serialize_to_tfrecord(frames[t], labels, outfile, writer)
+            count += len(frames[t])
+        writer.close()
+
+        logger.info("Processed %d frames." % count)
+
+
+
+
+def read_item_list_threaded(paths, mode, storage, id):
+    if mode == frames:
+        for p in paths:
+            storage[id].append(read_image(p))
+    else:
+        for p in paths:
+            storage[id].append(get_video_frames(p))
+
+
+
+
+def serialize_to_tfrecord( frames, labels, outfil, writer):
+    for idx in range(len(frames)):
+        frame = frames[idx]
+        label = labels[idx]
+        example = tf.train.Example(features=tf.train.Features(feature={
+            'height': _int64_feature(image_shape[0]),
+            'width': _int64_feature(image_shape[1]),
+            'depth': _int64_feature(image_shape[2]),
+            'label': _int64_feature(int(label)),
+            'image_raw': _bytes_feature(frame.tostring())}))
+        writer.write(example.SerializeToString())
+
+
 
 # read all frames for a video
 def get_video_frames(path):
@@ -114,7 +169,8 @@ def get_video_frames(path):
 def read_image(imagepath, useMeanCorrection=False):
     image = imread(imagepath)
 
-    logger.debug("Reading image %s" % imagepath)
+    #logger.debug("Reading image %s" % imagepath)
+
     # for grayscale images, duplicate
     # intensity to color channels
     if len(image.shape) <= 2:
@@ -214,6 +270,7 @@ def write():
         mode = input_modes[idx]
         inp = input_files[idx]
         logger.info("Serializing %s in mode %s" % (inp,mode))
+        logger.info("Reading input file.")
         paths = []
         labels = []
         with open(inp,'r') as f:
@@ -222,8 +279,11 @@ def write():
                 paths.append(path.strip())
                 labels.append(int(label.strip()))
 
-
-        serialize_to_tfrecord(paths, labels,inp, mode)
+        output_file = inp + ".tfrecord"
+        logger.info("Writing to %s" % output_file)
+        tic = time.time()
+        serialize_multithread(paths, labels,output_file , mode)
+        logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
 def read():
     for idx in range(len(input_files)):
         mode = input_modes[idx]
