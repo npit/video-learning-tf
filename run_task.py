@@ -47,12 +47,15 @@ class Settings:
     mean_image = [103.939, 116.779, 123.68]
 
     # data input format
+    raw_image_shape = (240, 320, 3)
     image_shape = (227,227,3)
     frame_format = defs.data_format.tfrecord
-    input_mode = defs.input_mode.video
+    input_mode = defs.input_mode.image
 
     # training settings
     do_random_mirroring = True
+    do_random_cropping = True
+
     do_training = True
     epochs = 2
     optimizer = "SGD"

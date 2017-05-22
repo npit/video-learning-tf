@@ -1,10 +1,11 @@
 
 # files and io
-import os
-import pickle
+
+import os, pickle
+
 # utils
 from utils_ import *
-from random import shuffle, randrange
+from random import choice, randrange
 # image IO
 from scipy.misc import imread, imresize, imsave
 # displaying
@@ -39,6 +40,7 @@ class Dataset:
     data_format = None
 
     # input frames settings
+    raw_image_shape = None
     image_shape = None
     input_mode = None
 
@@ -46,6 +48,10 @@ class Dataset:
     mean_image = None
     do_mean_subtraction = None
 
+    # image processing
+    do_random_mirroring = None
+    crop_w_avail = None
+    crop_h_avail = None
 
     # video - based annotation
     # per-class video indexes
@@ -215,10 +221,9 @@ class Dataset:
                 img_1d = np.fromstring(img_string, dtype=np.uint8)
                 # watch it : hardcoding preferd dimensions according to the dataset object.
                 # it should be the shape of the stored image instead, for generic use
-                image = img_1d.reshape((self.image_shape[0], self.image_shape[1], self.image_shape[2]))
+                image = img_1d.reshape((self.raw_image_shape[0], self.raw_image_shape[1], self.raw_image_shape[2]))
 
-                if self.do_mean_subtraction:
-                    image = self.subtract_mean(image)
+                image = self.process_image(image)
                 images.append(image)
                 labels.append(label)
 
@@ -230,15 +235,6 @@ class Dataset:
                 error("Error reading tfrecord image.")
 
         return images, labels
-
-    def subtract_mean(self,image):
-        image = np.ndarray.astype(image, np.float32) - self.mean_image
-        # image = (image - np.min(image))
-        # image = image / np.max(image)
-        # image = image * 255
-        # image = np.ndarray.astype(image,np.uint8)
-        # self.display_image(image)
-        return image
 
 
 
@@ -320,6 +316,15 @@ class Dataset:
             frames.append(self.read_image(impath))
         return frames
 
+    def random_crop(self, image):
+        randh = choice(self.crop_h_avail)
+        randw = choice(self.crop_w_avail)
+        image = image[
+                randh:randh + self.image_shape[0],
+                randw:randw + self.image_shape[1],
+                :]
+        return image
+
     # read image from disk
     def read_image(self,imagepath):
         image = imread(imagepath)
@@ -333,15 +338,23 @@ class Dataset:
         image = image[:,:,:3]
         #  convert to BGR
         image = image[:, :, ::-1]
-        # resize
-        image = imresize(image, self.image_shape)
+
+        image = self.process_image(image)
+
+        return image
+    def process_image(self, image):
+        # take cropping
+        if self.do_random_cropping:
+            image = self.random_crop(image)
+        else:
+            image = imresize(image, self.raw_image_shape)
 
         if self.do_mean_subtraction:
             image = image - self.mean_image
+
         if self.do_random_mirroring:
             if not randrange(2):
                 image = image[:,::-1,:]
-
         return image
 
     # do preparatory work
@@ -356,8 +369,10 @@ class Dataset:
         self.data_format = sett.frame_format
         self.input_mode = sett.input_mode
         self.mean_image = sett.mean_image
-        self.image_shape = sett.image_shape
+        self.raw_image_shape = sett.raw_image_shape
         self.num_classes = sett.num_classes
+        self.do_random_cropping = sett.do_random_cropping
+        self.image_shape = sett.image_shape
         self.logger.info("Initializing run on folder [%s]" % self.run_folder)
 
         self.initialize_data(sett)
@@ -370,7 +385,7 @@ class Dataset:
 
         self.do_mean_subtraction = (self.mean_image is not None)
         if self.do_mean_subtraction:
-            # build it
+            # build the mean image
             height = self.image_shape[0]
             width = self.image_shape[1]
             blue = np.full((height, width), self.mean_image[0])
@@ -379,7 +394,9 @@ class Dataset:
             self.mean_image = np.ndarray.astype(np.stack([blue, green, red]),np.float32)
             self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
 
-
+        if self.do_random_cropping:
+            self.crop_h_avail = [i for i in range(0, self.raw_image_shape[0] - self.image_shape[0] - 1)]
+            self.crop_w_avail = [i for i in range(0, self.raw_image_shape[1] - self.image_shape[1] - 1)]
 
         self.logger.info("Completed dataset initialization.")
         self.tell()
@@ -421,11 +438,17 @@ class Dataset:
                      ])
 
     def initialize_data(self, sett):
-
+        self.logger.info("Initializing %s data on input mode %s." % (defs.data_format.str(self.data_format), defs.input_mode.str(self.input_mode)))
         if self.data_format == defs.data_format.tfrecord:
-            # initialize tfrecord
+            # initialize tfrecord, check file consistency
             self.input_source_files[defs.phase.train] = sett.input[defs.phase.train] + ".tfrecord"
             self.input_source_files[defs.phase.val] = sett.input[defs.phase.val] + ".tfrecord"
+
+            if not os.path.exists(self.input_source_files[defs.phase.train]):
+                error("Input file does not exist: %s" % self.input_source_files[defs.phase.train])
+            if not os.path.exists(self.input_source_files[defs.phase.train]):
+                error("Input file does not exist: %s" % self.input_source_files[defs.phase.train])
+
             self.reset_iterator(defs.phase.train)
             self.reset_iterator(defs.phase.val)
             # count number of items
