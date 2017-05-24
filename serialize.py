@@ -21,10 +21,9 @@ input_files = [
     #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_test_split1.txt"
     # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
     # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
-    "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
-    "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
+    "/home/npittaras/Documents/academic/msc-thesis/video-learning-tf/dataset/paths",
+    "/home/npittaras/Documents/academic/msc-thesis/video-learning-tf/dataset/pathsvids"
 ]
-input_modes = [ videos, videos]
 num_threads = 1
 num_items_per_thread = 500
 print_every = 50
@@ -44,10 +43,9 @@ red = np.full((height, width), mean_image[2])
 mean_image = np.stack([blue, green, red])
 mean_image = np.transpose(mean_image,[1,2,0])
 mean_image = np.ndarray.astype(mean_image,np.uint8)
-batchsize = 128
 
 num_frames_per_video = 16
-imageFormat = "jpg"
+image_format = "jgp"
 
 # datetime for timestamps
 def get_datetime_str():
@@ -112,7 +110,7 @@ def serialize_multithread(paths, labels, outfile, mode):
         logger.debug("Items scheduled list len : %d." % (len(paths_per_thread)))
         num_threads_in_run = len(paths_per_thread)
         for t in range(num_threads_in_run):
-            logger.debug("Frames scheduled per thread %d : %d." % (t, len(paths_per_thread[t])))
+            logger.debug("Frames scheduled for thread #%d : %d." % (t, len(paths_per_thread[t])))
         # start threads
         threads = [[] for _ in range(num_threads_in_run)]
         frames =  [[] for _ in range(num_threads_in_run)]
@@ -131,6 +129,9 @@ def serialize_multithread(paths, labels, outfile, mode):
         # write the read images to the tfrecord
 
         for t in range(num_threads_in_run):
+            if not frames[t]:
+                print("Thread # %d encountered an error." % t)
+                exit(1)
             serialize_to_tfrecord(frames[t], labels, outfile, writer)
             count += len(frames[t])
 
@@ -146,10 +147,16 @@ def serialize_multithread(paths, labels, outfile, mode):
 def read_item_list_threaded(paths, mode, storage, id):
     if mode == frames:
         for p in paths:
-            storage[id].append(read_image(p))
+            image = read_image(p)
+            if image is None:
+                return
+            storage[id].append(image)
     else:
         for p in paths:
-            storage[id].extend(get_video_frames(p))
+            vidframes = get_video_frames(p)
+            if vidframes is None:
+                return
+            storage[id].extend(vidframes)
 
 
 
@@ -174,14 +181,17 @@ def get_video_frames(path):
     frames = []
     basename = os.path.basename(path)
     for im in range(num_frames_per_video):
-        impath = path + ".%04d" % (1 + im) + "." + "jpg"
-        frames.append(read_image(impath))
+        impath = path + "%04d" % (1 + im) + "." + image_format
+        image = read_image(impath)
+        if image is None:
+            return None
+        frames.append(image)
     return frames
 
 
 
  # read image from disk
-def read_image(imagepath, useMeanCorrection=False):
+def read_image(imagepath):
     try:
         image = imread(imagepath)
 
@@ -201,9 +211,9 @@ def read_image(imagepath, useMeanCorrection=False):
         # there is a problem if we want to store mean-subtracted images, as we'll have to store a float per pixel
         # => 4 x the space of a uint8 image
         # image = image - mean_image
-    except Exception ex:
-        print(ex)
-        exit(1)
+    except Exception as ex:
+        print("Error :" + str(ex))
+        return None
 
     return image
 
@@ -285,7 +295,7 @@ def deserialize_from_tfrecord(self, iterator, images_per_iteration):
 def write():
     for idx in range(len(input_files)):
 
-        mode = input_modes[idx]
+        mode = None
         inp = input_files[idx]
         logger.info("Serializing %s in mode %s" % (inp,mode))
         logger.info("Reading input file.")
@@ -293,8 +303,17 @@ def write():
         labels = []
         with open(inp,'r') as f:
             for line in f:
+
                 path, label = line.split(' ')
-                paths.append(path.strip())
+                path = path.strip()
+
+                if mode is None:
+                    if path.endswith("." + image_format):
+                        mode = frames
+                    else:
+                        mode = videos
+
+                paths.append(path)
                 labels.append(int(label.strip()))
 
         output_file = inp + ".tfrecord"
@@ -303,30 +322,7 @@ def write():
         serialize_multithread(paths, labels,output_file , mode)
         logger.info("Done serializing %s " % inp)
         logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
-def read():
-    for idx in range(len(input_files)):
-        mode = input_modes[idx]
-        inp = input_files[idx] + ".tfrecord"
-        iter = tf.python_io.tf_record_iterator(path=inp)
-        reader = tf.TFRecordReader()
-
-        tfr = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train.tfrecord"
-        sss = tf.train.string_input_producer([tfr])
-        l = ["/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_CricketShot_g23_c05/v_CricketShot_g23_c05.0092.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_WritingOnBoard_g10_c01/v_WritingOnBoard_g10_c01.0023.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_Rowing_g21_c05/v_Rowing_g21_c05.0112.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_WallPushups_g13_c02/v_WallPushups_g13_c02.0095.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_Diving_g21_c03/v_Diving_g21_c03.0034.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_JavelinThrow_g13_c03/v_JavelinThrow_g13_c03.0061.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_PlayingSitar_g09_c02/v_PlayingSitar_g09_c02.0040.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_HorseRiding_g20_c06/v_HorseRiding_g20_c06.0078.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_PlayingDaf_g20_c01/v_PlayingDaf_g20_c01.0053.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_WallPushups_g14_c02/v_WallPushups_g14_c02.0111.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_MilitaryParade_g09_c04/v_MilitaryParade_g09_c04.0066.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_PullUps_g18_c01/v_PullUps_g18_c01.0036.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_HorseRace_g19_c05/v_HorseRace_g19_c05.0290.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_BasketballDunk_g21_c03/v_BasketballDunk_g21_c03.0015.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_PlayingDaf_g22_c03/v_PlayingDaf_g22_c03.0048.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_HulaHoop_g17_c01/v_HulaHoop_g17_c01.0019.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_Rowing_g10_c05/v_Rowing_g10_c05.0012.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_HulaHoop_g13_c01/v_HulaHoop_g13_c01.0059.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_BoxingSpeedBag_g15_c04/v_BoxingSpeedBag_g15_c04.0171.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_HighJump_g23_c01/v_HighJump_g23_c01.0052.jpg", "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames/v_GolfSwing_g20_c07/v_GolfSwing_g20_c07.0087.jpg"]
-        filename_queue = tf.train.string_input_producer(l)
-        _, example = reader.read(filename_queue)
-        im = deserialize_example(example)
-
-        s = tf.Session()
-        s.run(tf.global_variables_initializer())
-        aa = s.run(sss)
-
-        print(s.run(im))
-        next(iter)
-
-        # use given converter apis?
-# https://kwotsin.github.io/tech/2017/01/29/tfrecords.html
 
 
-# read()
+
 write()
