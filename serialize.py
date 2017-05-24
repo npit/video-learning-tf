@@ -182,25 +182,28 @@ def get_video_frames(path):
 
  # read image from disk
 def read_image(imagepath, useMeanCorrection=False):
-    image = imread(imagepath)
+    try:
+        image = imread(imagepath)
 
-    #logger.debug("Reading image %s" % imagepath)
+        #logger.debug("Reading image %s" % imagepath)
 
-    # for grayscale images, duplicate
-    # intensity to color channels
-    if len(image.shape) <= 2:
-        image = np.repeat(image[:, :, np.newaxis], 3, 2)
-    # drop channels other than RGB
-    image = image[:,:,:3]
-    #  convert to BGR
-    image = image[:, :, ::-1]
-    # resize
-    image = imresize(image, image_shape)
+        # for grayscale images, duplicate
+        # intensity to color channels
+        if len(image.shape) <= 2:
+            image = np.repeat(image[:, :, np.newaxis], 3, 2)
+        # drop channels other than RGB
+        image = image[:,:,:3]
+        #  convert to BGR
+        image = image[:, :, ::-1]
+        # resize
+        image = imresize(image, image_shape)
 
-    # there is a problem if we want to store mean-subtracted images, as we'll have to store a float per pixel
-    # => 4 x the space of a uint8 image
-    # image = image - mean_image
-
+        # there is a problem if we want to store mean-subtracted images, as we'll have to store a float per pixel
+        # => 4 x the space of a uint8 image
+        # image = image - mean_image
+    except Exception ex:
+        print(ex)
+        exit(1)
 
     return image
 
