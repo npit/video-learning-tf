@@ -10,7 +10,7 @@ import dataset_
 from utils_ import *
 
 import logging
-tf.logging.set_verbosity(tf.logging.INFO)
+
 
 
 # summaries for training & validation
@@ -40,6 +40,7 @@ class Settings:
     # save / load configuration
     resume_file = None
     runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
+    path_prepend_folder = None
 
     # architecture settings
     lstm_input_layer = "fc7"
@@ -95,6 +96,7 @@ class Settings:
         return self.resume_file is not None
     # configure logging settings
     def configure_logging(self):
+        tf.logging.set_verbosity(tf.logging.INFO)
         logfile = self.log_directory + os.path.sep + self.run_id + "_" + get_datetime_str() + ".log"
         print("Using logfile: %s" % logfile)
         if not os.path.exists(self.log_directory):

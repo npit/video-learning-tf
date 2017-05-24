@@ -117,69 +117,26 @@ class Dataset:
         self.frame_paths.extend([[],[]])
         self.frame_classes.extend([[], []])
         with open(self.input_source_files[defs.phase.train], 'r') as f:
-            for im in f:
-                impath,imlabel = im.split()
-                self.frame_paths[defs.phase.train].append(impath)
-                self.frame_classes[defs.phase.train].append(imlabel)
+            for path_label_str in f:
+                item_path, item_label = path_label_str.split()
+                if self.path_prepend_folder is not None:
+                    item_path = os.path.join(self.path_prepend_folder, item_path)
+                self.frame_paths[defs.phase.train].append(item_path)
+                self.frame_classes[defs.phase.train].append(item_label)
 
             with open(self.input_source_files[defs.phase.val], 'r') as f:
-                for im in f:
-                    impath, imlabel = im.split()
-                    self.frame_paths[defs.phase.val].append(impath)
-                    self.frame_classes[defs.phase.val].append(imlabel)
+                for path_label_str in f:
+                    item_path, item_label = path_label_str.split()
+                    self.frame_paths[defs.phase.val].append(item_path)
+                    self.frame_classes[defs.phase.val].append(item_label)
 
         self.logger.info("Done reading, %d frames for %s, %d frames for %s." % (
             len(self.frame_paths[defs.phase.train]), defs.phase.str(defs.phase.train),
             len(self.frame_paths[defs.phase.val]), defs.phase.str(defs.phase.val),
         ))
 
-    # partition to batches
-    def calculate_batches_videowise(self):
-        # arrange training set to batches
-        if os.path.isfile(self.batchConfigFileTrain) \
-                and os.path.isfile(self.batchConfigFileVal):
-            self.logger.info('Loading training batches from file: %s' % self.batchConfigFileTrain)
-            with open(self.batchConfigFileTrain, 'rb') as f:
-                self.batches_train = pickle.load(f)
-            self.logger.info('Loading validation batches from file: %s' % self.batchConfigFileVal)
 
-            with open(self.batchConfigFileVal, 'rb') as f:
-                self.batches_val = pickle.load(f)
-            return
-
-
-        # training set
-        for vididx in range(0, len(self.trainSet), self.batch_size_train):
-            firstVideoInBatch = vididx
-            lastVideoInBatch = min(firstVideoInBatch + self.batch_size_train, len(self.trainSet))
-            videos = self.trainSet[firstVideoInBatch: lastVideoInBatch]
-            lbls = self.trainLabels[firstVideoInBatch: lastVideoInBatch]
-            self.batches_train.append([videos, lbls])
-        self.logger.info('Calculated %d batches for %d videos,where %d x %d = %d and #videos = %d' %
-                         (len(self.batches_train) , len(self.trainSet), len(self.batches_train), self.batch_size_train,
-                          len(self.batches_train) * self.batch_size_train, len(self.batches_train[-1][0])))
-
-
-        # validation set
-        for vididx in range(0, len(self.valSet), self.batch_size_val):
-            firstVideoInBatch = vididx
-            lastVideoInBatch = min(firstVideoInBatch + self.batch_size_val, len(self.valSet))
-            videos = self.valSet[firstVideoInBatch: lastVideoInBatch]
-            lbls = self.valLabels[firstVideoInBatch: lastVideoInBatch]
-            self.batches_val.append([videos, lbls])
-
-        self.logger.info('Calculated %d batches for %d videos,where %d x %d = %d and #videos = %d' %
-                         (len(self.batches_val), len(self.valSet), len(self.batches_val), self.batch_size_val,
-                          len(self.batches_val) * self.batch_size_val, len(self.batches_val[-1][0])))
-
-        # save config
-        with open(self.batchConfigFileTrain,'wb') as f:
-            pickle.dump(self.batches_train, f)
-        with open(self.batchConfigFileVal,'wb') as f:
-            pickle.dump(self.batches_val, f)
-
-       # display image
-
+    # display image
     def display_image(self,image,label=None):
         # print(label)
         #plt.title(label)
@@ -366,6 +323,8 @@ class Dataset:
         self.do_validation = sett.do_validation
         self.validation_interval = sett.validation_interval
         self.run_folder = sett.runFolder
+        self.path_prepend_folder = sett.path_prepend_folder
+
         self.data_format = sett.frame_format
         self.input_mode = sett.input_mode
         self.mean_image = sett.mean_image
@@ -401,41 +360,6 @@ class Dataset:
         self.logger.info("Completed dataset initialization.")
         self.tell()
 
-
-    # video-wise initialization
-    def initialize_videowise(self, sett):
-        # here frames are fetched video-wise, i.e. all video frames will be in order for a given video
-        self.read_video_metadata()
-        self.calculate_batches_videowise()
-
-    # framewise initialization
-    def initialize_framewise(self,sett):
-        # read input files
-        self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
-        self.input_source_files[defs.phase.val] = sett.input[defs.phase.val]
-        # read frames and classes
-        self.read_frames_metadata()
-
-        # calculate batches - obsolete if input is tfrecord
-        self.batches_train = []
-        self.batches_val = []
-
-        # train
-        imgs = sublist(self.frame_paths[defs.phase.train], self.batch_size_train)
-        lbls = sublist(self.frame_classes[defs.phase.train], self.batch_size_train)
-        for l in range(len(lbls)):
-            self.batches_train.append([
-                imgs[l],
-                list(map(int, lbls[l]))
-                     ])
-        # val
-        imgs = sublist(self.frame_paths[defs.phase.val], self.batch_size_val)
-        lbls = sublist(self.frame_classes[defs.phase.val], self.batch_size_val)
-        for l in range(len(lbls)):
-            self.batches_val.append([
-                imgs[l],
-                list(map(int, lbls[l]))
-                     ])
 
     def initialize_data(self, sett):
         self.logger.info("Initializing %s data on input mode %s." % (defs.data_format.str(self.data_format), defs.input_mode.str(self.input_mode)))

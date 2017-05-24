@@ -1,21 +1,16 @@
 import tensorflow as tf
 import numpy as np
 from scipy.misc import imread, imresize, imsave
-import matplotlib.pyplot as plt
+
 import logging, time, threading, os
 from utils_ import *
-
-# input test/train
-# input_files = [
-#     "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
-# "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
-# "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
-# "/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
-# ]
+#import matplotlib.pyplot as plt
 
 # frames or videos
 frames, videos = range(2)
 
+# input paths and folder to prepend to each path in the files
+path_prepend_folder = None
 input_files = [
     #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_train_split1.txt",
     #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_test_split1.txt"
@@ -29,9 +24,6 @@ num_items_per_thread = 500
 print_every = 50
 
 
-
-#input_mode = "videos"
-
 image_shape = (240,320,3)
 
 mean_image = [103.939, 116.779, 123.68]
@@ -44,8 +36,8 @@ mean_image = np.stack([blue, green, red])
 mean_image = np.transpose(mean_image,[1,2,0])
 mean_image = np.ndarray.astype(mean_image,np.uint8)
 
-num_frames_per_video = 16
-image_format = "jgp"
+num_frames_per_video = 13
+image_format = "png"
 
 # datetime for timestamps
 def get_datetime_str():
@@ -124,13 +116,12 @@ def serialize_multithread(paths, labels, outfile, mode):
             threads[t].join()
 
         for t in range(num_threads_in_run):
-            logger.debug("Frames produced per thread %d : %d." % (t, len(frames[t])))
+            logger.debug("Frames produced  for thread #%d : %d." % (t, len(frames[t])))
 
         # write the read images to the tfrecord
-
         for t in range(num_threads_in_run):
             if not frames[t]:
-                print("Thread # %d encountered an error." % t)
+                logger.error("Thread # %d encountered an error." % t)
                 exit(1)
             serialize_to_tfrecord(frames[t], labels, outfile, writer)
             count += len(frames[t])
@@ -212,18 +203,18 @@ def read_image(imagepath):
         # => 4 x the space of a uint8 image
         # image = image - mean_image
     except Exception as ex:
-        print("Error :" + str(ex))
+        logger.error("Error :" + str(ex))
         return None
 
     return image
 
 
-def display_image(image,label=None):
-    print(label)
-    plt.title(label)
-    plt.imshow(image)
-    plt.show()
-    # plt.waitforbuttonpress()
+# def display_image(image,label=None):
+#     print(label)
+#     plt.title(label)
+#     plt.imshow(image)
+#     plt.show()
+#     # plt.waitforbuttonpress()
 
 
 def deserialize_example(ex):
@@ -239,58 +230,6 @@ def deserialize_example(ex):
         })
     return tf.decode_raw(features['image_raw'], tf.uint8)
 
-def deserialize_single(str_data):
-    example = tf.train.Example()
-    example.ParseFromString(str_data)
-
-    height = int(example.features.feature['height']
-                 .int64_list
-                 .value[0])
-    width = int(example.features.feature['width']
-                .int64_list
-                .value[0])
-    img_string = (example.features.feature['image_raw']
-                  .bytes_list
-                  .value[0])
-    depth = (example.features.feature['depth']
-             .int64_list
-             .value[0])
-    # label = (example.features.feature['label']
-    #          .int64_list
-    #          .value[0])
-    img_1d = np.fromstring(img_string, dtype=np.uint8)
-    # watch it : hardcoding preferd dimensions according to the dataset object.
-    # it should be the shape of the stored image instead, for generic use
-    image = img_1d.reshape((image_shape[0], image_shape[1], image_shape[2]))
-    return image
-
-
-def deserialize_from_tfrecord(self, iterator, images_per_iteration):
-    # images_per_iteration :
-    images = []
-    for _ in range(images_per_iteration * num_frames_per_video):
-        try:
-            string_record = next(iterator)
-
-            image = deserialize_single(string_record)
-
-
-            subtract_mean = True
-            if subtract_mean:
-                image = np.ndarray.astype(image, np.float32) - mean_image
-            images.append(image)
-            # labels.append(label)
-            # imsave('reconstructedBGR.JPEG', image)
-            # image = image[:, :, ::-1] # swap 1st and 3rd dimension
-            # imsave('reconstructedBGR__2.JPEG', image)
-        except StopIteration:
-            break
-        except Exception as ex:
-            logger.error('Exception at reading image, loading from scratch')
-            logger.error(ex)
-
-    # return images, labels
-    return images
 
 def write():
     for idx in range(len(input_files)):
@@ -308,11 +247,17 @@ def write():
                 path = path.strip()
 
                 if mode is None:
-                    if path.endswith("." + image_format):
+                    if path.lower().endswith("." + image_format.lower()):
                         mode = frames
+                        logger.info("Set input mode to frames from paths-file items suffixes.")
                     else:
                         mode = videos
+                        strlen = min(len(path), len(image_format)  + 1)
+                        suffix = path[-strlen:]
+                        logger.info("Set input mode to videos since paths-file item suffix [%s] differs from image format [%s]." % (suffix, image_format))
 
+                if path_prepend_folder is not None:
+                    path = os.path.join(path_prepend_folder, path)
                 paths.append(path)
                 labels.append(int(label.strip()))
 
