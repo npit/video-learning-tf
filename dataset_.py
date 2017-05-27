@@ -378,14 +378,21 @@ class Dataset:
             # count number of items
             num_train = 0
             num_val = 0
+            num_print = 1000
             self.logger.info("Counting tfrecord data.")
             try:
-                while next(self.train_iterator): num_train = num_train + 1
+                for _ in (self.train_iterator):
+                    num_train = num_train + 1
+                    if num_train > 0 and num_train % num_print == 0:
+                        self.logger.info("Counted %d instances so far." % num_train)
             except StopIteration:
                 pass
             self.logger.info("Train tfrecord data with %d entries." % num_train)
             try:
-                while next(self.val_iterator):  num_val = num_val + 1
+                for _ in self.val_iterator:
+                    num_val = num_val + 1
+                    if num_val > 0 and num_val % num_print == 0:
+                        self.logger.info("Counted %d instances so far." % num_val)
             except StopIteration:
                 pass
             self.logger.info("Validation tfrecord data with %d entries." % num_val)

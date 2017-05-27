@@ -10,19 +10,13 @@ from utils_ import *
 frames, videos = range(2)
 
 # input paths and folder to prepend to each path in the files
-path_prepend_folder = None
+path_prepend_folder = "/home/npittaras/Datasets/UCF101/frames"
 input_files = [
-    #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_train_split1.txt",
-    #"/home/nik/uoa/msc-thesis/implementation/dataset/ucf101/ucf101_singleFrame_RGB_test_split1.txt"
-    # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
-    # "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
-    "/home/npittaras/Documents/academic/msc-thesis/video-learning-tf/dataset/paths",
-    "/home/npittaras/Documents/academic/msc-thesis/video-learning-tf/dataset/pathsvids"
+"/home/npittaras/single_frame_run/input_16frames_pervid/ucf101_split1_trainVideos.txt.singleframe_frames_16.shuffled",
+"/home/npittaras/single_frame_run/input_16frames_pervid/ucf101_split1_testVideos.txt.singleframe_frames_16.shuffled"
 ]
-num_threads = 1
+num_threads = 4
 num_items_per_thread = 500
-print_every = 50
-
 
 image_shape = (240,320,3)
 
@@ -36,8 +30,8 @@ mean_image = np.stack([blue, green, red])
 mean_image = np.transpose(mean_image,[1,2,0])
 mean_image = np.ndarray.astype(mean_image,np.uint8)
 
-num_frames_per_video = 13
-image_format = "png"
+num_frames_per_video = 16
+image_format = "jpg"
 
 # datetime for timestamps
 def get_datetime_str():
@@ -46,9 +40,9 @@ def get_datetime_str():
 
 # configure logging settings
 def configure_logging():
-    logging_level = logging.DEBUG
+    logging_level = logging.INFO
 
-    logfile = "serialize_" + get_datetime_str() + ".log"
+    logfile = "log_serialize_" + get_datetime_str() + ".log"
     print("Using logfile: %s" % logfile)
 
     logger = logging.getLogger(__name__)
@@ -57,10 +51,10 @@ def configure_logging():
     formatter = logging.Formatter('%(asctime)s| %(levelname)7s - %(filename)15s - line %(lineno)4d - %(message)s')
 
     # # file handler
-    # handler = logging.FileHandler(logfile)
-    # handler.setLevel(logging_level)
-    # handler.setFormatter(formatter)
-    # logger.addHandler(handler)
+    handler = logging.FileHandler(logfile)
+    handler.setLevel(logging_level)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
     # console handler
     consoleHandler = logging.StreamHandler()
@@ -186,7 +180,7 @@ def read_image(imagepath):
     try:
         image = imread(imagepath)
 
-        #logger.debug("Reading image %s" % imagepath)
+        logger.debug("Reading image %s" % imagepath)
 
         # for grayscale images, duplicate
         # intensity to color channels

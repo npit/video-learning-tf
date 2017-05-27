@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tflearn
+
 
 # loads of TODO, shameful display
 def define(inputTensor, input_batch_size, num_classes, keep_prob = 0.5):

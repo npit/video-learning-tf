@@ -39,7 +39,7 @@ class Settings:
 
     # save / load configuration
     resume_file = None
-    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
+    runFolder = "/home/npittaras/single_frame_run"
     path_prepend_folder = None
 
     # architecture settings
@@ -70,7 +70,7 @@ class Settings:
 
     logging_level = logging.DEBUG
     log_directory = "logs"
-    tensorboard_folder = "/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs"
+    tensorboard_folder = "tensorboard_graphs"
 
     ################################
     # internal variables
@@ -89,7 +89,7 @@ class Settings:
     logger = None
 
     # misc
-    saver = tf.train.Saver()
+    saver = None
 
     # should resume
     def should_resume(self):
@@ -153,11 +153,6 @@ class Settings:
             self.resume_metadata()
 
         self.set_input_files()
-        # no can do - we'd have to store the image in float if we stored the processed image
-        # if self.frame_format == defs.frame_format.tfrecord:
-        #     if self.mean_image is not None:
-        #         self.logger.warning("Turning off mean subtraction, for TFRecord image mode, since it must be already applied.")
-        #         self.mean_image = None
 
     # settings are ok
     def good(self):
@@ -186,6 +181,8 @@ class Settings:
     # restore graph variables
     def resume_graph(self, sess):
         if self.should_resume():
+            if self.saver is None:
+                self.saver = tf.train.Saver()
             savefile_graph = self.runFolder + os.path.sep + "checkpoint" + os.path.sep + ".graph"
             self.logger.info("Resuming iteration snap from file:" + savefile_graph)
 
@@ -199,6 +196,8 @@ class Settings:
     # save graph and dataset stuff
     def save(self, sess, dataset,progress, global_step):
         try:
+            if self.saver is None:
+                self.saver = tf.train.Saver()
             # save the graph
             checkpoints_folder = self.runFolder + os.path.sep + "checkpoints"
             if not os.path.exists(checkpoints_folder):
