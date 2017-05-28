@@ -53,11 +53,11 @@ class Dataset:
     crop_w_avail = None
     crop_h_avail = None
 
-    # video - based annotation
 
     # per-class video indexes
     trainPerClass = []
     valPerClass = []
+
     # total list
     trainSet = []
     trainLabels = []
@@ -76,7 +76,7 @@ class Dataset:
     iterator = None
 
     # training
-    batch_size_train = 10
+    batch_size_train = None
     batches_train = []
     batch_index_train = None
     train_iterator = None
@@ -84,7 +84,7 @@ class Dataset:
     # validation
     do_validation = False
     validation_interval = None
-    batch_size_val = 10
+    batch_size_val = None
     batches_val = []
     batch_index_val = None
     val_iterator = None
@@ -334,6 +334,8 @@ class Dataset:
         self.image_shape = sett.image_shape
         self.logger.info("Initializing run on folder [%s]" % self.run_folder)
 
+        self.batch_size_train = sett.batch_size_train
+        self.batch_size_val = sett.batch_size_val
         self.initialize_data(sett)
 
         # transfer resumed snapshot settings

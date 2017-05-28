@@ -56,7 +56,7 @@ class Settings:
     # training settings
     do_random_mirroring = True
     do_random_cropping = True
-
+    batch_size_train = 10
     do_training = True
     epochs = 2
     optimizer = "SGD"
@@ -65,6 +65,7 @@ class Settings:
     # validation settings
     do_validation = True
     validation_interval = 50
+    batch_size_val = 10
 
     # logging
     logging_level = logging.DEBUG
