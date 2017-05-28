@@ -11,7 +11,7 @@ from scipy.misc import imread, imresize, imsave
 # displaying
 import matplotlib.pyplot as plt
 
-
+# Dataset class
 class Dataset:
 
     num_classes = None
@@ -54,6 +54,7 @@ class Dataset:
     crop_h_avail = None
 
     # video - based annotation
+
     # per-class video indexes
     trainPerClass = []
     valPerClass = []
@@ -135,7 +136,6 @@ class Dataset:
             len(self.frame_paths[defs.phase.val]), defs.phase.str(defs.phase.val),
         ))
 
-
     # display image
     def display_image(self,image,label=None):
         # print(label)
@@ -148,8 +148,7 @@ class Dataset:
         plt.show()
         # plt.waitforbuttonpress()
 
-
-
+    # read from tfrecord
     def deserialize_from_tfrecord(self, iterator, images_per_iteration):
         # images_per_iteration :
         images = []
@@ -193,8 +192,7 @@ class Dataset:
 
         return images, labels
 
-
-
+    # set dataset phase
     def set_phase(self, phase):
         # if the network is switching phases, store the index
         # to continue later
@@ -223,7 +221,7 @@ class Dataset:
             self.iterator = self.val_iterator
             self.batch_size = self.batch_size_val
 
-
+    # read next batch
     def read_next_batch(self):
         images = []
         labels = []
@@ -262,7 +260,6 @@ class Dataset:
         self.batch_index = self.batch_index + 1
         return images, labels_onehot#, labels
 
-
     # read all frames for a video
     def get_video_frames(self,videopath):
         self.logger.debug("Reading frames of video idx %s from disk." % videopath)
@@ -273,6 +270,7 @@ class Dataset:
             frames.append(self.read_image(impath))
         return frames
 
+    # get a random image crop
     def random_crop(self, image):
         randh = choice(self.crop_h_avail)
         randw = choice(self.crop_w_avail)
@@ -299,6 +297,8 @@ class Dataset:
         image = self.process_image(image)
 
         return image
+
+    # apply image post-process
     def process_image(self, image):
         # take cropping
         if self.do_random_cropping:
@@ -360,7 +360,7 @@ class Dataset:
         self.logger.info("Completed dataset initialization.")
         self.tell()
 
-
+    # run data-related initialization pre-run
     def initialize_data(self, sett):
         self.logger.info("Initializing %s data on input mode %s." % (defs.data_format.str(self.data_format), defs.input_mode.str(self.input_mode)))
         if self.data_format == defs.data_format.tfrecord:
@@ -375,30 +375,9 @@ class Dataset:
 
             self.reset_iterator(defs.phase.train)
             self.reset_iterator(defs.phase.val)
-            # count number of items
-            num_train = 0
-            num_val = 0
-            num_print = 1000
-            self.logger.info("Counting tfrecord data.")
-            try:
-                for _ in (self.train_iterator):
-                    num_train = num_train + 1
-                    if num_train > 0 and num_train % num_print == 0:
-                        self.logger.info("Counted %d instances so far." % num_train)
-            except StopIteration:
-                pass
-            self.logger.info("Train tfrecord data with %d entries." % num_train)
-            try:
-                for _ in self.val_iterator:
-                    num_val = num_val + 1
-                    if num_val > 0 and num_val % num_print == 0:
-                        self.logger.info("Counted %d instances so far." % num_val)
-            except StopIteration:
-                pass
-            self.logger.info("Validation tfrecord data with %d entries." % num_val)
-
-            self.reset_iterator(defs.phase.train)
-            self.reset_iterator(defs.phase.val)
+            # count or get number of items
+            num_train = self.get_input_data_count(defs.phase.train)
+            num_val = self.get_input_data_count(defs.phase.val)
 
             # restore batch index to snapshot if needed
             if self.batch_index > 0:
@@ -444,11 +423,33 @@ class Dataset:
                     list(map(int, lbls[l]))
                          ])
 
+    # read or count how many data items are in training / validation
+    def get_input_data_count(self,phase):
+        if phase == defs.phase.train:
+            input_file  = self.input_source_files[defs.phase.train]
+            iterator = self.train_iterator
+        else:
+            input_file = self.input_source_files[defs.phase.val]
 
+        if not os.path.exists(input_file + ".size"):
+            num = 0
+            num_print = 1000
+            self.logger.info("No size file for %s data. Counting..." % defs.phase.str(phase))
+            try:
+                for _ in iterator:
+                    num = num + 1
+                    if num > 0 and num % num_print == 0:
+                        self.logger.info("Counted %d instances so far." % num)
+            except StopIteration:
+                pass
+            self.logger.info("Counted tfrecord data: %d entries." % num)
+            self.reset_iterator(iterator)
+        else:
+            with open(input_file + ".size","r") as ff:
+                num = int(ff.read())
+            self.logger.info("Got tfrecord data: %d entries." % num)
 
-
-
-
+    # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
         if not self.data_format == defs.data_format.tfrecord:
             return
@@ -486,7 +487,6 @@ class Dataset:
         self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.train), self.batch_size_train, len(self.batches_train), self.batch_index_train))
         self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.val), self.batch_size_val, len(self.batches_val), self.batch_index_val))
 
-
     # get the batch size
     def get_batch_size(self):
         if self.phase == "train":
@@ -497,7 +497,6 @@ class Dataset:
     # get the global step
     def get_global_step(self):
         return self.epoch_index * self.batch_size_train + self.batch_index_train
-
 
     # print iteration information
     def print_iter_info(self, num_images, num_labels):
@@ -510,7 +509,6 @@ class Dataset:
 
     # reset data reading params for phase
     def reset_phase(self, phase):
-
         if phase == defs.phase.train:
             self.batch_index_train = 0
             self.reset_iterator(defs.phase.train)
@@ -521,5 +519,6 @@ class Dataset:
         self.phase = None
         self.set_phase(phase)
 
+    # check if testing should happen now
     def should_test_now(self):
         return self.do_validation and (self.batch_count > 0) and ((self.batch_count // self.validation_interval) == 0)

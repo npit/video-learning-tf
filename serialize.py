@@ -10,10 +10,10 @@ from utils_ import *
 frames, videos = range(2)
 
 # input paths and folder to prepend to each path in the files
-path_prepend_folder = "/home/npittaras/Datasets/UCF101/frames"
+path_prepend_folder = "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames"
 input_files = [
-"/home/npittaras/single_frame_run/input_16frames_pervid/ucf101_split1_trainVideos.txt.singleframe_frames_16.shuffled",
-"/home/npittaras/single_frame_run/input_16frames_pervid/ucf101_split1_testVideos.txt.singleframe_frames_16.shuffled"
+"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
+"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test"
 ]
 num_threads = 4
 num_items_per_thread = 500
@@ -77,6 +77,11 @@ def _bytes_feature( value):
 
 
 def serialize_multithread(paths, labels, outfile, mode):
+
+    # first of all, write the number of items in the tfrecord
+    with open(outfile + ".size","w") as f:
+        f.write("%d" % len(paths))
+
     # split up paths list
     num_images_per_thread_run = num_items_per_thread * num_threads
     paths_per_thread_run = sublist(paths, num_images_per_thread_run)
