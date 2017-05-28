@@ -1,16 +1,20 @@
 # ignore all files
-/*
+./*
 
 
 
 # except from:
 !.gitignore
+!models/alexnet/get_weights_file.sh
 !*.py
 !README.md
 !view-tensorboard.sh
 !examples
 
+# also ignore all:
 *.tfrecord
-
-examples/checkpoints
+examples/checkpoints/*
 *.log
+**/__pycache__/*
+*.npy
+*~

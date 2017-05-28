@@ -1,4 +1,5 @@
 import tensorflow as tf
+import os
 # models
 from models.alexnet import alexnet
 from models.lstm import lstm
@@ -24,8 +25,10 @@ class LRCN:
         self.logger = settings.logger
         batchLabelsShape = [None, dataset.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
-        weightsFile = "/home/nik/uoa/msc-thesis/implementation/models/alexnet/bvlc_alexnet.npy"
-
+        weightsFile = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
+        if not os.path.exists(weightsFile):
+            self.logger.error("Weights file %s does not exist." % weightsFile);
+            exit("File not found");
 
         if run_mode == defs.run_types.singleframe:
             with tf.name_scope("dcnn_workflow"):
