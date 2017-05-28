@@ -39,7 +39,7 @@ class Settings:
 
     # save / load configuration
     resume_file = None
-    runFolder = "/home/npittaras/single_frame_run"
+    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
     path_prepend_folder = None
 
     # architecture settings
@@ -49,7 +49,7 @@ class Settings:
 
     # data input format
     raw_image_shape = (240, 320, 3)
-    image_shape = (227,227,3)
+    image_shape = (227, 227, 3)
     frame_format = defs.data_format.tfrecord
     input_mode = defs.input_mode.image
 
@@ -67,13 +67,14 @@ class Settings:
     validation_interval = 50
 
     # logging
-
     logging_level = logging.DEBUG
-    log_directory = "logs"
     tensorboard_folder = "tensorboard_graphs"
 
+    # end of user - settable parameters
     ################################
+
     # internal variables
+    ###############################
 
     # input data files
     input = [[],[]]
@@ -97,13 +98,8 @@ class Settings:
     # configure logging settings
     def configure_logging(self):
         tf.logging.set_verbosity(tf.logging.INFO)
-        logfile = self.log_directory + os.path.sep + self.run_id + "_" + get_datetime_str() + ".log"
+        logfile = os.path.join(self.runFolder ,"log_" +  self.run_id + "_" + get_datetime_str() + ".log")
         print("Using logfile: %s" % logfile)
-        if not os.path.exists(self.log_directory):
-            try:
-                os.makedirs(self.log_directory)
-            except Exception as ex:
-                error(ex)
 
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(self.logging_level)
@@ -122,27 +118,21 @@ class Settings:
         self.logger.addHandler(handler)
         self.logger.addHandler(consoleHandler)
 
-    # generate required save files
-    def run_folder_to_savefiles(self):
-        savefolder = self.runFolder + os.path.sep + "checkpoints"
-        return self.runFolder
-
     def set_input_files(self):
         # setup input files
         if self.input_mode == defs.input_mode.image:
-            self.input[defs.phase.train] = self.runFolder + os.path.sep + "frames.train"
-            self.input[defs.phase.val] = self.runFolder + os.path.sep + "frames.test"
+            basefilename = "frames"
         elif self.input_mode == defs.input_mode.video:
-            self.input[defs.phase.train] = self.runFolder + os.path.sep + "videos.train"
-            self.input[defs.phase.val] = self.runFolder + os.path.sep + "videos.test"
+            basefilename = "videos"
+
+        self.input[defs.phase.train] = os.path.join(self.runFolder, basefilename + ".train")
+        self.input[defs.phase.val] = os.path.join(self.runFolder, basefilename + ".test")
+
 
     # initialize stuff
     def initialize(self):
         if not os.path.exists(self.runFolder):
             error("Non existent run folder %s" % self.runFolder)
-
-        if self.runFolder[-1] == os.path.sep:
-            self.runFolder = self.runFolder[0:-1]
 
         # configure the logs
         self.configure_logging()
@@ -161,7 +151,7 @@ class Settings:
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
-            savefile_metapars = self.runFolder + os.path.sep + "checkpoints" + os.path.sep + self.resume_file + ".snap"
+            savefile_metapars = os.path.join(self.runFolder,"checkpoints",+ self.resume_file + ".snap")
 
             self.logger.info("Resuming iteration snap from file:" + savefile_metapars)
 
@@ -183,7 +173,7 @@ class Settings:
         if self.should_resume():
             if self.saver is None:
                 self.saver = tf.train.Saver()
-            savefile_graph = self.runFolder + os.path.sep + "checkpoint" + os.path.sep + ".graph"
+            savefile_graph = os.path.join(self.runFolder,"checkpoint", ".graph")
             self.logger.info("Resuming iteration snap from file:" + savefile_graph)
 
             try:
@@ -199,11 +189,11 @@ class Settings:
             if self.saver is None:
                 self.saver = tf.train.Saver()
             # save the graph
-            checkpoints_folder = self.runFolder + os.path.sep + "checkpoints"
+            checkpoints_folder = os.path.join(self.runFolder, "checkpoints")
             if not os.path.exists(checkpoints_folder):
                 os.makedirs(checkpoints_folder)
 
-            basename = checkpoints_folder + os.path.sep +  "saved_" + progress
+            basename = os.path.join(checkpoints_folder,get_datetime_str() + "-saved_" + progress)
             savefile_graph = basename + ".graph"
             savefile_metapars = basename + ".snap"
 
@@ -240,11 +230,11 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             # read  batch
             images, labels_onehot = dataset.read_next_batch()
             dataset.print_iter_info( len(images) , len(labels_onehot))
-            summaries_train, batch_loss, _, accuracy = sess.run(
-                [summaries.train_merged, lrcn.loss , lrcn.optimizer, lrcn.accuracyTrain],
+            summaries_train, batch_loss, _ = sess.run(
+                [summaries.train_merged, lrcn.loss , lrcn.optimizer],
                 feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
-            settings.logger.info("Train accuracy: %2.5f" % accuracy)
+            settings.logger.info("Batch training loss : %2.5f" % batch_loss)
 
             tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_step())
             tboard_writer.flush()

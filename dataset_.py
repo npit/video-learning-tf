@@ -442,12 +442,14 @@ class Dataset:
                         self.logger.info("Counted %d instances so far." % num)
             except StopIteration:
                 pass
-            self.logger.info("Counted tfrecord data: %d entries." % num)
+            self.logger.info("Counted tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
             self.reset_iterator(iterator)
         else:
             with open(input_file + ".size","r") as ff:
                 num = int(ff.read())
-            self.logger.info("Got tfrecord data: %d entries." % num)
+            self.logger.info("Got tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
+
+        return num
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):

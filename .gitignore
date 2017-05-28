@@ -13,3 +13,4 @@
 *.tfrecord
 
 examples/checkpoints
+*.log
