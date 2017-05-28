@@ -64,7 +64,7 @@ class Settings:
 
     # validation settings
     do_validation = True
-    validation_interval = 50
+    validation_interval = 5
     batch_size_val = 10
 
     # logging
@@ -226,7 +226,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         error("Wacky configuration, exiting.")
 
     for epochIdx in range(dataset.epochs):
-        dataset.set_phase(defs.phase.train)
+        dataset.set_or_swap_phase(defs.phase.train)
         while dataset.loop():
             # read  batch
             images, labels_onehot = dataset.read_next_batch()
@@ -235,7 +235,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
                 [summaries.train_merged, lrcn.loss , lrcn.optimizer],
                 feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
-            settings.logger.info("Batch training loss : %2.5f" % batch_loss)
+            settings.logger.info("Batch loss : %2.5f" % batch_loss)
 
             tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_step())
             tboard_writer.flush()
@@ -243,8 +243,9 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             if settings.do_validation:
                 test_ran = test(dataset, lrcn, sess, tboard_writer, summaries)
                 if test_ran:
-                    dataset.set_phase(defs.phase.train)
+                    dataset.set_or_swap_phase(defs.phase.train)
 
+        dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
         # save a checkpoint every epoch
         settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_global_step()),
                           global_step=dataset.get_global_step())
@@ -259,7 +260,8 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
 
     if dataset.should_test_now():
         test_accuracies = []
-        dataset.set_phase(defs.phase.val)
+        dataset.set_or_swap_phase(defs.phase.val)
+        dataset.reset_phase(defs.phase.val)
         # validation
         while dataset.loop():
             images, labels_onehot = dataset.read_next_batch()
@@ -269,10 +271,10 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
                                                feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
             test_accuracies.append(accuracy)
         accuracy = sum(test_accuracies) / len(test_accuracies)
-        print("Validation accuracy: %2.5f" % accuracy)
+        dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
         tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
         tboard_writer.flush()
-        dataset.reset_phase(defs.phase.val)
+
         return True
     return False
 

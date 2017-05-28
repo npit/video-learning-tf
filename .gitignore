@@ -1,6 +1,7 @@
-# ignore all files
-./*
+# ignore all files and folders
 
+*/
+*
 
 
 # except from:
@@ -13,7 +14,7 @@
 
 # also ignore all:
 *.tfrecord
-examples/checkpoints/*
+examples/checkpoints/**
 *.log
 **/__pycache__/*
 *.npy

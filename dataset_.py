@@ -192,22 +192,23 @@ class Dataset:
 
         return images, labels
 
-    # set dataset phase
-    def set_phase(self, phase):
+    # set dataset phase, but keep track of potential current
+    def set_or_swap_phase(self, phase):
         # if the network is switching phases, store the index
         # to continue later
         if self.phase == phase:
             return
         if self.phase is not None:
-            self.logger.info("Suspending phase [%s], on current batch index [%d]" % (defs.phase.str(self.phase),
-                                                                           self.batch_index))
+            self.logger.info("Suspending phase [%s] @ batch [%d]" % (defs.phase.str(self.phase), self.batch_index))
             if self.phase == defs.phase.train:
                 self.batch_index_train = self.batch_index
             else:
                 self.batch_index_val = self.batch_index
+        self.set_current_phase(phase)
 
-        self.logger.info("Setting phase [%s], on batch index [%d]" % (defs.phase.str(phase),
-                                                                        self.batch_index_val))
+    # assign the current phase variables to the argument phase
+    def set_current_phase(self, phase, is_new_phase = True):
+
         # update phase variables
         self.phase = phase
         if self.phase == defs.phase.train:
@@ -220,6 +221,22 @@ class Dataset:
             self.batch_index = self.batch_index_val
             self.iterator = self.val_iterator
             self.batch_size = self.batch_size_val
+        if is_new_phase:
+            self.logger.info("Starting phase [%s] @ batch [%d]." % (defs.phase.str(phase), self.batch_index))
+
+    # reset data reading params for phase
+    def reset_phase(self, phase):
+        self.logger.info("Reseting phase [%s]." % defs.phase.str(phase))
+        if phase == defs.phase.train:
+            self.batch_index_train = 0
+            self.reset_iterator(defs.phase.train)
+        else:
+            self.batch_index_val = 0
+            self.reset_iterator(defs.phase.val)
+        # if argument phase is the current one, also update current phase variables
+        if phase == self.phase:
+            self.set_current_phase(phase, is_new_phase=False)
+
 
     # read next batch
     def read_next_batch(self):
@@ -504,25 +521,22 @@ class Dataset:
 
     # print iteration information
     def print_iter_info(self, num_images, num_labels):
-        self.logger.info("Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images, %3d labels" %
+        if self.phase == defs.phase.train:
+            self.logger.info("Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images, %3d labels" %
                          (defs.phase.str(self.phase), self.epoch_index + 1, self.epochs, self.batch_index, len(self.batches), num_images, num_labels))
+        # same as train, but no epoch
+        elif self.phase == defs.phase.val:
+            self.logger.info("Mode: [%s], batch %4d / %4d : %3d images, %3d labels" %
+                         (defs.phase.str(self.phase), self.batch_index, len(self.batches), num_images, num_labels))
 
     # specify valid loop iteration
     def loop(self):
         return self.batch_index < len(self.batches)
 
-    # reset data reading params for phase
-    def reset_phase(self, phase):
-        if phase == defs.phase.train:
-            self.batch_index_train = 0
-            self.reset_iterator(defs.phase.train)
-        else:
-            self.batch_index_val = 0
-            self.reset_iterator(defs.phase.val)
-        # pass on the values to the current phase
-        self.phase = None
-        self.set_phase(phase)
-
     # check if testing should happen now
     def should_test_now(self):
-        return self.do_validation and (self.batch_count > 0) and ((self.batch_count // self.validation_interval) == 0)
+        retval = self.do_validation and (self.batch_count > 0) and ((self.batch_count % self.validation_interval) == 0)
+        self.batch_count = self.batch_count + 1
+        return retval
+
+
