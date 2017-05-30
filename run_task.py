@@ -38,8 +38,8 @@ class Settings:
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = "290517_145857-saved_ep_6_btch_500.graph-500"
-    runFolder = "/home/npittaras/single_frame_run"
+    resume_file = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/checkpoints/300517_043112-saved_ep_3_btch_20.graph-20"
+    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
     path_prepend_folder = None
 
     # architecture settings
@@ -56,7 +56,7 @@ class Settings:
     # training settings
     do_random_mirroring = True
     do_random_cropping = True
-    batch_size_train = 100
+    batch_size_train = 10
     do_training = True
     epochs = 10
     optimizer = "SGD"
@@ -65,7 +65,7 @@ class Settings:
     # validation settings
     do_validation = True
     validation_interval = 19074
-    batch_size_val = 88
+    batch_size_val = 8
 
     # logging
     logging_level = logging.DEBUG
@@ -196,12 +196,13 @@ class Settings:
 
             basename = os.path.join(checkpoints_folder,get_datetime_str() + "-saved_" + progress)
             savefile_graph = basename + ".graph"
-            savefile_metapars = basename + ".snap"
 
             self.logger.info("Saving graph  to [%s]" % savefile_graph)
-            self.saver.save(sess, savefile_graph, global_step=global_step)
+            saved_instance_name = self.saver.save(sess, savefile_graph, global_step=global_step)
 
             # save dataset metaparams
+            savefile_metapars = saved_instance_name + ".snap"
+
             self.logger.info("Saving params to [%s]" % savefile_metapars)
 
             params2save = [[],[],[]]
