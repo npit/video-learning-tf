@@ -38,7 +38,7 @@ class Settings:
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/checkpoints/300517_043112-saved_ep_3_btch_20.graph-20"
+    resume_file = "300517_051700-saved_ep_1_btch_11.graph-11"
     runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
     path_prepend_folder = None
 
@@ -98,7 +98,7 @@ class Settings:
         return self.resume_file is not None
     # configure logging settings
     def configure_logging(self):
-        tf.logging.set_verbosity(tf.logging.INFO)
+        #tf.logging.set_verbosity(tf.logging.INFO)
         logfile = os.path.join(self.runFolder ,"log_" +  self.run_id + "_" + get_datetime_str() + ".log")
         print("Using logfile: %s" % logfile)
 
@@ -154,7 +154,7 @@ class Settings:
         if self.should_resume():
             savefile_metapars = os.path.join(self.runFolder,"checkpoints", self.resume_file + ".snap")
 
-            self.logger.info("Resuming iteration snap from file:" + savefile_metapars)
+            self.logger.info("Resuming metadata from file:" + savefile_metapars)
 
             try:
                 # load saved parameters pickle
@@ -167,6 +167,7 @@ class Settings:
             self.train_index = params[defs.loaded.train_index]
             self.val_index = params[defs.loaded.val_index]
             self.epoch_index = params[defs.loaded.epoch_index]
+            self.logger.info("Restored epoch %d, train index %d, validation index %d" % (self.epoch_index, self.train_index, self.val_index))
 
 
     # restore graph variables
@@ -175,7 +176,7 @@ class Settings:
             if self.saver is None:
                 self.saver = tf.train.Saver()
             savefile_graph = os.path.join(self.runFolder,"checkpoints", self.resume_file)
-            self.logger.info("Resuming iteration snap from file:" + savefile_graph)
+            self.logger.info("Resuming tf graph from file:" + savefile_graph)
 
             try:
                 # load saved graph file
@@ -204,6 +205,8 @@ class Settings:
             savefile_metapars = saved_instance_name + ".snap"
 
             self.logger.info("Saving params to [%s]" % savefile_metapars)
+            self.logger.info("Saving params epoch %d, train index %d, validation index %d" % 
+                (dataset.epoch_index, dataset.batch_index_train, dataset.batch_index_val))
 
             params2save = [[],[],[]]
             params2save[defs.loaded.train_index] = dataset.batch_index_train

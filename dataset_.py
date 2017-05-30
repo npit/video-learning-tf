@@ -274,8 +274,15 @@ class Dataset:
         self.logger.debug("Fetching batch of %d images and %d labels." % (len(images), len(labels)))
 
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
-        self.batch_index = self.batch_index + 1
+        self.advance_batch_index()
         return images, labels_onehot#, labels
+
+    def advance_batch_index(self):
+        self.batch_index = self.batch_index + 1
+        if self.phase == defs.phase.train:
+            self.batch_index_train = self.batch_index_train + 1
+        else:
+            self.batch_index_val = self.batch_index_val + 1
 
     # read all frames for a video
     def get_video_frames(self,videopath):
