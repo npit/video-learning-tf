@@ -34,12 +34,12 @@ class Settings:
     ################################
 
     # run mode and type
-    run_id = "test"
+    run_id = "singleframe_run"
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = None
-    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
+    resume_file = "290517_145857-saved_ep_6_btch_500.graph-500"
+    runFolder = "/home/npittaras/single_frame_run"
     path_prepend_folder = None
 
     # architecture settings
@@ -56,16 +56,16 @@ class Settings:
     # training settings
     do_random_mirroring = True
     do_random_cropping = True
-    batch_size_train = 10
+    batch_size_train = 100
     do_training = True
-    epochs = 2
+    epochs = 10
     optimizer = "SGD"
     learning_rate = 0.001
 
     # validation settings
     do_validation = True
-    validation_interval = 5
-    batch_size_val = 10
+    validation_interval = 19074
+    batch_size_val = 88
 
     # logging
     logging_level = logging.DEBUG
@@ -152,7 +152,7 @@ class Settings:
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
-            savefile_metapars = os.path.join(self.runFolder,"checkpoints",+ self.resume_file + ".snap")
+            savefile_metapars = os.path.join(self.runFolder,"checkpoints", self.resume_file + ".snap")
 
             self.logger.info("Resuming iteration snap from file:" + savefile_metapars)
 
@@ -174,7 +174,7 @@ class Settings:
         if self.should_resume():
             if self.saver is None:
                 self.saver = tf.train.Saver()
-            savefile_graph = os.path.join(self.runFolder,"checkpoint", ".graph")
+            savefile_graph = os.path.join(self.runFolder,"checkpoints", self.resume_file)
             self.logger.info("Resuming iteration snap from file:" + savefile_graph)
 
             try:
