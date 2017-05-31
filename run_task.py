@@ -38,8 +38,8 @@ class Settings:
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = "300517_051700-saved_ep_1_btch_11.graph-11"
-    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run/"
+    resume_file = "/home/npittaras/single_frame_run/checkpoints/300517_092904-saved_ep_5_btch_2426.graph-2426"
+    runFolder = "/home/npittaras/single_frame_run"
     path_prepend_folder = None
 
     # architecture settings
@@ -56,16 +56,16 @@ class Settings:
     # training settings
     do_random_mirroring = True
     do_random_cropping = True
-    batch_size_train = 10
-    do_training = True
-    epochs = 10
+    batch_size_train = 100
+    do_training = False#True
+    epochs = 15
     optimizer = "SGD"
     learning_rate = 0.001
 
     # validation settings
     do_validation = True
-    validation_interval = 19074
-    batch_size_val = 8
+    validation_interval = 382
+    batch_size_val = 88
 
     # logging
     logging_level = logging.DEBUG
@@ -259,28 +259,37 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         settings.logger.info("Time elapsed for epoch %d : %s ." % (1+epochIdx, elapsed_str(timings[epochIdx])))
 
     settings.logger.info("Time elapsed for %d epochs : %s ." % (settings.epochs, elapsed_str(sum(timings))))
-# tests the network on validation data
+
+# test the network on validation data
 def test(dataset, lrcn, sess, tboard_writer, summaries):
+    # if testing within training, check if it should run
+    if dataset.do_training:
+        if not dataset.should_test_now():
+            return False
+        else:
+            dataset.set_or_swap_phase(defs.phase.val)
+            
+    else:
+        dataset.set_current_phase(defs.phase.val)
 
-    if dataset.should_test_now():
-        test_accuracies = []
-        dataset.set_or_swap_phase(defs.phase.val)
-        dataset.reset_phase(defs.phase.val)
-        # validation
-        while dataset.loop():
-            images, labels_onehot = dataset.read_next_batch()
-            dataset.print_iter_info(len(images), len(labels_onehot))
-
-            summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],
-                                               feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-            test_accuracies.append(accuracy)
+    # reset validation phase indexes
+    dataset.reset_phase(dataset.phase)
+          
+    test_accuracies = []
+    # validation
+    while dataset.loop():
+        images, labels_onehot = dataset.read_next_batch()
+        dataset.print_iter_info(len(images), len(labels_onehot))
+        summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],
+                                           feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
+        test_accuracies.append(accuracy)
         accuracy = sum(test_accuracies) / len(test_accuracies)
         dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
         tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
         tboard_writer.flush()
 
-        return True
-    return False
+    return True
+
 
 # the main function
 def main():
@@ -319,7 +328,7 @@ def main():
     if settings.do_training:
         train_test(settings, dataset, lrcn,  sess, tboard_writer, summaries)
     elif settings.do_validation:
-        test(settings, dataset, lrcn,  sess, tboard_writer, summaries)
+        test(dataset, lrcn,  sess, tboard_writer, summaries)
 
     # mop up
     tboard_writer.close()

@@ -76,6 +76,7 @@ class Dataset:
     iterator = None
 
     # training
+    do_training = None
     batch_size_train = None
     batches_train = []
     batch_index_train = None
@@ -344,6 +345,7 @@ class Dataset:
         self.logger = sett.logger
         self.epochs = sett.epochs
         self.do_random_mirroring = sett.do_random_mirroring
+        self.do_training = sett.do_training
         self.do_validation = sett.do_validation
         self.validation_interval = sett.validation_interval
         self.run_folder = sett.runFolder
@@ -421,8 +423,7 @@ class Dataset:
             items_left = num_val - num_whole_batches * self.batch_size_val
             if items_left:
                 self.batches_val.append(items_left)
-
-
+            self.logger.info("Calculated %d and %d training and validation batches respectively." % (len(self.batches_val), len(self.batches_train)))         
         else:
             # read input files
             self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
@@ -538,6 +539,7 @@ class Dataset:
 
     # specify valid loop iteration
     def loop(self):
+        self.logger.debug("batch index: %d , batches len: %d" % (self.batch_index , len(self.batches)))
         return self.batch_index < len(self.batches)
 
     # check if testing should happen now
