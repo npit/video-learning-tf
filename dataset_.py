@@ -31,9 +31,7 @@ class Dataset:
     class_names = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoIndexesNames.txt"
 
     #
-    run_folder = "/home/nik/uoa/msc-thesis/implementation/runData/"
-    serializedTrainSetFile = run_folder + "serializedTrain"
-    serializedValSetFile = run_folder + "serializedVal"
+    run_folder = None
     num_frames_per_video = 16
     imageFormat = "jpg"
     trainValRatio = 2.0 / 3.0

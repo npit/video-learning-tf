@@ -38,8 +38,8 @@ class Settings:
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = None #"/home/npittaras/single_frame_run/checkpoints/300517_092904-saved_ep_5_btch_2426.graph-2426"
-    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run"
+    resume_file = "/home/npittaras/single_frame_run/checkpoints/300517_092904-saved_ep_5_btch_2426.graph-2426"
+    runFolder = "/home/npittaras/single_frame_run"
     path_prepend_folder = None
 
     # architecture settings
@@ -65,7 +65,7 @@ class Settings:
     # validation settings
     do_validation = True
     validation_interval = 1     # train iterations interval for validation or percentage
-    batch_size_val = 10
+    batch_size_val = 88
 
     # logging
     logging_level = logging.DEBUG
@@ -283,10 +283,10 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
         summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],
                                            feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
         test_accuracies.append(accuracy)
-        accuracy = sum(test_accuracies) / len(test_accuracies)
-        dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
-        tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
-        tboard_writer.flush()
+    accuracy = sum(test_accuracies) / len(test_accuracies)
+    dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
+    tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
+    tboard_writer.flush()
 
     return True
 
