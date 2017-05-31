@@ -81,6 +81,7 @@ class Dataset:
     batches_train = []
     batch_index_train = None
     train_iterator = None
+    num_items_train = None
 
     # validation
     do_validation = False
@@ -89,7 +90,7 @@ class Dataset:
     batches_val = []
     batch_index_val = None
     val_iterator = None
-
+    num_items_val = None
 
     # misc
     logger = None
@@ -413,17 +414,20 @@ class Dataset:
 
             # calculate batches: just batchsizes per batch; all is in the tfrecord
             num_whole_batches = num_train // self.batch_size_train
-            self.batches_train = [ self.batch_size_train for i in range(num_whole_batches)]
+            self.batches_train = [ self.batch_size_train for _ in range(num_whole_batches)]
             items_left = num_train - num_whole_batches * self.batch_size_train
             if items_left:
                 self.batches_train.append(items_left)
 
             num_whole_batches = num_val // self.batch_size_val
-            self.batches_val = [ self.batch_size_train for i in range(num_whole_batches)]
+            self.batches_val = [ self.batch_size_val for i in range(num_whole_batches)]
             items_left = num_val - num_whole_batches * self.batch_size_val
             if items_left:
                 self.batches_val.append(items_left)
-            self.logger.info("Calculated %d and %d training and validation batches respectively." % (len(self.batches_val), len(self.batches_train)))         
+
+            self.num_items_train = num_train
+            self.num_items_val = num_val
+            self.logger.info("Calculated %d and %d training and validation batches respectively." % (len(self.batches_val), len(self.batches_train)))
         else:
             # read input files
             self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
@@ -512,9 +516,9 @@ class Dataset:
     # print active settings
     def tell(self):
         self.logger.info("Dataset batch information per run mode:" )
-        self.logger.info("%-8s %-6s %-6s %-6s" % ("Mode","size","num","index"))
-        self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.train), self.batch_size_train, len(self.batches_train), self.batch_index_train))
-        self.logger.info("%-8s %-6d %-6d %-6d" % (defs.phase.str(defs.phase.val), self.batch_size_val, len(self.batches_val), self.batch_index_val))
+        self.logger.info("%-8s %-10s %-6s %-6s %-6s" % ("Mode","total","b-size","num-b","b-index"))
+        self.logger.info("%-8s %-10d %-6d %-6d %-6d" % (defs.phase.str(defs.phase.train), self.num_items_train, self.batch_size_train, len(self.batches_train), self.batch_index_train))
+        self.logger.info("%-8s %-10d %-6d %-6d %-6d" % (defs.phase.str(defs.phase.val), self.num_items_val, self.batch_size_val, len(self.batches_val), self.batch_index_val))
 
     # get the batch size
     def get_batch_size(self):

@@ -38,8 +38,8 @@ class Settings:
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = "/home/npittaras/single_frame_run/checkpoints/300517_092904-saved_ep_5_btch_2426.graph-2426"
-    runFolder = "/home/npittaras/single_frame_run"
+    resume_file = None #"/home/npittaras/single_frame_run/checkpoints/300517_092904-saved_ep_5_btch_2426.graph-2426"
+    runFolder = "/home/nik/uoa/msc-thesis/implementation/examples/test_run"
     path_prepend_folder = None
 
     # architecture settings
@@ -57,15 +57,15 @@ class Settings:
     do_random_mirroring = True
     do_random_cropping = True
     batch_size_train = 100
-    do_training = False#True
+    do_training = False
     epochs = 15
     optimizer = "SGD"
     learning_rate = 0.001
 
     # validation settings
     do_validation = True
-    validation_interval = 382
-    batch_size_val = 88
+    validation_interval = 1     # train iterations interval for validation or percentage
+    batch_size_val = 10
 
     # logging
     logging_level = logging.DEBUG
