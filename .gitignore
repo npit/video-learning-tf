@@ -11,6 +11,7 @@
 !README.md
 !view-tensorboard.sh
 !examples
+!config.ini.example
 
 # also ignore all:
 *.tfrecord

@@ -9,7 +9,7 @@ import dataset_
 # utils
 from utils_ import *
 
-import logging
+import logging, configparser
 
 
 
@@ -32,25 +32,27 @@ class Summaries:
 class Settings:
     # user - settable parameters
     ################################
+    # initialization file
+    init_file = "config.ini"
 
     # run mode and type
     run_id = "singleframe_run"
     run_type = defs.run_types.singleframe
 
     # save / load configuration
-    resume_file = "/home/npittaras/single_frame_run/checkpoints/300517_092904-saved_ep_5_btch_2426.graph-2426"
-    runFolder = "/home/npittaras/single_frame_run"
+    resume_file = None
+    runFolder = None
     path_prepend_folder = None
 
     # architecture settings
     lstm_input_layer = "fc7"
-    num_classes = 101
-    mean_image = [103.939, 116.779, 123.68]
+    num_classes = None
+    mean_image = None
 
     # data input format
     raw_image_shape = (240, 320, 3)
     image_shape = (227, 227, 3)
-    frame_format = defs.data_format.tfrecord
+    frame_format = defs.data_format.raw
     input_mode = defs.input_mode.image
 
     # training settings
@@ -76,6 +78,9 @@ class Settings:
 
     # internal variables
     ###############################
+
+    # initialization
+
 
     # input data files
     input = [[],[]]
@@ -129,9 +134,73 @@ class Settings:
         self.input[defs.phase.train] = os.path.join(self.runFolder, basefilename + ".train")
         self.input[defs.phase.val] = os.path.join(self.runFolder, basefilename + ".test")
 
+    # file initialization
+    def initialize_from_file(self):
+        if self.init_file is None:
+            return
+        if not os.path.exists(self.init_file):
+            return
+
+        print("Initializing from file %s" % self.init_file)
+        config = configparser.ConfigParser()
+        config.read(self.init_file)
+        if not config['configuration']:
+            error('Headerless configuration file!')
+        config = config['configuration']
+        if config['run_id']:
+            self.run_id = config['run_id']
+        if config['run_type']:
+            self.run_type = config['run_type']
+        if config['resume_file']:
+            self.resume_file = config['resume_file']
+        if config['runFolder']:
+            self.runFolder = config['runFolder']
+        if config['path_prepend_folder']:
+            self.path_prepend_folder = config['path_prepend_folder']
+        if config['lstm_input_layer']:
+            self.lstm_input_layer = config['lstm_input_layer']
+        if config['num_classes']:
+            self.num_classes = config['num_classes']
+        if config['mean_image']:
+            self.mean_image = config['mean_image']
+        if config['raw_image_shape']:
+            self.raw_image_shape = config['raw_image_shape']
+        if config['image_shape']:
+            self.image_shape = config['image_shape']
+        if config['frame_format']:
+            self.frame_format = config['frame_format']
+        if config['input_mode']:
+            self.input_mode = config['input_mode']
+        if config['do_random_mirroring']:
+            self.do_random_mirroring = config['do_random_mirroring']
+        if config['do_random_cropping']:
+            self.do_random_cropping = config['do_random_cropping']
+        if config['batch_size_train']:
+            self.batch_size_train = config['batch_size_train']
+        if config['do_training']:
+            self.do_training = config['do_training']
+        if config['epochs']:
+            self.epochs = config['epochs']
+        if config['optimizer']:
+            self.optimizer = config['optimizer']
+        if config['learning_rate']:
+            self.learning_rate = config['learning_rate']
+        if config['do_validation']:
+            self.do_validation = config['do_validation']
+        if config['validation_interval']:
+            self.validation_interval = config['validation_interval']
+        if config['batch_size_val']:
+            self.batch_size_val = config['batch_size_val']
+        if config['logging_level']:
+            self.logging_level = config['logging_level']
+        if config['tensorboard_folder']:
+            self.tensorboard_folder = config['tensorboard_folder']
+        print("Successfully initialized from file %s" % self.init_file)
+
 
     # initialize stuff
     def initialize(self):
+        self.initialize_from_file()
         if not os.path.exists(self.runFolder):
             error("Non existent run folder %s" % self.runFolder)
 
