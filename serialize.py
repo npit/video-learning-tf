@@ -1,10 +1,11 @@
 import tensorflow as tf
 import numpy as np
+from random import shuffle
 from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os
 from utils_ import *
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 # frames or videos
 frames, videos = range(2)
@@ -13,10 +14,12 @@ frames, videos = range(2)
 path_prepend_folder = "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames"
 input_files = [
 "/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test"
+"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
+"/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
+"/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
 ]
 num_threads = 4
-num_items_per_thread = 500
+num_items_per_thread = 25
 
 image_shape = (240,320,3)
 
@@ -85,20 +88,24 @@ def serialize_multithread(paths, labels, outfile, mode):
     # split up paths list
     num_images_per_thread_run = num_items_per_thread * num_threads
     paths_per_thread_run = sublist(paths, num_images_per_thread_run)
+    labels_per_thread_run = sublist(labels, num_images_per_thread_run)
 
-    if mode == videos:
-        duplist = [ [ label for j in range(num_frames_per_video) ] for label in labels ]
-        labels = []
-        for l in duplist:
-            labels.extend(l)
 
     count = 0
     writer = tf.python_io.TFRecordWriter(outfile)
-    for paths_in_run in paths_per_thread_run:
+    for run_index in range(len(paths_per_thread_run)):
+
+        paths_in_run = paths_per_thread_run[run_index]
+        labels_in_run = labels_per_thread_run[run_index]
+
         tic = time.time()
         logger.debug("Processing %d items for the run." % len(paths_in_run))
+
         paths_per_thread = sublist(paths_in_run, num_items_per_thread )
+        labels_per_thread = sublist(labels_in_run, num_items_per_thread )
+
         logger.debug("Items scheduled list len : %d." % (len(paths_per_thread)))
+
         num_threads_in_run = len(paths_per_thread)
         for t in range(num_threads_in_run):
             logger.debug("Frames scheduled for thread #%d : %d." % (t, len(paths_per_thread[t])))
@@ -117,12 +124,19 @@ def serialize_multithread(paths, labels, outfile, mode):
         for t in range(num_threads_in_run):
             logger.debug("Frames produced  for thread #%d : %d." % (t, len(frames[t])))
 
+
         # write the read images to the tfrecord
         for t in range(num_threads_in_run):
             if not frames[t]:
                 logger.error("Thread # %d encountered an error." % t)
                 exit(1)
-            serialize_to_tfrecord(frames[t], labels, outfile, writer)
+            if mode == videos:
+                duplist = [[label for _ in range(num_frames_per_video)] for label in labels_per_thread[t]]
+                labels_per_thread[t] = []
+                for l in duplist:
+                    labels_per_thread[t].extend(l)
+
+            serialize_to_tfrecord(frames[t], labels_per_thread[t], outfile, writer)
             count += len(frames[t])
 
 
@@ -208,58 +222,93 @@ def read_image(imagepath):
     return image
 
 
-# def display_image(image,label=None):
-#     print(label)
-#     plt.title(label)
-#     plt.imshow(image)
-#     plt.show()
-#     # plt.waitforbuttonpress()
+def display_image(image,label=None):
+    print(label)
+    plt.title(label)
+    plt.imshow(image)
+    plt.show()
+    # plt.waitforbuttonpress()
 
 
-def deserialize_example(ex):
-    features = tf.parse_single_example(
-        ex,
-        # Defaults are not specified since both keys are required.
-        features={
-            'height' : tf.FixedLenFeature([],tf.int64)
-            ,'width': tf.FixedLenFeature([], tf.int64)
-            ,'depth': tf.FixedLenFeature([], tf.int64)
-            ,'image_raw': tf.FixedLenFeature([], tf.string)
-            #, 'label': tf.FixedLenFeature([], tf.int64)
-        })
-    return tf.decode_raw(features['image_raw'], tf.uint8)
+# read from tfrecord
+def deserialize_from_tfrecord( iterator, images_per_iteration):
+    # images_per_iteration :
+    images = []
+    labels  = []
+    for _ in range(images_per_iteration):
+        try:
+            string_record = next(iterator)
+            example = tf.train.Example()
+            example.ParseFromString(string_record)
+            img_string = (example.features.feature['image_raw']
+                          .bytes_list
+                          .value[0])
+            # height = int(example.features.feature['height']
+            #              .int64_list
+            #              .value[0])
+            # width = int(example.features.feature['width']
+            #             .int64_list
+            #             .value[0])
+            #
+            # depth = (example.features.feature['depth']
+            #          .int64_list
+            #          .value[0])
+            label = (example.features.feature['label']
+                     .int64_list
+                     .value[0])
+            img_1d = np.fromstring(img_string, dtype=np.uint8)
+            # watch it : hardcoding preferd dimensions according to the dataset object.
+            # it should be the shape of the stored image instead, for generic use
+            image = img_1d.reshape((image_shape[0], image_shape[1], image_shape[2]))
 
+            images.append(image)
+            labels.append(label)
+
+        except StopIteration:
+            break
+        except Exception as ex:
+            logger.error('Exception at reading image, loading from scratch')
+            logger.error(ex)
+            error("Error reading tfrecord image.")
+
+    return images, labels
+
+
+
+def read_file(inp):
+    mode = None
+    logger.info("Serializing %s in mode %s" % (inp, mode))
+    logger.info("Reading input file.")
+    paths = []
+    labels = []
+    with open(inp, 'r') as f:
+        for line in f:
+
+            path, label = line.split(' ')
+            path = path.strip()
+
+            if mode is None:
+                if path.lower().endswith("." + image_format.lower()):
+                    mode = frames
+                    logger.info("Set input mode to frames from paths-file items suffixes.")
+                else:
+                    mode = videos
+                    strlen = min(len(path), len(image_format) + 1)
+                    suffix = path[-strlen:]
+                    logger.info(
+                        "Set input mode to videos since paths-file item suffix [%s] differs from image format [%s]." % (
+                        suffix, image_format))
+
+            if path_prepend_folder is not None:
+                path = os.path.join(path_prepend_folder, path)
+            paths.append(path)
+            labels.append(int(label.strip()))
+    return paths, labels, mode
 
 def write():
     for idx in range(len(input_files)):
-
-        mode = None
         inp = input_files[idx]
-        logger.info("Serializing %s in mode %s" % (inp,mode))
-        logger.info("Reading input file.")
-        paths = []
-        labels = []
-        with open(inp,'r') as f:
-            for line in f:
-
-                path, label = line.split(' ')
-                path = path.strip()
-
-                if mode is None:
-                    if path.lower().endswith("." + image_format.lower()):
-                        mode = frames
-                        logger.info("Set input mode to frames from paths-file items suffixes.")
-                    else:
-                        mode = videos
-                        strlen = min(len(path), len(image_format)  + 1)
-                        suffix = path[-strlen:]
-                        logger.info("Set input mode to videos since paths-file item suffix [%s] differs from image format [%s]." % (suffix, image_format))
-
-                if path_prepend_folder is not None:
-                    path = os.path.join(path_prepend_folder, path)
-                paths.append(path)
-                labels.append(int(label.strip()))
-
+        paths, labels, mode = read_file(inp)
         output_file = inp + ".tfrecord"
         logger.info("Writing to %s" % output_file)
         tic = time.time()
@@ -268,5 +317,63 @@ def write():
         logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
 
 
+def validate():
 
-write()
+    for idx in range(len(input_files)):
+        inp = input_files[idx]
+        paths, labels, mode = read_file(inp)
+        num_validate = 1000 if len(paths) >= 1000 else len(paths)
+        sound = True
+        idx_list = [ i for i in range(len(paths))]
+        shuffle(idx_list)
+        idx_list = idx_list[:num_validate]
+        idx_list.sort()
+        lidx = 0
+        testidx = idx_list[lidx]
+        iter = tf.python_io.tf_record_iterator(inp + ".tfrecord")
+        for i in range(len(paths)):
+            if not i == testidx:
+                next(iter)
+                continue
+            if mode == videos:
+                frames = get_video_frames(paths[i])
+                fframetf, llabeltf = deserialize_from_tfrecord(iter, num_frames_per_video)
+                label = labels[i]
+
+                for v in range(num_frames_per_video):
+                    if not np.array_equal(frames[v], fframetf[v]):
+                        logger.error("Unequal video frame #%d @ %s" % ( v, paths[i]))
+                        sound = False
+                    if not label == llabeltf[v]:
+                        logger.error("Unequal label at video frame %d @ %s. Found %d, expected %d" % (v, paths[i], label, llabeltf[v]))
+                        sound = False
+
+
+            else:
+
+                frame = read_image(paths[i])
+                label = labels[i]
+
+                fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
+                frametf = fframetf[0]
+                labeltf = llabeltf[0]
+
+                if not np.array_equal(frame , frametf):
+                    logger.error("Unequal image @ %s" % paths[i])
+                    sound = False
+                if not label == labeltf:
+                    logger.error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
+                    sound = False
+
+            lidx = lidx + 1
+            if lidx >= len(idx_list):
+                break
+
+            testidx = idx_list[lidx]
+        if not sound:
+            logger.error("errors exist.")
+        else:
+            logger.info("Validation for %s ok" % (inp + ".tfrecord"))
+
+# write()
+validate()
