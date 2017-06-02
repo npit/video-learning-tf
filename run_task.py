@@ -42,7 +42,7 @@ class Settings:
 
     # save / load configuration
     resume_file = None
-    runFolder = None
+    run_folder = None
     path_prepend_folder = None
 
     # architecture settings
@@ -105,9 +105,9 @@ class Settings:
     # configure logging settings
     def configure_logging(self):
         #tf.logging.set_verbosity(tf.logging.INFO)
-        logfile = os.path.join(self.runFolder ,"log_" +  self.run_id + "_" + get_datetime_str() + ".log")
+        logfile = os.path.join(self.run_folder ,"log_" +  self.run_id + "_" + get_datetime_str() + ".log")
         print("Using logfile: %s" % logfile)
-
+        sys.stdout.flush()
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(self.logging_level)
 
@@ -134,14 +134,15 @@ class Settings:
         else:
             self.logger.error("Undefined input mode: [%s]" % str(self.input_mode))
             error("Undefined input mode")
-        self.input[defs.phase.train] = os.path.join(self.runFolder, basefilename + ".train")
-        self.input[defs.phase.val] = os.path.join(self.runFolder, basefilename + ".test")
+        self.input[defs.phase.train] = os.path.join(self.run_folder, basefilename + ".train")
+        self.input[defs.phase.val] = os.path.join(self.run_folder, basefilename + ".test")
 
     # file initialization
     def initialize_from_file(self):
         if self.init_file is None:
             return
         if not os.path.exists(self.init_file):
+            error("Unable to read initialization file [%s]." % self.init_file)
             return
 
         tag_to_read = "run"
@@ -156,17 +157,17 @@ class Settings:
         config = config[tag_to_read]
 
         if config['run_id']:
-            self.run_id = config['run_id']
+            self.run_id = eval(config['run_id'])
         if config['run_type']:
             self.run_type = eval(config['run_type'])
         if config['resume_file']:
-            self.resume_file = config['resume_file']
-        if config['runFolder']:
-            self.runFolder = config['runFolder']
+            self.resume_file = eval(config['resume_file'])
+        if config['run_folder']:
+            self.run_folder = eval(config['run_folder'])
         if config['path_prepend_folder']:
-            self.path_prepend_folder = config['path_prepend_folder']
+            self.path_prepend_folder = eval(config['path_prepend_folder'])
         if config['lstm_input_layer']:
-            self.lstm_input_layer = config['lstm_input_layer']
+            self.lstm_input_layer = eval(config['lstm_input_layer'])
         if config['num_classes']:
             self.num_classes = eval(config['num_classes'])
         if config['mean_image']:
@@ -190,7 +191,7 @@ class Settings:
         if config['epochs']:
             self.epochs = eval(config['epochs'])
         if config['optimizer']:
-            self.optimizer = config['optimizer']
+            self.optimizer = eval(config['optimizer'])
         if config['learning_rate']:
             self.learning_rate = eval(config['learning_rate'])
         if config['do_validation']:
@@ -202,7 +203,7 @@ class Settings:
         if config['logging_level']:
             self.logging_level = eval(config['logging_level'])
         if config['tensorboard_folder']:
-            self.tensorboard_folder = config['tensorboard_folder']
+            self.tensorboard_folder = eval(config['tensorboard_folder'])
         print("Successfully initialized from file %s" % self.init_file)
 
 
@@ -212,8 +213,8 @@ class Settings:
             self.init_file = args[-1]
 
         self.initialize_from_file()
-        if not os.path.exists(self.runFolder):
-            error("Non existent run folder %s" % self.runFolder)
+        if not os.path.exists(self.run_folder):
+            error("Non existent run folder %s" % self.run_folder)
         if not self.do_validation and not self.do_training:
             error("Neither training nor validation is enabled.")
         # configure the logs
@@ -221,9 +222,13 @@ class Settings:
 
         # if not resuming, set start folder according to now()
         if  self.should_resume():
+            if self.do_training:
+                self.logger.info("Resuming training.")
             # else, do the resume
             self.resume_metadata()
-
+        else:
+            if self.do_training:
+                self.logger.info("Starting training from scratch.")
         self.set_input_files()
 
     # settings are ok
@@ -233,7 +238,7 @@ class Settings:
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
-            savefile_metapars = os.path.join(self.runFolder,"checkpoints", self.resume_file + ".snap")
+            savefile_metapars = os.path.join(self.run_folder,"checkpoints", self.resume_file + ".snap")
 
             self.logger.info("Resuming metadata from file:" + savefile_metapars)
 
@@ -256,7 +261,7 @@ class Settings:
         if self.should_resume():
             if self.saver is None:
                 self.saver = tf.train.Saver()
-            savefile_graph = os.path.join(self.runFolder,"checkpoints", self.resume_file)
+            savefile_graph = os.path.join(self.run_folder,"checkpoints", self.resume_file)
             self.logger.info("Resuming tf graph from file:" + savefile_graph)
 
             try:
@@ -272,7 +277,7 @@ class Settings:
             if self.saver is None:
                 self.saver = tf.train.Saver()
             # save the graph
-            checkpoints_folder = os.path.join(self.runFolder, "checkpoints")
+            checkpoints_folder = os.path.join(self.run_folder, "checkpoints")
             if not os.path.exists(checkpoints_folder):
                 os.makedirs(checkpoints_folder)
 

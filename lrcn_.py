@@ -110,5 +110,5 @@ class LRCN:
 
         summaries.train.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
         summaries.val.append(tf.summary.scalar('accuracyVal', self.accuracyVal))
-        print()
+        self.logger.debug("Completed network definitions.")
 

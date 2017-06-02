@@ -99,7 +99,7 @@ class Dataset:
     # get class name from class index
     def getClassName(self,classIndex):
         return self.videoClassNames[classIndex]
-    delete video methods!
+
     # read paths to video folders
     def read_video_metadata(self):
         self.logger.info("Reading video paths from %s" % self.videoFramePathsFile)
@@ -275,9 +275,6 @@ class Dataset:
             if self.input_mode == defs.input_mode.video:
                 labels = [ labels[l] for l in range(0,len(labels),self.num_frames_per_video) ]
 
-
-        self.logger.debug("Fetching batch of %d images and %d labels." % (len(images), len(labels)))
-
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
         self.advance_batch_index()
         return images, labels_onehot#, labels
@@ -352,7 +349,7 @@ class Dataset:
         self.do_training = sett.do_training
         self.do_validation = sett.do_validation
         self.validation_interval = sett.validation_interval
-        self.run_folder = sett.runFolder
+        self.run_folder = sett.run_folder
         self.path_prepend_folder = sett.path_prepend_folder
 
         self.data_format = sett.frame_format
@@ -389,7 +386,7 @@ class Dataset:
             self.crop_h_avail = [i for i in range(0, self.raw_image_shape[0] - self.image_shape[0] - 1)]
             self.crop_w_avail = [i for i in range(0, self.raw_image_shape[1] - self.image_shape[1] - 1)]
 
-        self.logger.info("Completed dataset initialization.")
+        self.logger.debug("Completed dataset initialization.")
         self.tell()
 
     # run data-related initialization pre-run
@@ -408,7 +405,7 @@ class Dataset:
                 num_train = self.get_input_data_count(defs.phase.train)
                 # restore batch index to snapshot if needed - only makes sense in training
                 if self.batch_index > 0:
-                    self.fast_forward_iter(self.iterator)
+                    self.fast_forward_iter(self.train_iterator)
                 # calculate batches: just batchsizes per batch; all is in the tfrecord
                 num_whole_batches = num_train // self.batch_size_train
                 self.batches_train = [self.batch_size_train for _ in range(num_whole_batches)]
@@ -418,7 +415,7 @@ class Dataset:
                 self.num_items_train = num_train
                 self.logger.info("Calculated %d training batches." % len(self.batches_train))
 
-            if self.validation:
+            if self.do_validation:
                 self.input_source_files[defs.phase.val] = sett.input[defs.phase.val] + ".tfrecord"
                 if not os.path.exists(self.input_source_files[defs.phase.val]):
                     error("Input file does not exist: %s" % self.input_source_files[defs.phase.val])

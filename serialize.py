@@ -44,10 +44,11 @@ def initialize_from_file(init_file):
         input_files = input_files.split(",")
         input_files = list(map(lambda x: x.strip(), input_files))
 
+    # keys and default values
     keys = ['path_prepend_folder', 'num_threads', 'num_items_per_thread', 'raw_image_shape', \
             'frame_format', 'num_frames_per_video']
-    values = []
-    funcs = [None, eval, eval, eval, None, eval]
+    values = [ eval(k) for k in keys ]
+    funcs = [eval for _ in keys]
 
     for i in range(len(keys)):
         try:
@@ -57,27 +58,10 @@ def initialize_from_file(init_file):
                 value = list(map(funcs[i], [value]))
                 if len(value) == 1:
                     value = value[0]
-            values.append(value)
+            values[i] = value
         except KeyError as k:
             print("Warning: Option %s undefined" % str(k))
             pass
-
-    # if config['path_prepend_folder']:
-    #     path_prepend_folder = config['path_prepend_folder']
-    # if config['num_threads']:
-    #     num_threads = eval(config['num_threads'])
-    # if config['num_items_per_thread']:
-    #     num_items_per_thread = eval(config['num_items_per_thread'])
-    #
-    # if config['raw_image_shape']:
-    #     raw_image_shape = eval(config['raw_image_shape'])
-    #
-    # if config['frame_format']:
-    #     frame_format = config['frame_format']
-    # if config['input_mode']:
-    #     input_mode = eval(config['input_mode'])
-    # if config['num_frames_per_video']:
-    #     num_frames_per_video = eval(config['num_frames_per_video'])
 
     print("Successfully initialized from file %s" % init_file)
     values .append(input_files)
