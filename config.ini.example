@@ -1,4 +1,4 @@
-[configuration]
+[run]
 run_id = "singleframe_run"
 run_type = defs.run_types.singleframe
 
@@ -35,3 +35,15 @@ batch_size_val = 88
 
 logging_level = logging.DEBUG
 tensorboard_folder = "tensorboard_graphs"
+
+[serialize]
+
+path_prepend_folder = /path/to/frames/folder
+input_files = path/to/inputfile1, path/to/inputfile2
+
+num_threads = 4
+num_items_per_thread = 500
+
+raw_image_shape = (240,320,3)
+num_frames_per_video = 16
+image_format = jpg

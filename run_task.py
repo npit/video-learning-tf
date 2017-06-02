@@ -143,12 +143,17 @@ class Settings:
         if not os.path.exists(self.init_file):
             return
 
+        tag_to_read = "run"
+
         print("Initializing from file %s" % self.init_file)
         config = configparser.ConfigParser()
         config.read(self.init_file)
-        if not config['configuration']:
-            error('Headerless configuration file!')
-        config = config['configuration']
+
+        if not config[tag_to_read]:
+            error('Expected header [%s] in the configuration file!' % tag_to_read)
+
+        config = config[tag_to_read]
+
         if config['run_id']:
             self.run_id = config['run_id']
         if config['run_type']:

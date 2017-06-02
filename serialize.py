@@ -6,33 +6,58 @@ from scipy.misc import imread, imresize, imsave
 import logging, time, threading, os
 from utils_ import *
 import matplotlib.pyplot as plt
+import configparser
 
-# frames or videos
-frames, videos = range(2)
+
+
+init_file = "config.ini"
 
 # input paths and folder to prepend to each path in the files
-path_prepend_folder = "/home/npittaras/Datasets/UCF101/frames"
-input_files = [
-    "/home/npittaras/single_frame_run/frames.train",
-    "/home/npittaras/single_frame_run/frames.test"
-]
+path_prepend_folder = ""
+input_files = []
 num_threads = 4
 num_items_per_thread = 500
-
-image_shape = (240,320,3)
-
-mean_image = [103.939, 116.779, 123.68]
-height = image_shape[0]
-width = image_shape[1]
-blue = np.full((height, width), mean_image[0])
-green = np.full((height, width), mean_image[1])
-red = np.full((height, width), mean_image[2])
-mean_image = np.stack([blue, green, red])
-mean_image = np.transpose(mean_image,[1,2,0])
-mean_image = np.ndarray.astype(mean_image,np.uint8)
-
+raw_image_shape = (240,320,3)
 num_frames_per_video = 16
-image_format = "jpg"
+frame_format = "jpg"
+
+# initialize from file
+def initialize_from_file(init_file):
+    if init_file is None:
+        return
+    if not os.path.exists(init_file):
+        return
+    tag_to_read = "serialize"
+    print("Initializing from file %s" % init_file)
+    config = configparser.ConfigParser()
+    config.read(init_file)
+    if not config[tag_to_read ]:
+        error('Expected header [%s] in the configuration file!' % tag_to_read)
+
+    config = config[tag_to_read]
+
+    if config['path_prepend_folder']:
+        path_prepend_folder = config['path_prepend_folder']
+
+
+    if config['input_files']:
+        input_files = eval(config['input_files'])
+    if config['num_threads']:
+        num_threads = eval(config['num_threads'])
+    if config['raw_image_shape']:
+        raw_image_shape = eval(config['raw_image_shape'])
+    if config['num_items_per_thread']:
+        num_items_per_thread = eval(config['num_items_per_thread'])
+    if config['frame_format']:
+        frame_format = eval(config['frame_format'])
+    if config['input_mode']:
+        input_mode = eval(config['input_mode'])
+    if config['num_frames_per_video']:
+        num_frames_per_video = eval(config['num_frames_per_video'])
+
+    print("Successfully initialized from file %s" % init_file)
+    return input_files, num_threads, raw_image_shape, num_items_per_thread, frame_format, input_mode, num_frames_per_video
+
 
 # datetime for timestamps
 def get_datetime_str():
@@ -372,6 +397,12 @@ def validate():
             logger.error("errors exist.")
         else:
             logger.info("Validation for %s ok" % (inp + ".tfrecord"))
+
+
+
+
+input_files, num_threads, raw_image_shape, num_items_per_thread, \
+frame_format, input_mode, num_frames_per_video = initialize_from_file(init_file)
 
 write()
 validate()
