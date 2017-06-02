@@ -1,6 +1,7 @@
 
 # generic IO
 import pickle
+import sys
 
 # project modules
 import lrcn_
@@ -206,7 +207,10 @@ class Settings:
 
 
     # initialize stuff
-    def initialize(self):
+    def initialize(self, args):
+        if len(args) > 1:
+            self.init_file = args[-1]
+
         self.initialize_from_file()
         if not os.path.exists(self.runFolder):
             error("Non existent run folder %s" % self.runFolder)
@@ -372,7 +376,7 @@ def main():
 
     # create and initialize settings and dataset objects
     settings = Settings()
-    settings.initialize()
+    settings.initialize(sys.argv)
 
     settings.logger.info('Running the activity recognition task in mode: [%s]' % defs.run_types.str(settings.run_type))
     # init summaries for printage

@@ -7,7 +7,7 @@ import logging, time, threading, os
 from utils_ import *
 import matplotlib.pyplot as plt
 import configparser
-
+import sys
 
 
 init_file = "config.ini"
@@ -417,7 +417,8 @@ def validate():
 
 
 
-
+if len(sys.argv) > 1:
+    init_file = sys.argv[-1]
 path_prepend_folder, num_threads, num_items_per_thread, raw_image_shape , \
 frame_format,  num_frames_per_video, input_files = initialize_from_file(init_file)
 
