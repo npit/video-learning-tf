@@ -12,9 +12,11 @@ import configparser
 
 init_file = "config.ini"
 
-# input paths and folder to prepend to each path in the files
-path_prepend_folder = ""
+# necessary config. variables
 input_files = []
+
+# defaults
+path_prepend_folder = None
 num_threads = 4
 num_items_per_thread = 500
 raw_image_shape = (240,320,3)
@@ -36,27 +38,50 @@ def initialize_from_file(init_file):
 
     config = config[tag_to_read]
 
-    if config['path_prepend_folder']:
-        path_prepend_folder = config['path_prepend_folder']
-
 
     if config['input_files']:
-        input_files = eval(config['input_files'])
-    if config['num_threads']:
-        num_threads = eval(config['num_threads'])
-    if config['raw_image_shape']:
-        raw_image_shape = eval(config['raw_image_shape'])
-    if config['num_items_per_thread']:
-        num_items_per_thread = eval(config['num_items_per_thread'])
-    if config['frame_format']:
-        frame_format = eval(config['frame_format'])
-    if config['input_mode']:
-        input_mode = eval(config['input_mode'])
-    if config['num_frames_per_video']:
-        num_frames_per_video = eval(config['num_frames_per_video'])
+        input_files =config['input_files']
+        input_files = input_files.split(",")
+        input_files = list(map(lambda x: x.strip(), input_files))
+
+    keys = ['path_prepend_folder', 'num_threads', 'num_items_per_thread', 'raw_image_shape', \
+            'frame_format', 'num_frames_per_video']
+    values = []
+    funcs = [None, eval, eval, eval, None, eval]
+
+    for i in range(len(keys)):
+        try:
+            key = keys[i]
+            value = config[key]
+            if funcs[i] is not None:
+                value = list(map(funcs[i], [value]))
+                if len(value) == 1:
+                    value = value[0]
+            values.append(value)
+        except KeyError as k:
+            print("Warning: Option %s undefined" % str(k))
+            pass
+
+    # if config['path_prepend_folder']:
+    #     path_prepend_folder = config['path_prepend_folder']
+    # if config['num_threads']:
+    #     num_threads = eval(config['num_threads'])
+    # if config['num_items_per_thread']:
+    #     num_items_per_thread = eval(config['num_items_per_thread'])
+    #
+    # if config['raw_image_shape']:
+    #     raw_image_shape = eval(config['raw_image_shape'])
+    #
+    # if config['frame_format']:
+    #     frame_format = config['frame_format']
+    # if config['input_mode']:
+    #     input_mode = eval(config['input_mode'])
+    # if config['num_frames_per_video']:
+    #     num_frames_per_video = eval(config['num_frames_per_video'])
 
     print("Successfully initialized from file %s" % init_file)
-    return input_files, num_threads, raw_image_shape, num_items_per_thread, frame_format, input_mode, num_frames_per_video
+    values .append(input_files)
+    return tuple(values)
 
 
 # datetime for timestamps
@@ -153,7 +178,7 @@ def serialize_multithread(paths, labels, outfile, mode):
             if not frames[t]:
                 logger.error("Thread # %d encountered an error." % t)
                 exit(1)
-            if mode == videos:
+            if mode == defs.input_mode.video:
                 duplist = [[label for _ in range(num_frames_per_video)] for label in labels_per_thread[t]]
                 labels_per_thread[t] = []
                 for l in duplist:
@@ -168,11 +193,8 @@ def serialize_multithread(paths, labels, outfile, mode):
 
     writer.close()
 
-
-
-
 def read_item_list_threaded(paths, mode, storage, id):
-    if mode == frames:
+    if mode == defs.input_mode.image:
         for p in paths:
             image = read_image(p)
             if image is None:
@@ -185,22 +207,17 @@ def read_item_list_threaded(paths, mode, storage, id):
                 return
             storage[id].extend(vidframes)
 
-
-
-
 def serialize_to_tfrecord( frames, labels, outfil, writer):
     for idx in range(len(frames)):
         frame = frames[idx]
         label = labels[idx]
         example = tf.train.Example(features=tf.train.Features(feature={
-            'height': _int64_feature(image_shape[0]),
-            'width': _int64_feature(image_shape[1]),
-            'depth': _int64_feature(image_shape[2]),
+            'height': _int64_feature(raw_image_shape[0]),
+            'width': _int64_feature(raw_image_shape[1]),
+            'depth': _int64_feature(raw_image_shape[2]),
             'label': _int64_feature(int(label)),
             'image_raw': _bytes_feature(frame.tostring())}))
         writer.write(example.SerializeToString())
-
-
 
 # read all frames for a video
 def get_video_frames(path):
@@ -208,7 +225,7 @@ def get_video_frames(path):
     frames = []
     basename = os.path.basename(path)
     for im in range(num_frames_per_video):
-        impath = path + "%04d" % (1 + im) + "." + image_format
+        impath = path + "%04d" % (1 + im) + "." + frame_format
         image = read_image(impath)
         if image is None:
             return None
@@ -233,7 +250,7 @@ def read_image(imagepath):
         #  convert to BGR
         image = image[:, :, ::-1]
         # resize
-        image = imresize(image, image_shape)
+        image = imresize(image, raw_image_shape)
 
         # there is a problem if we want to store mean-subtracted images, as we'll have to store a float per pixel
         # => 4 x the space of a uint8 image
@@ -282,7 +299,7 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
             img_1d = np.fromstring(img_string, dtype=np.uint8)
             # watch it : hardcoding preferd dimensions according to the dataset object.
             # it should be the shape of the stored image instead, for generic use
-            image = img_1d.reshape((image_shape[0], image_shape[1], image_shape[2]))
+            image = img_1d.reshape((raw_image_shape[0], raw_image_shape[1], raw_image_shape[2]))
 
             images.append(image)
             labels.append(label)
@@ -311,16 +328,16 @@ def read_file(inp):
             path = path.strip()
 
             if mode is None:
-                if path.lower().endswith("." + image_format.lower()):
-                    mode = frames
+                if path.lower().endswith("." + frame_format.lower()):
+                    mode = defs.input_mode.image
                     logger.info("Set input mode to frames from paths-file items suffixes.")
                 else:
-                    mode = videos
-                    strlen = min(len(path), len(image_format) + 1)
+                    mode = defs.input_mode.video
+                    strlen = min(len(path), len(frame_format) + 1)
                     suffix = path[-strlen:]
                     logger.info(
                         "Set input mode to videos since paths-file item suffix [%s] differs from image format [%s]." % (
-                        suffix, image_format))
+                        suffix, frame_format))
 
             if path_prepend_folder is not None:
                 path = os.path.join(path_prepend_folder, path)
@@ -358,7 +375,7 @@ def validate():
             if not i == testidx:
                 next(iter)
                 continue
-            if mode == videos:
+            if mode == defs.input_mode.video:
                 frames = get_video_frames(paths[i])
                 fframetf, llabeltf = deserialize_from_tfrecord(iter, num_frames_per_video)
                 label = labels[i]
@@ -401,8 +418,8 @@ def validate():
 
 
 
-input_files, num_threads, raw_image_shape, num_items_per_thread, \
-frame_format, input_mode, num_frames_per_video = initialize_from_file(init_file)
+path_prepend_folder, num_threads, num_items_per_thread, raw_image_shape , \
+frame_format,  num_frames_per_video, input_files = initialize_from_file(init_file)
 
 write()
 validate()
