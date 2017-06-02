@@ -129,7 +129,7 @@ def _bytes_feature( value):
 
 def serialize_multithread(paths, labels, outfile, mode):
 
-    # first of all, write the number of items in the tfrecord
+    # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
         f.write("%d" % len(paths))
 

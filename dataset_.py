@@ -99,7 +99,7 @@ class Dataset:
     # get class name from class index
     def getClassName(self,classIndex):
         return self.videoClassNames[classIndex]
-
+    delete video methods!
     # read paths to video folders
     def read_video_metadata(self):
         self.logger.info("Reading video paths from %s" % self.videoFramePathsFile)
@@ -114,27 +114,32 @@ class Dataset:
     # read paths to images
     def read_frames_metadata(self):
         # store train and test in same variable
-        self.logger.info("Reading input frames in single frame mode.");
+        self.logger.info("Reading input frames in raw frame mode.");
         self.frame_paths.extend([[],[]])
         self.frame_classes.extend([[], []])
-        with open(self.input_source_files[defs.phase.train], 'r') as f:
-            for path_label_str in f:
-                item_path, item_label = path_label_str.split()
-                if self.path_prepend_folder is not None:
-                    item_path = os.path.join(self.path_prepend_folder, item_path)
-                self.frame_paths[defs.phase.train].append(item_path)
-                self.frame_classes[defs.phase.train].append(item_label)
 
+        if self.do_training:
+            with open(self.input_source_files[defs.phase.train], 'r') as f:
+                for path_label_str in f:
+                    item_path, item_label = path_label_str.split()
+                    if self.path_prepend_folder is not None:
+                        item_path = os.path.join(self.path_prepend_folder, item_path)
+                    self.frame_paths[defs.phase.train].append(item_path)
+                    self.frame_classes[defs.phase.train].append(item_label)
+            self.logger.info("Done reading image and label data %d frames for %s" % (
+                len(self.frame_paths[defs.phase.train]), defs.phase.str(defs.phase.train),
+            ))
+
+        if self.do_validation:
             with open(self.input_source_files[defs.phase.val], 'r') as f:
                 for path_label_str in f:
                     item_path, item_label = path_label_str.split()
                     self.frame_paths[defs.phase.val].append(item_path)
                     self.frame_classes[defs.phase.val].append(item_label)
 
-        self.logger.info("Done reading, %d frames for %s, %d frames for %s." % (
-            len(self.frame_paths[defs.phase.train]), defs.phase.str(defs.phase.train),
-            len(self.frame_paths[defs.phase.val]), defs.phase.str(defs.phase.val),
-        ))
+            self.logger.info("Done reading image and label data %d frames for %s" % (
+                len(self.frame_paths[defs.phase.val]), defs.phase.str(defs.phase.val),
+            ))
 
     # display image
     def display_image(self,image,label=None):
@@ -256,7 +261,7 @@ class Dataset:
             else:
                 # read image
                 for impath in currentBatch[0]:
-                    frame = self.read_image(impath, self.do_mean_subtraction)
+                    frame = self.read_image(impath)
                     images.append(frame)
                     labels = currentBatch[defs.labels]
 
@@ -390,67 +395,75 @@ class Dataset:
     # run data-related initialization pre-run
     def initialize_data(self, sett):
         self.logger.info("Initializing %s data on input mode %s." % (defs.data_format.str(self.data_format), defs.input_mode.str(self.input_mode)))
+        self.num_items_train, self.num_items_val = 0, 0
         if self.data_format == defs.data_format.tfrecord:
+
             # initialize tfrecord, check file consistency
-            self.input_source_files[defs.phase.train] = sett.input[defs.phase.train] + ".tfrecord"
-            self.input_source_files[defs.phase.val] = sett.input[defs.phase.val] + ".tfrecord"
+            if self.do_training:
+                self.input_source_files[defs.phase.train] = sett.input[defs.phase.train] + ".tfrecord"
+                if not os.path.exists(self.input_source_files[defs.phase.train]):
+                    error("Input file does not exist: %s" % self.input_source_files[defs.phase.train])
+                self.reset_iterator(defs.phase.train)
+                # count or get number of items
+                num_train = self.get_input_data_count(defs.phase.train)
+                # restore batch index to snapshot if needed - only makes sense in training
+                if self.batch_index > 0:
+                    self.fast_forward_iter(self.iterator)
+                # calculate batches: just batchsizes per batch; all is in the tfrecord
+                num_whole_batches = num_train // self.batch_size_train
+                self.batches_train = [self.batch_size_train for _ in range(num_whole_batches)]
+                items_left = num_train - num_whole_batches * self.batch_size_train
+                if items_left:
+                    self.batches_train.append(items_left)
+                self.num_items_train = num_train
+                self.logger.info("Calculated %d training batches." % len(self.batches_train))
 
-            if not os.path.exists(self.input_source_files[defs.phase.train]):
-                error("Input file does not exist: %s" % self.input_source_files[defs.phase.train])
-            if not os.path.exists(self.input_source_files[defs.phase.train]):
-                error("Input file does not exist: %s" % self.input_source_files[defs.phase.train])
+            if self.validation:
+                self.input_source_files[defs.phase.val] = sett.input[defs.phase.val] + ".tfrecord"
+                if not os.path.exists(self.input_source_files[defs.phase.val]):
+                    error("Input file does not exist: %s" % self.input_source_files[defs.phase.val])
+                self.reset_iterator(defs.phase.val)
+                # count or get number of items
+                num_val = self.get_input_data_count(defs.phase.val)
+                num_whole_batches = num_val // self.batch_size_val
+                self.batches_val = [ self.batch_size_val for i in range(num_whole_batches)]
+                items_left = num_val - num_whole_batches * self.batch_size_val
+                if items_left:
+                    self.batches_val.append(items_left)
+                self.num_items_val = num_val
 
-            self.reset_iterator(defs.phase.train)
-            self.reset_iterator(defs.phase.val)
-            # count or get number of items
-            num_train = self.get_input_data_count(defs.phase.train)
-            num_val = self.get_input_data_count(defs.phase.val)
-
-            # restore batch index to snapshot if needed
-            if self.batch_index > 0:
-                self.fast_forward_iter(self.iterator)
-
-            # calculate batches: just batchsizes per batch; all is in the tfrecord
-            num_whole_batches = num_train // self.batch_size_train
-            self.batches_train = [ self.batch_size_train for _ in range(num_whole_batches)]
-            items_left = num_train - num_whole_batches * self.batch_size_train
-            if items_left:
-                self.batches_train.append(items_left)
-
-            num_whole_batches = num_val // self.batch_size_val
-            self.batches_val = [ self.batch_size_val for i in range(num_whole_batches)]
-            items_left = num_val - num_whole_batches * self.batch_size_val
-            if items_left:
-                self.batches_val.append(items_left)
-
-            self.num_items_train = num_train
-            self.num_items_val = num_val
-            self.logger.info("Calculated %d and %d training and validation batches respectively." % (len(self.batches_val), len(self.batches_train)))
+                self.logger.info("Calculated %d validation batches." % len(self.batches_val))
         else:
             # read input files
             self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
             self.input_source_files[defs.phase.val] = sett.input[defs.phase.val]
+
             # read frames and classes
             self.read_frames_metadata()
+            if self.do_training:
 
-            # for raw input mode, calculate batches for paths and labels
+                # for raw input mode, calculate batches for paths and labels
+                imgs = sublist(self.frame_paths[defs.phase.train], self.batch_size_train)
+                lbls = sublist(self.frame_classes[defs.phase.train], self.batch_size_train)
+                for l in range(len(lbls)):
+                    self.batches_train.append([
+                        imgs[l],
+                        list(map(int, lbls[l]))
+                    ])
+            if self.do_validation:
+                imgs = sublist(self.frame_paths[defs.phase.val], self.batch_size_val)
+                lbls = sublist(self.frame_classes[defs.phase.val], self.batch_size_val)
+                for l in range(len(lbls)):
+                    self.batches_val.append([
+                        imgs[l],
+                        list(map(int, lbls[l]))
+                    ])
 
-            # train
-            imgs = sublist(self.frame_paths[defs.phase.train], self.batch_size_train)
-            lbls = sublist(self.frame_classes[defs.phase.train], self.batch_size_train)
-            for l in range(len(lbls)):
-                self.batches_train.append([
-                    imgs[l],
-                    list(map(int, lbls[l]))
-                         ])
-            # val
-            imgs = sublist(self.frame_paths[defs.phase.val], self.batch_size_val)
-            lbls = sublist(self.frame_classes[defs.phase.val], self.batch_size_val)
-            for l in range(len(lbls)):
-                self.batches_val.append([
-                    imgs[l],
-                    list(map(int, lbls[l]))
-                         ])
+
+
+
+
+
 
     # read or count how many data items are in training / validation
     def get_input_data_count(self,phase):

@@ -214,7 +214,8 @@ class Settings:
         self.initialize_from_file()
         if not os.path.exists(self.runFolder):
             error("Non existent run folder %s" % self.runFolder)
-
+        if not self.do_validation and not self.do_training:
+            error("Neither training nor validation is enabled.")
         # configure the logs
         self.configure_logging()
 
@@ -285,7 +286,7 @@ class Settings:
             savefile_metapars = saved_instance_name + ".snap"
 
             self.logger.info("Saving params to [%s]" % savefile_metapars)
-            self.logger.info("Saving params epoch %d, train index %d, validation index %d" % 
+            self.logger.info("Saving params epoch %d, train index %d, validation index %d" %
                 (dataset.epoch_index, dataset.batch_index_train, dataset.batch_index_val))
 
             params2save = [[],[],[]]
@@ -348,13 +349,13 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
             return False
         else:
             dataset.set_or_swap_phase(defs.phase.val)
-            
+
     else:
         dataset.set_current_phase(defs.phase.val)
 
     # reset validation phase indexes
     dataset.reset_phase(dataset.phase)
-          
+
     test_accuracies = []
     # validation
     while dataset.loop():
