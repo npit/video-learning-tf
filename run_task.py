@@ -130,7 +130,9 @@ class Settings:
             basefilename = "frames"
         elif self.input_mode == defs.input_mode.video:
             basefilename = "videos"
-
+        else:
+            self.logger.error("Undefined input mode: [%s]" % str(self.input_mode))
+            error("Undefined input mode")
         self.input[defs.phase.train] = os.path.join(self.runFolder, basefilename + ".train")
         self.input[defs.phase.val] = os.path.join(self.runFolder, basefilename + ".test")
 
@@ -150,7 +152,7 @@ class Settings:
         if config['run_id']:
             self.run_id = config['run_id']
         if config['run_type']:
-            self.run_type = config['run_type']
+            self.run_type = eval(config['run_type'])
         if config['resume_file']:
             self.resume_file = config['resume_file']
         if config['runFolder']:
@@ -160,39 +162,39 @@ class Settings:
         if config['lstm_input_layer']:
             self.lstm_input_layer = config['lstm_input_layer']
         if config['num_classes']:
-            self.num_classes = config['num_classes']
+            self.num_classes = eval(config['num_classes'])
         if config['mean_image']:
-            self.mean_image = config['mean_image']
+            self.mean_image = eval(config['mean_image'])
         if config['raw_image_shape']:
-            self.raw_image_shape = config['raw_image_shape']
+            self.raw_image_shape = eval(config['raw_image_shape'])
         if config['image_shape']:
-            self.image_shape = config['image_shape']
+            self.image_shape = eval(config['image_shape'])
         if config['frame_format']:
-            self.frame_format = config['frame_format']
+            self.frame_format = eval(config['frame_format'])
         if config['input_mode']:
-            self.input_mode = config['input_mode']
+            self.input_mode = eval(config['input_mode'])
         if config['do_random_mirroring']:
-            self.do_random_mirroring = config['do_random_mirroring']
+            self.do_random_mirroring = eval(config['do_random_mirroring'])
         if config['do_random_cropping']:
-            self.do_random_cropping = config['do_random_cropping']
+            self.do_random_cropping = eval(config['do_random_cropping'])
         if config['batch_size_train']:
-            self.batch_size_train = config['batch_size_train']
+            self.batch_size_train = eval(config['batch_size_train'])
         if config['do_training']:
-            self.do_training = config['do_training']
+            self.do_training = eval(config['do_training'])
         if config['epochs']:
-            self.epochs = config['epochs']
+            self.epochs = eval(config['epochs'])
         if config['optimizer']:
             self.optimizer = config['optimizer']
         if config['learning_rate']:
-            self.learning_rate = config['learning_rate']
+            self.learning_rate = eval(config['learning_rate'])
         if config['do_validation']:
-            self.do_validation = config['do_validation']
+            self.do_validation = eval(config['do_validation'])
         if config['validation_interval']:
-            self.validation_interval = config['validation_interval']
+            self.validation_interval = eval(config['validation_interval'])
         if config['batch_size_val']:
-            self.batch_size_val = config['batch_size_val']
+            self.batch_size_val = eval(config['batch_size_val'])
         if config['logging_level']:
-            self.logging_level = config['logging_level']
+            self.logging_level = eval(config['logging_level'])
         if config['tensorboard_folder']:
             self.tensorboard_folder = config['tensorboard_folder']
         print("Successfully initialized from file %s" % self.init_file)

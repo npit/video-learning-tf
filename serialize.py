@@ -11,15 +11,13 @@ import matplotlib.pyplot as plt
 frames, videos = range(2)
 
 # input paths and folder to prepend to each path in the files
-path_prepend_folder = "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames"
+path_prepend_folder = "/home/npittaras/Datasets/UCF101/frames"
 input_files = [
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.train",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/frames.test",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.train",
-"/home/nik/uoa/msc-thesis/implementation/examples/test_run/videos.test"
+    "/home/npittaras/single_frame_run/frames.train",
+    "/home/npittaras/single_frame_run/frames.test"
 ]
 num_threads = 4
-num_items_per_thread = 25
+num_items_per_thread = 500
 
 image_shape = (240,320,3)
 
@@ -322,7 +320,7 @@ def validate():
     for idx in range(len(input_files)):
         inp = input_files[idx]
         paths, labels, mode = read_file(inp)
-        num_validate = 1000 if len(paths) >= 1000 else len(paths)
+        num_validate = 10000 if len(paths) >= 10000 else len(paths)
         sound = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
@@ -375,5 +373,5 @@ def validate():
         else:
             logger.info("Validation for %s ok" % (inp + ".tfrecord"))
 
-# write()
+write()
 validate()
