@@ -63,6 +63,9 @@ def view_print_tensors(lrcn,dataset, settings,tensorlist):
 def sublist(list, sublist_length):
     return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
 
+# shortcut for tensor printing
+def print_tensor(tensor, message):
+    return tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
 

@@ -258,6 +258,7 @@ class Dataset:
                     videoframes = self.get_video_frames(videopath)
                     images.extend(videoframes)
                     labels.append(currentBatch[defs.labels])
+
             else:
                 # read image
                 for impath in currentBatch[0]:
@@ -292,8 +293,10 @@ class Dataset:
 
         frames = []
         for im in range(self.num_frames_per_video):
-            impath = "%s.%04d.%s" % (videopath, 1+im, self.imageFormat)
-            frames.append(self.read_image(impath))
+            impath = "%s%04d.%s" % (videopath, 1+im, self.imageFormat)
+            frame = self.read_image(impath)
+            frames.append(frame)
+
         return frames
 
     # get a random image crop
@@ -330,7 +333,7 @@ class Dataset:
         if self.do_random_cropping:
             image = self.random_crop(image)
         else:
-            image = imresize(image, self.raw_image_shape)
+            image = imresize(image, self.image_shape)
 
         if self.do_mean_subtraction:
             image = image - self.mean_image
@@ -455,6 +458,8 @@ class Dataset:
                         imgs[l],
                         list(map(int, lbls[l]))
                     ])
+            self.num_items_train = len(self.frame_paths[defs.phase.train])
+            self.num_items_val = len(self.frame_paths[defs.phase.val])
 
 
 
@@ -530,7 +535,7 @@ class Dataset:
 
     # get the batch size
     def get_batch_size(self):
-        if self.phase == "train":
+        if self.phase == defs.phase.train:
             return self.batch_size_train
         else:
             return self.batch_size_val

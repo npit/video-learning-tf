@@ -24,7 +24,6 @@ class Summaries:
         self.train_merged = tf.summary.merge(self.train)
         self.val_merged = tf.summary.merge(self.val)
 
-    print_tensors = []
 # settings class
 ################
 # Generic run settings and parameters should go here
@@ -321,8 +320,9 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             # read  batch
             images, labels_onehot = dataset.read_next_batch()
             dataset.print_iter_info( len(images) , len(labels_onehot))
+
             summaries_train, batch_loss, _ = sess.run(
-                [summaries.train_merged, lrcn.loss , lrcn.optimizer],
+                [summaries.train_merged, lrcn.loss, lrcn.logits, lrcn.optimizer],
                 feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
             settings.logger.info("Batch loss : %2.5f" % batch_loss)
