@@ -15,7 +15,7 @@ input_files = [
 ]
 num_frames_per_video = 16
 # in image mode, select random <num_frames_per_video> frames. In video mode, select a contiguous images chunk
-input_mode = defs.input_mode.image
+input_mode = defs.input_mode.video
 paths_prepend_folder = "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames"
 
 
@@ -77,7 +77,7 @@ for inp in input_files:
             videopath = video_paths[idx]
             for fidx in range(len(frames)):
                 frame = frames[fidx]
-                frame = "%s/%s.%04d.%s" % (videopath ,videopath , 1+fidx, frame_format)
+                frame = "%s/%s.%04d.%s" % (videopath ,videopath , frame, frame_format)
                 frame = paths_prepend_folder + frame
                 f.write("%s %d\n" % (frame, label))
 
