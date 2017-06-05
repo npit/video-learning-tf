@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import os, random
+import os, random, configparser
 from utils_ import *
 """
 Script to produce a frame list from a collection of videos
@@ -9,17 +9,60 @@ Script to produce a frame list from a collection of videos
 
 init_file = "config.ini"
 # a file containing relative video paths and classes
-input_files = [
-    "/home/nik/uoa/msc-thesis/implementation/dataset/donahue_splits/ucf101_split1_trainVideos.txt",
-    "/home/nik/uoa/msc-thesis/implementation/dataset/donahue_splits/ucf101_split1_testVideos.txt"
-]
+input_files = []
 num_frames_per_video = 16
 # in image mode, select random <num_frames_per_video> frames. In video mode, select a contiguous images chunk
 input_mode = defs.input_mode.video
-paths_prepend_folder = "/home/nik/uoa/msc-thesis/datasets/ready_data_DonahuePaper/frames"
-
+paths_prepend_folder = "path/to/frames"
 
 frame_format = "jpg"
+
+# initialize from file
+def initialize_from_file(init_file):
+    if init_file is None:
+        return
+    if not os.path.exists(init_file):
+        return
+    tag_to_read = "framesprod"
+    print("Initializing from file %s" % init_file)
+    config = configparser.ConfigParser()
+    config.read(init_file)
+    if not config[tag_to_read ]:
+        error('Expected header [%s] in the configuration file!' % tag_to_read)
+
+    config = config[tag_to_read]
+
+
+    if config['input_files']:
+        input_files =config['input_files']
+        input_files = input_files.split(",")
+        input_files = list(map(lambda x: x.strip(), input_files))
+
+    # keys and default values
+    keys = ['num_frames_per_video', 'input_mode', 'paths_prepend_folder', 'frame_format']
+    values = [ eval(k) for k in keys ]
+    funcs = [eval for _ in keys]
+
+    for i in range(len(keys)):
+        try:
+            key = keys[i]
+            value = config[key]
+            if funcs[i] is not None:
+                value = list(map(funcs[i], [value]))
+                if len(value) == 1:
+                    value = value[0]
+            values[i] = value
+        except KeyError as k:
+            print("Warning: Option %s undefined" % str(k))
+            pass
+
+    print("Successfully initialized from file %s" % init_file)
+    values .append(input_files)
+    return tuple(values)
+
+
+
+num_frames_per_video, input_mode, paths_prepend_folder, frame_format, input_files = initialize_from_file(init_file)
 
 for inp in input_files:
 

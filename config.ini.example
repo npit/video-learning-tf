@@ -42,4 +42,12 @@ num_items_per_thread = 500
 
 raw_image_shape = (240,320,3)
 num_frames_per_video = 16
-image_format = "jpg"
+frame_format = "jpg"
+
+[framesprod]
+
+input_files = [ "path/to/inputfile1" , "path/to/inputfile2"]
+num_frames_per_video = 16
+input_mode = defs.input_mode.video
+paths_prepend_folder = "path/to/frames"
+frame_format = "jpg"
