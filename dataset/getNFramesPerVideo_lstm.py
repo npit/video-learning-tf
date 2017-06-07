@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-import os, random, configparser
+import os, sys, random, configparser
+sys.path.append('..')
 from utils_ import *
 """
 Script to produce a frame list from a collection of videos
@@ -120,7 +121,7 @@ for inp in input_files:
             videopath = video_paths[idx]
             for fidx in range(len(frames)):
                 frame = frames[fidx]
-                frame = "%s/%s.%04d.%s" % (videopath ,videopath , frame, frame_format)
+                frame = "%s/%s.%04d.%s" % (videopath ,videopath , 1+frame, frame_format)
                 frame = paths_prepend_folder + frame
                 f.write("%s %d\n" % (frame, label))
 
