@@ -489,11 +489,43 @@ class Dataset:
             self.logger.info("Counted tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
             self.reset_iterator(iterator)
         else:
-            with open(input_file + ".size","r") as ff:
-                num = int(ff.read())
-            self.logger.info("Got tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
+            size_file = input_file + ".size"
+            self.logger.info("Reading data meta-parameters file [%s]" % size_file)
+            with open(size_file,"r") as ff:
+                contents = []
+                for line in ff:
+                    contents.append(line.strip())
+                num_items = int(contents[0])
+                num_frames_per_item = None
+                if len(contents) == 0:
+                    # no number of frames per video, it's gotta be an image run
+                    if not self.input_mode == defs.input_mode.image:
+                        self.logger.error(
+                            "Specified input mode %s but size file contains no number of frames per video" %
+                            (defs.input_mode.str(self.input_mode)))
+                        error("Input mode mismatch with data.")
+                else:
+                    # read number of frames per video
+                    num_frames_per_item = int(contents[1])
+                    #  make sure it's a video run
+                    if not self.input_mode == defs.input_mode.video:
+                        self.logger.error("Specified input mode %s but size file contains a number of frames" %
+                                          (defs.input_mode.str(self.input_mode)))
+                        error("Input mode mismatch with data.")
+                    # check if there's a clash with the one specified
+                    if self.num_frames_per_video is not None:
+                        if not num_frames_per_item == self.num_frames_per_video:
+                            self.logger.error("Read %d frames per video from the size file but specified %d" %
+                                              (num_frames_per_item,  self.num_frames_per_video))
+                            error("Number of video frames mismatch")
+                    else:
+                        self.logger.warn("Read %d frames per video from %s " %
+                                          (num_frames_per_item, size_file))
 
-        return num
+            self.logger.info("Got tfrecord %s data: %d entries." % (defs.phase.str(phase), num_items))
+            if num_frames_per_item is not None:
+                self.logger.info("Got tfrecord %s data: verified %d frames per item." % (defs.phase.str(phase), num_frames_per_item))
+        return num_items
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
