@@ -322,7 +322,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             dataset.print_iter_info( len(images) , len(labels_onehot))
 
             summaries_train, batch_loss, _ = sess.run(
-                [summaries.train_merged, lrcn.loss, lrcn.logits, lrcn.optimizer],
+                [summaries.train_merged, lrcn.loss, lrcn.optimizer],
                 feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
             settings.logger.info("Batch loss : %2.5f" % batch_loss)
