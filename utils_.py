@@ -97,6 +97,13 @@ class defs:
         def str(arg):
             return defs.run_types._str[arg]
 
+    # video pooling methods
+    class pooling:
+        avg, last = range(2)
+        _str = ["avg", "last"]
+        def str(arg):
+            return defs.run_types._str[arg]
+
     # batch content type
     images, labels = range(2)
     _str = ["images", "labels"]

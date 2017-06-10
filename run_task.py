@@ -36,7 +36,7 @@ class Settings:
     init_file = "config.ini"
 
     # run mode and type
-    run_id = "singleframe_run"
+    run_id = "run_id"
     run_type = defs.run_types.singleframe
 
     # save / load configuration
@@ -46,6 +46,8 @@ class Settings:
 
     # architecture settings
     lstm_input_layer = "fc7"
+    lstm_num_hidden = 256
+    video_pooling_type = defs.pooling.avg
     num_classes = None
     mean_image = None
 
@@ -63,6 +65,7 @@ class Settings:
     epochs = 15
     optimizer = "SGD"
     learning_rate = 0.001
+    dropout_keep_prob = 0.5
 
     # validation settings
     do_validation = True

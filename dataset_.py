@@ -19,10 +19,6 @@ class Dataset:
     # input file names
     input_source_files = [[], []]  # train,test
 
-    # video frame paths and classes
-    video_shots = []
-    video_classes = []
-
     # single frame paths and classes, for raw input mode
     frame_paths = []
     frame_classes = []
@@ -30,7 +26,7 @@ class Dataset:
     # file to map class indexes to their names
     class_names = "/home/nik/uoa/msc-thesis/datasets/UCF101/test/videoIndexesNames.txt"
 
-    #
+    # run settings
     run_folder = None
     num_frames_per_video = 16
     imageFormat = "jpg"
@@ -46,34 +42,25 @@ class Dataset:
     mean_image = None
     do_mean_subtraction = None
 
-    # image processing
+    # frame processing
     do_random_mirroring = None
+    do_random_cropping = None
     crop_w_avail = None
     crop_h_avail = None
 
-
-    # per-class video indexes
-    trainPerClass = []
-    valPerClass = []
-
-    # total list
-    trainSet = []
-    trainLabels = []
-    valSet = []
-    valLabels = []
-
+    # epoch and phase variables
     phase = None
     epoch_index = None
     epochs = None
 
-    # current phase
+    # current phase variables
     batch_count = 0
     batch_index = 0
     batch_size = None
     batches = None
     iterator = None
 
-    # training
+    # training variables
     do_training = None
     batch_size_train = None
     batches_train = []
@@ -81,7 +68,7 @@ class Dataset:
     train_iterator = None
     num_items_train = None
 
-    # validation
+    # validation variables
     do_validation = False
     validation_interval = None
     batch_size_val = None
@@ -96,20 +83,6 @@ class Dataset:
     # mean subtraction
     def shoud_subtract_mean(self):
         return self.mean_image is not None
-    # get class name from class index
-    def getClassName(self,classIndex):
-        return self.videoClassNames[classIndex]
-
-    # read paths to video folders
-    def read_video_metadata(self):
-        self.logger.info("Reading video paths from %s" % self.videoFramePathsFile)
-        with open(self.videoFramePathsFile) as f:
-            for line in f:
-                self.videoPaths.append(line.strip())
-        with open(self.class_names) as f:
-            for line in f:
-                self.videoClassNames.append(line.strip())
-        self.num_classes = len(self.videoClassNames)
 
     # read paths to images
     def read_frames_metadata(self):

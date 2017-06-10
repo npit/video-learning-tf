@@ -1,12 +1,16 @@
 import tensorflow as tf
-from utils_ import print_tensor
+from utils_ import *
 
-def define(inputTensor, input_batch_size, num_classes, sequence_len,  logger, summaries, dropout_keep_prob = 0.5):
+def define(inputTensor, dataset, settings, summaries):
     with tf.name_scope("LSTM"):
 
         # num hidden neurons, the size of the hidden state vector
-        num_hidden = 256
-
+        num_hidden = settings.lstm_num_hidden
+        num_classes = dataset.num_classes
+        logger = dataset.logger
+        sequence_len = dataset.num_frames_per_video
+        video_pooling_type = settings.video_pooling_type
+        dropout_keep_prob = settings.dropout_keep_prob
         # LSTM basic cell
         cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True)
         logger.debug("LSTM input : %s" % str(inputTensor.shape))
@@ -15,13 +19,21 @@ def define(inputTensor, input_batch_size, num_classes, sequence_len,  logger, su
         output = rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger)
         logger.debug("LSTM raw output : %s" % str(output.shape))
 
-        # keep only the response at the last time step
-        output = tf.slice(output,[0,sequence_len-1,0],[-1,1,num_hidden],name="lstm_output_reshape")
-        logger.debug("LSTM sliced output : %s" % str(output.shape))
+        if video_pooling_type == defs.pooling.last:
+            # keep only the response at the last time step
+            output = tf.slice(output,[0,sequence_len-1,0],[-1,1,num_hidden],name="lstm_output_reshape")
+            logger.debug("LSTM last timestep output : %s" % str(output.shape))
+            # squeeze empty dimension to get vector
+            output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
+            logger.debug("LSTM squeezed output : %s" % str(output.shape))
 
-        # squeeze empty dimension to get vector
-        output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
-        logger.debug("LSTM squeezed output : %s" % str(output.shape))
+        elif video_pooling_type == defs.pooling.avg:
+            # average per-timestep results
+            output = tf.reduce_mean(output, axis=1)
+            logger.debug("LSTM time-averaged output : %s" % str(output.shape))
+
+
+
 
         # add dropout
         output = tf.nn.dropout(output, keep_prob=dropout_keep_prob,name="lstm_dropout")

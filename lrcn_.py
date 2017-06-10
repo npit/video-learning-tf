@@ -65,8 +65,7 @@ class LRCN:
                 self.logger.info("dcnn out : [%s]" % self.outputTensor.shape)
 
                 # LSTM for frame sequence classification for frame encoding
-                self.logits = lstm.define(self.outputTensor, dataset.get_batch_size(), dataset.num_classes,
-                                          dataset.num_frames_per_video, self.logger, summaries)
+                self.logits = lstm.define(self.outputTensor, dataset, settings, summaries)
                 self.logger.info("logits : [%s]" % self.logits.shape)
 
 
