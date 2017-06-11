@@ -53,8 +53,11 @@ class Settings:
     # data input format
     raw_image_shape = (240, 320, 3)
     image_shape = (227, 227, 3)
-    frame_format = defs.data_format.raw
+    data_format = defs.data_format.raw
+    frame_format = "jpg"
     input_mode = defs.input_mode.image
+    num_frames_per_clip = 16
+    num_clips_per_video = 1
 
     # training settings
     do_random_mirroring = True
@@ -102,6 +105,7 @@ class Settings:
     # should resume
     def should_resume(self):
         return self.resume_file is not None
+
     # configure logging settings
     def configure_logging(self):
         #tf.logging.set_verbosity(tf.logging.INFO)
@@ -125,6 +129,7 @@ class Settings:
         self.logger.addHandler(handler)
         self.logger.addHandler(consoleHandler)
 
+    # set the input files
     def set_input_files(self):
         # setup input files
         if self.input_mode == defs.input_mode.image:
@@ -178,6 +183,8 @@ class Settings:
             self.image_shape = eval(config['image_shape'])
         if config['frame_format']:
             self.frame_format = eval(config['frame_format'])
+        if config['data_format']:
+            self.data_format = eval(config['data_format'])
         if config['input_mode']:
             self.input_mode = eval(config['input_mode'])
         if config['do_random_mirroring']:
@@ -205,7 +212,6 @@ class Settings:
         if config['tensorboard_folder']:
             self.tensorboard_folder = eval(config['tensorboard_folder'])
         print("Successfully initialized from file %s" % self.init_file)
-
 
     # initialize stuff
     def initialize(self, args):
@@ -235,6 +241,7 @@ class Settings:
     def good(self):
         if not self.epochs: error("Non positive number of epochs.")
         return True
+
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
@@ -255,7 +262,6 @@ class Settings:
             self.epoch_index = params[defs.loaded.epoch_index]
             self.logger.info("Restored epoch %d, train index %d, validation index %d" % (self.epoch_index, self.train_index, self.val_index))
 
-
     # restore graph variables
     def resume_graph(self, sess):
         if self.should_resume():
@@ -269,7 +275,6 @@ class Settings:
                 self.saver.restore(sess, savefile_graph)
             except Exception as ex:
                 error(ex)
-
 
     # save graph and dataset stuff
     def save(self, sess, dataset,progress, global_step):
@@ -362,8 +367,9 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
     dataset.reset_phase(dataset.phase)
 
     test_accuracies = []
-    # validation
+    # validation loop
     while dataset.loop():
+        # get images and labels
         images, labels_onehot = dataset.read_next_batch()
         dataset.print_iter_info(len(images), len(labels_onehot))
         summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],

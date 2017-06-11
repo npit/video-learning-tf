@@ -43,7 +43,7 @@ class LRCN:
                 with tf.name_scope("video_level_pooling"):
                     # -1 on the number of videos (batchsize) to deal with varying values for test and train
                     self.logger.info("raw per-frame logits : [%s]" % framesLogits.shape)
-                    frames_per_item = dataset.num_frames_per_video if dataset.input_mode == defs.input_mode.video else 1
+                    frames_per_item = dataset.num_frames_per_clip if dataset.input_mode == defs.input_mode.video else 1
                     frameLogits = tf.reshape(framesLogits, (-1, frames_per_item , dataset.num_classes),
                                              name="reshape_framelogits_pervideo")
 
@@ -97,10 +97,8 @@ class LRCN:
             with tf.name_scope('accuracy_train'):
                 self.accuracyTrain = tf.reduce_mean(tf.cast(correct_predictionTrain, tf.float32))
 
-
-
-
         with tf.name_scope('validation_accuracy'):
+
             with tf.name_scope('correct_prediction_val'):
 
                 #ok for this argmax we gotta squash the labels down to video level.
@@ -112,3 +110,6 @@ class LRCN:
         summaries.val.append(tf.summary.scalar('accuracyVal', self.accuracyVal))
         self.logger.debug("Completed network definitions.")
 
+    # accuracy computation for videos with multiple clips, where logits are already fetched
+    def get_accuracy(self, logits, labels):
+        pass

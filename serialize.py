@@ -20,8 +20,11 @@ path_prepend_folder = None
 num_threads = 4
 num_items_per_thread = 500
 raw_image_shape = (240,320,3)
-num_frames_per_video = 16
+video_frame_mode = defs.video_frame_mode.random
+num_frames_per_clip = 16
+num_clips_per_video = 1
 frame_format = "jpg"
+force_video_metadata = False
 
 # initialize from file
 def initialize_from_file(init_file):
@@ -37,35 +40,7 @@ def initialize_from_file(init_file):
         error('Expected header [%s] in the configuration file!' % tag_to_read)
 
     config = config[tag_to_read]
-
-
-    if config['input_files']:
-        input_files =config['input_files']
-        input_files = input_files.split(",")
-        input_files = list(map(lambda x: x.strip(), input_files))
-
-    # keys and default values
-    keys = ['path_prepend_folder', 'num_threads', 'num_items_per_thread', 'raw_image_shape', \
-            'frame_format', 'num_frames_per_video']
-    values = [ eval(k) for k in keys ]
-    funcs = [eval for _ in keys]
-
-    for i in range(len(keys)):
-        try:
-            key = keys[i]
-            value = config[key]
-            if funcs[i] is not None:
-                value = list(map(funcs[i], [value]))
-                if len(value) == 1:
-                    value = value[0]
-            values[i] = value
-        except KeyError as k:
-            print("Warning: Option %s undefined" % str(k))
-            pass
-
-    print("Successfully initialized from file %s" % init_file)
-    values .append(input_files)
-    return tuple(values)
+    return config
 
 
 # datetime for timestamps
@@ -115,9 +90,13 @@ def serialize_multithread(paths, labels, outfile, mode):
 
     # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
-        f.write("%d" % len(paths))
 
-    # split up paths list
+        f.write("%d\n" % len(paths))
+        if mode == defs.input_mode.video or force_video_metadata:
+            f.write("%d\n" % num_frames_per_clip)
+            f.write("%d\n" % num_clips_per_video)
+
+    # split up paths/labels list per thread run
     num_images_per_thread_run = num_items_per_thread * num_threads
     paths_per_thread_run = sublist(paths, num_images_per_thread_run)
     labels_per_thread_run = sublist(labels, num_images_per_thread_run)
@@ -144,8 +123,9 @@ def serialize_multithread(paths, labels, outfile, mode):
         # start threads
         threads = [[] for _ in range(num_threads_in_run)]
         frames =  [[] for _ in range(num_threads_in_run)]
+        output_paths = [[] for _ in range(num_threads_in_run)]
         for t in range(num_threads_in_run):
-            threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],mode,frames,t))
+            threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],mode,frames,t, output_paths))
             threads[t].start()
 
 
@@ -163,7 +143,7 @@ def serialize_multithread(paths, labels, outfile, mode):
                 logger.error("Thread # %d encountered an error." % t)
                 exit(1)
             if mode == defs.input_mode.video:
-                duplist = [[label for _ in range(num_frames_per_video)] for label in labels_per_thread[t]]
+                duplist = [[label for _ in range(num_frames_per_clip * num_clips_per_video)] for label in labels_per_thread[t]]
                 labels_per_thread[t] = []
                 for l in duplist:
                     labels_per_thread[t].extend(l)
@@ -176,20 +156,28 @@ def serialize_multithread(paths, labels, outfile, mode):
                     (count, sum(list(map(len,paths_per_thread))), elapsed_str(time.time()-tic)))
 
     writer.close()
+    output_paths = [ path for thread_paths in output_paths for path  in thread_paths]
+    output_labels = [ l for thread_labels in labels_per_thread for l  in thread_labels]
+    return output_paths , output_labels
 
-def read_item_list_threaded(paths, mode, storage, id):
+def read_item_list_threaded(paths, mode, storage, id, output_paths):
     if mode == defs.input_mode.image:
-        for p in paths:
-            image = read_image(p)
+        for framepath in paths:
+            image = read_image(framepath)
             if image is None:
                 return
             storage[id].append(image)
+        output_paths[id].extend(paths)
     else:
-        for p in paths:
-            vidframes = get_video_frames(p)
+        for videopath in paths:
+            videoframepaths = get_video_frames(videopath)
+            vidframes = []
+            for framepath in videoframepaths:
+                vidframes.append(read_image(framepath))
             if vidframes is None:
                 return
             storage[id].extend(vidframes)
+            output_paths[id].extend(videoframepaths)
 
 def serialize_to_tfrecord( frames, labels, outfil, writer):
     for idx in range(len(frames)):
@@ -205,18 +193,39 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
 
 # read all frames for a video
 def get_video_frames(path):
-
     frames = []
-    basename = os.path.basename(path)
-    for im in range(num_frames_per_video):
-        impath = path + "%04d" % (1 + im) + "." + frame_format
-        image = read_image(impath)
-        if image is None:
-            return None
-        frames.append(image)
-    return frames
+    if not os.path.exists(path):
+        error("Path [%s] does not exist!" % path)
 
+    num_files = len(os.listdir(path))
 
+    # generate a number of frame paths from the video path
+    if video_frame_mode == defs.video_frame_mode.random:
+        # select frames randomly from the video
+        avail_frames = list(range(num_files))
+        shuffle(avail_frames)
+        avail_frames = avail_frames[:num_frames_per_clip]
+        frames.extend(avail_frames)
+    elif video_frame_mode == defs.video_frame_mode.clip:
+        # get <num_clips> random chunks of a consequtive <num_frames> frames
+
+        possible_chunk_start = list(range(num_files - num_frames_per_clip + 1))
+        if len(possible_chunk_start) < num_clips_per_video:
+            error("Video %s cannot sustain a number of %d unique %d-frame clips" %
+                  (path, num_clips_per_video, num_frames_per_clip))
+        shuffle(possible_chunk_start)
+        for _ in range(num_clips_per_video):
+            start_index = possible_chunk_start[-1]
+            possible_chunk_start = possible_chunk_start[:-1]
+            clip_frames = list(range(start_index, start_index + num_frames_per_clip))
+            frames.extend(clip_frames)
+
+    frame_paths = []
+    for fridx in frames:
+        basename = os.path.basename(path)
+        fr_path = "%s.%04d.%s" % (os.path.join(path,basename),1 + fridx,frame_format)
+        frame_paths.append(fr_path)
+    return frame_paths
 
  # read image from disk
 def read_image(imagepath):
@@ -241,6 +250,7 @@ def read_image(imagepath):
         # image = image - mean_image
     except Exception as ex:
         logger.error("Error :" + str(ex))
+        error("Error reading image.")
         return None
 
     return image
@@ -330,24 +340,28 @@ def read_file(inp):
     return paths, labels, mode
 
 def write():
+    outpaths_per_input = []
     for idx in range(len(input_files)):
         inp = input_files[idx]
         paths, labels, mode = read_file(inp)
         output_file = inp + ".tfrecord"
         logger.info("Writing to %s" % output_file)
         tic = time.time()
-        serialize_multithread(paths, labels,output_file , mode)
+        outpaths, outlabels = serialize_multithread(paths, labels,output_file , mode)
+        outpaths_per_input.append( ( outpaths, outlabels, mode ) )
         logger.info("Done serializing %s " % inp)
         logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
+    return outpaths_per_input
 
+# verify the serialization validity
+def validate(written_data):
 
-def validate():
+    for index in range(len(input_files)):
+        inp = input_files[index]
+        paths, labels, mode,  = written_data[index]
 
-    for idx in range(len(input_files)):
-        inp = input_files[idx]
-        paths, labels, mode = read_file(inp)
         num_validate = 10000 if len(paths) >= 10000 else len(paths)
-        sound = True
+        error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
         idx_list = idx_list[:num_validate]
@@ -359,42 +373,27 @@ def validate():
             if not i == testidx:
                 next(iter)
                 continue
-            if mode == defs.input_mode.video:
-                frames = get_video_frames(paths[i])
-                fframetf, llabeltf = deserialize_from_tfrecord(iter, num_frames_per_video)
-                label = labels[i]
 
-                for v in range(num_frames_per_video):
-                    if not np.array_equal(frames[v], fframetf[v]):
-                        logger.error("Unequal video frame #%d @ %s" % ( v, paths[i]))
-                        sound = False
-                    if not label == llabeltf[v]:
-                        logger.error("Unequal label at video frame %d @ %s. Found %d, expected %d" % (v, paths[i], label, llabeltf[v]))
-                        sound = False
+            frame = read_image(paths[i])
+            label = labels[i]
 
+            fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
+            frametf = fframetf[0]
+            labeltf = llabeltf[0]
 
-            else:
-
-                frame = read_image(paths[i])
-                label = labels[i]
-
-                fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
-                frametf = fframetf[0]
-                labeltf = llabeltf[0]
-
-                if not np.array_equal(frame , frametf):
-                    logger.error("Unequal image @ %s" % paths[i])
-                    sound = False
-                if not label == labeltf:
-                    logger.error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
-                    sound = False
+            if not np.array_equal(frame , frametf):
+                logger.error("Unequal image @ %s" % paths[i])
+                error_free = False
+            if not label == labeltf:
+                logger.error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
+                error_free = False
 
             lidx = lidx + 1
             if lidx >= len(idx_list):
                 break
 
             testidx = idx_list[lidx]
-        if not sound:
+        if not error_free:
             logger.error("errors exist.")
         else:
             logger.info("Validation for %s ok" % (inp + ".tfrecord"))
@@ -403,8 +402,26 @@ def validate():
 
 if len(sys.argv) > 1:
     init_file = sys.argv[-1]
-path_prepend_folder, num_threads, num_items_per_thread, raw_image_shape , \
-frame_format,  num_frames_per_video, input_files = initialize_from_file(init_file)
 
-write()
-validate()
+keyvals = initialize_from_file(init_file)
+
+for key in keyvals:
+    exec("%s=%s" % (key, keyvals[key]))
+print("Successfully initialized from file %s" % init_file)
+
+# outpaths is either the input frame paths in image mode, or the expanded frame paths in video mode
+written_data = write()
+validate(written_data)
+# write the selected clips / frames for video mode
+for i in range(len(written_data)):
+    inp = input_files[i]
+    outfile = inp + ".frames"
+    paths, labels, mode = written_data[i]
+    if not mode == defs.input_mode.video:
+        continue
+    logger.info("Documenting selected paths for video mode file %s" % inp)
+    logger.info("Writing to file %s" % outfile)
+    with open(outfile,"w") as f:
+        for path, label in zip(paths,labels):
+            f.write("%s %d\n" % (path, label))
+

@@ -32,6 +32,14 @@ def define(inputTensor, input_batch_size, num_classes, keep_prob = 0.5):
         input_dim=int(inputTensor.shape[-1])
         state = None  # state vector
 
+
+        # num hidden neurons, the size of the hidden state vector
+        num_hidden = settings.lstm_num_hidden
+        num_classes = dataset.num_classes
+        logger = dataset.logger
+        sequence_len = dataset.num_frames_per_clip
+        video_pooling_type = settings.video_pooling_type
+        dropout_keep_prob = settings.dropout_keep_prob
         # LSTM basic cell
         cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True)
         # Initial memory state is blank
