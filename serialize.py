@@ -90,7 +90,6 @@ def serialize_multithread(paths, labels, outfile, mode):
 
     # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
-
         f.write("%d\n" % len(paths))
         if mode == defs.input_mode.video or force_video_metadata:
             f.write("%d\n" % num_frames_per_clip)
@@ -228,6 +227,7 @@ def get_video_frames(path):
     return frame_paths
 
  # read image from disk
+
 def read_image(imagepath):
     try:
         image = imread(imagepath)

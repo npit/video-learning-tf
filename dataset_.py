@@ -19,17 +19,12 @@ class Dataset:
     # input file names
     input_source_files = [[], []]  # train,test
 
-    # video frame paths and classes
-    video_shots = []
-    video_classes = []
-
     # single frame paths and classes, for raw input mode
     frame_paths = []
     frame_classes = []
 
 
     # run settings
-
     run_folder = None
     num_clips_per_video = None
     num_frames_per_clip = None
@@ -45,34 +40,25 @@ class Dataset:
     mean_image = None
     do_mean_subtraction = None
 
-    # image processing
+    # frame processing
     do_random_mirroring = None
+    do_random_cropping = None
     crop_w_avail = None
     crop_h_avail = None
 
-
-    # per-class video indexes
-    trainPerClass = []
-    valPerClass = []
-
-    # total list
-    trainSet = []
-    trainLabels = []
-    valSet = []
-    valLabels = []
-
+    # epoch and phase variables
     phase = None
     epoch_index = None
     epochs = None
 
-    # current phase
+    # current phase variables
     batch_count = 0
     batch_index = 0
     batch_size = None
     batches = None
     iterator = None
 
-    # training
+    # training variables
     do_training = None
     batch_size_train = None
     batches_train = []
@@ -80,7 +66,7 @@ class Dataset:
     train_iterator = None
     num_items_train = 0
 
-    # validation
+    # validation variables
     do_validation = False
     validation_interval = None
     batch_size_val = None
@@ -95,20 +81,6 @@ class Dataset:
     # mean subtraction
     def shoud_subtract_mean(self):
         return self.mean_image is not None
-    # get class name from class index
-    def getClassName(self,classIndex):
-        return self.videoClassNames[classIndex]
-
-    # read paths to video folders
-    def read_video_metadata(self):
-        self.logger.info("Reading video paths from %s" % self.videoFramePathsFile)
-        with open(self.videoFramePathsFile) as f:
-            for line in f:
-                self.videoPaths.append(line.strip())
-        with open(self.class_names) as f:
-            for line in f:
-                self.videoClassNames.append(line.strip())
-        self.num_classes = len(self.videoClassNames)
 
     # read paths to images
     def read_frames_metadata(self):
@@ -257,6 +229,7 @@ class Dataset:
                     videoframes = self.get_video_frames(videopath)
                     images.extend(videoframes)
                     labels.append(currentBatch[defs.labels])
+
             else:
                 # read image
                 for impath in currentBatch[0]:
@@ -294,8 +267,6 @@ class Dataset:
             impath = "%s%04d.%s" % (videopath, 1+im, self.frame_format)
             frame = self.read_image(impath)
             frames.append(frame)
-
-
         return frames
 
     # get a random image crop
@@ -332,7 +303,7 @@ class Dataset:
         if self.do_random_cropping:
             image = self.random_crop(image)
         else:
-            image = imresize(image, self.raw_image_shape)
+            image = imresize(image, self.image_shape)
 
         if self.do_mean_subtraction:
             image = image - self.mean_image
@@ -454,6 +425,8 @@ class Dataset:
                         imgs[l],
                         list(map(int, lbls[l]))
                     ])
+            self.num_items_train = len(self.frame_paths[defs.phase.train])
+            self.num_items_val = len(self.frame_paths[defs.phase.val])
 
             self.num_items_train = len(self.frame_paths[defs.phase.train])
             self.num_items_val = len(self.frame_paths[defs.phase.val])
@@ -487,6 +460,7 @@ class Dataset:
                 pass
             self.logger.info("Counted tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
             self.reset_iterator(iterator)
+
         else:
 
             # It exists. Read the count and optionally # frames per clip and # clips
@@ -496,9 +470,10 @@ class Dataset:
                 contents = []
                 for line in ff:
                     contents.append(line.strip())
+
             # number of items
             num_items = int(contents[0])
-            num_frames_per_item, num_clips = None, None
+            num_frames_per_clip, num_clips = None, None
 
             # number of frames per clip
             if len(contents) == 0 :
@@ -510,7 +485,7 @@ class Dataset:
                     error("Input mode mismatch with data.")
             else:
                 # read number of frames per video
-                num_frames_per_item = int(contents[1])
+                num_frames_per_clip = int(contents[1])
                 #  make sure it's a video run
                 if not self.input_mode == defs.input_mode.video:
                     self.logger.error("Specified input mode %s but size file contains a number of frames" %
@@ -518,14 +493,14 @@ class Dataset:
                     error("Input mode mismatch with data.")
                 # check if there's a clash with the one specified
                 if self.num_frames_per_clip is not None:
-                    if not num_frames_per_item == self.num_frames_per_clip:
+                    if not num_frames_per_clip == self.num_frames_per_clip:
                         self.logger.error("Read %d frames per video from the size file but specified %d" %
-                                          (num_frames_per_item,  self.num_frames_per_clip))
+                                          (num_frames_per_clip,  self.num_frames_per_clip))
                         error("Number of video frames mismatch")
                 else:
                     self.logger.warn("Read %d frames per video from %s " %
-                                      (num_frames_per_item, size_file))
-                    self.num_frames_per_clip = num_frames_per_item
+                                      (num_frames_per_clip, size_file))
+                    self.num_frames_per_clip = num_frames_per_clip
 
             # number of clips
             if len(contents) > 2 :
@@ -538,14 +513,15 @@ class Dataset:
                     self.num_clips_per_video = num_clips
 
             self.logger.info("Got tfrecord %s data: %d entries." % (defs.phase.str(phase), num_items))
-            if num_frames_per_item is not None:
-                self.logger.info("Got tfrecord %s data: verified %d frames per item." % (defs.phase.str(phase), num_frames_per_item))
+            if num_frames_per_clip is not None:
+                self.logger.info("Got tfrecord %s data: verified %d frames per clip." % (defs.phase.str(phase), num_frames_per_clip))
             if num_clips is not None:
-                self.logger.info("Got tfrecord %s data: verified %d frames per item." % (defs.phase.str(phase), num_frames_per_item))
+                self.logger.info("Got tfrecord %s data: verified %d frames per item." % (defs.phase.str(phase), num_frames_per_clip))
         if phase == defs.phase.train:
             self.num_items_train = num_items
         elif phase == defs.phase.val:
             self.num_items_val = num_items
+
 
 
 
@@ -589,7 +565,7 @@ class Dataset:
 
     # get the batch size
     def get_batch_size(self):
-        if self.phase == "train":
+        if self.phase == defs.phase.train:
             return self.batch_size_train
         else:
             return self.batch_size_val

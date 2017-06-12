@@ -1,17 +1,21 @@
 [run]
+# run mode and type
 run_id = "singleframe_run"
 run_type = defs.run_types.singleframe
 
-
+# save / load configuration
 resume_file = 
 run_folder = "path/to/runfolder"
 path_prepend_folder = 
 
-
+# architecture settings
 lstm_input_layer = "fc7"
+lstm_num_hidden = 256
+video_pooling_type = defs.pooling.avg
 num_classes = 101
 mean_image = [103.939, 116.779, 123.68]
 
+# data input format
 raw_image_shape = (240, 320, 3)
 image_shape = (227, 227, 3)
 data_format = defs.data_format.tfrecord
@@ -26,16 +30,23 @@ do_training = True
 do_random_mirroring = True
 do_random_cropping = True
 
+
+# training settings
 do_training = True
+do_random_mirroring = True
+do_random_cropping = True
 batch_size_train = 100
 epochs = 15
 optimizer = "SGD"
 learning_rate = 0.001
+dropout_keep_prob = 0.5
 
+# validation settings
 do_validation = False
 validation_interval = 1
 batch_size_val = 88
 
+# logging
 logging_level = logging.DEBUG
 tensorboard_folder = "tensorboard_graphs"
 
@@ -49,15 +60,16 @@ num_items_per_thread = 500
 raw_image_shape = (240,320,3)
 
 num_frames_per_clip = 16
+
 frame_format = "jpg"
 
 [framesprod]
 
 input_files = [ "path/to/inputfile1" , "path/to/inputfile2"]
+
 num_frames_per_clip = 16
 num_clips_per_video = 3
 input_mode = defs.input_mode.video
 paths_prepend_folder = "path/to/frames"
 frame_format = "jpg"
-
 

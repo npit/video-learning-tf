@@ -6,6 +6,7 @@
 
 # except from:
 !.gitignore
+!dataset
 !models/alexnet/get_weights_file.sh
 !*.py
 !README.md

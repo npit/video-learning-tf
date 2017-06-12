@@ -24,7 +24,6 @@ class Summaries:
         self.train_merged = tf.summary.merge(self.train)
         self.val_merged = tf.summary.merge(self.val)
 
-    print_tensors = []
 # settings class
 ################
 # Generic run settings and parameters should go here
@@ -37,7 +36,7 @@ class Settings:
     init_file = "config.ini"
 
     # run mode and type
-    run_id = "singleframe_run"
+    run_id = "run_id"
     run_type = defs.run_types.singleframe
 
     # save / load configuration
@@ -47,6 +46,8 @@ class Settings:
 
     # architecture settings
     lstm_input_layer = "fc7"
+    lstm_num_hidden = 256
+    video_pooling_type = defs.pooling.avg
     num_classes = None
     mean_image = None
 
@@ -67,6 +68,7 @@ class Settings:
     epochs = 15
     optimizer = "SGD"
     learning_rate = 0.001
+    dropout_keep_prob = 0.5
 
     # validation settings
     do_validation = True
@@ -326,8 +328,9 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             # read  batch
             images, labels_onehot = dataset.read_next_batch()
             dataset.print_iter_info( len(images) , len(labels_onehot))
+
             summaries_train, batch_loss, _ = sess.run(
-                [summaries.train_merged, lrcn.loss , lrcn.optimizer],
+                [summaries.train_merged, lrcn.loss, lrcn.optimizer],
                 feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
             settings.logger.info("Batch loss : %2.5f" % batch_loss)

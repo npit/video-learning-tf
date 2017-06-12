@@ -35,8 +35,8 @@ class LRCN:
                 self.logger.info("Dcnn workflow")
                 # single DCNN, classifying individual frames
                 self.inputData, framesLogits = alexnet.define(dataset.image_shape, weightsFile, dataset.num_classes)
-                self.logger.info("input : [%s]" % self.inputData.shape)
-                self.logger.info("label : [%s]" % self.inputData.shape)
+                self.logger.debug("input : [%s]" % self.inputData.shape)
+                self.logger.debug("label : [%s]" % self.inputData.shape)
             # do video level pooling only if necessary
             if dataset.input_mode == defs.input_mode.video:
                 # average the logits on the frames dimension
@@ -56,16 +56,16 @@ class LRCN:
 
         elif run_mode == defs.run_types.lstm:
             with tf.name_scope("lstm_workflow"):
-                if dataset.input_mode!= defs.input_mode.video:
+                if dataset.input_mode != defs.input_mode.video:
                     error("LSTM workflow only available for video input mode")
                 #  DCNN for frame encoding
                 self.inputData, self.outputTensor = alexnet.define(dataset.image_shape, weightsFile, dataset.num_classes,settings.lstm_input_layer)
-                self.logger.info("input : [%s]" % self.inputData.shape)
-                self.logger.info("label : [%s]" % self.inputData.shape)
+                self.logger.debug("input : [%s]" % self.inputData.shape)
+                self.logger.debug("label : [%s]" % self.inputData.shape)
                 self.logger.info("dcnn out : [%s]" % self.outputTensor.shape)
 
                 # LSTM for frame sequence classification for frame encoding
-                self.logits = lstm.define(self.outputTensor, dataset.get_batch_size(), dataset.num_classes)
+                self.logits = lstm.define(self.outputTensor, dataset, settings, summaries)
                 self.logger.info("logits : [%s]" % self.logits.shape)
 
 

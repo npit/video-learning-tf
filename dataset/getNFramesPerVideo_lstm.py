@@ -5,8 +5,6 @@ sys.path.append('..')
 from utils_ import *
 """
 Script to produce a frame list from a collection of videos.
-
-
 """
 ################################
 
@@ -46,6 +44,7 @@ def initialize_from_file(init_file):
 
     # keys and default values
     keys = ['num_frames_per_clip', 'num_clips_per_video', 'input_mode', 'paths_prepend_folder', 'frame_format']
+
     values = [ eval(k) for k in keys ]
     funcs = [eval for _ in keys]
 
@@ -66,8 +65,7 @@ def initialize_from_file(init_file):
     values .append(input_files)
     return tuple(values)
 
-
-
+# read configuration
 num_frames_per_clip, num_clips_per_video, input_mode, paths_prepend_folder, frame_format, input_files = initialize_from_file(init_file)
 
 # loop over input files
@@ -77,7 +75,8 @@ for inp in input_files:
     labels = []
     frame_paths = []
     print("Processing %s" % inp)
-    # read video paths
+
+    # read paths
     with open(inp, "r") as f:
         for line in f:
             path, label = line.split()
@@ -90,11 +89,13 @@ for inp in input_files:
     # make the list for the video frames, for each clip per video
     fr_list = range(1, num_frames_per_clip + 1)
 
+
     # for each path count the number of files
     for p in range(len(video_paths)):
 
         path = video_paths[p]
         print("%d/%d : %s" % (1+p, len(video_paths), path))
+
         truepath = path
         if paths_prepend_folder is not None:
             truepath = os.path.join(paths_prepend_folder, path)
@@ -103,6 +104,7 @@ for inp in input_files:
 
         num_files = len(os.listdir(truepath))
 
+<<<<<<< HEAD
         # generate a number of frame paths from the video path
         if input_mode == defs.input_mode.image:
             # select frames randomly from the video
@@ -137,5 +139,6 @@ for inp in input_files:
                     frame = "%s/%s.%04d.%s" % (videopath ,videopath , 1+frame, frame_format)
                     frame = os.path.join(paths_prepend_folder , frame)
                     f.write("%s %d\n" % (frame, video_label))
+
 
 
