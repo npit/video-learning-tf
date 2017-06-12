@@ -359,7 +359,6 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
             return False
         else:
             dataset.set_or_swap_phase(defs.phase.val)
-
     else:
         dataset.set_current_phase(defs.phase.val)
 
@@ -367,14 +366,37 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
     dataset.reset_phase(dataset.phase)
 
     test_accuracies = []
+    test_logits = []
+    test_labels = []
+    dataset.logger.debug("Gathering test logits")
     # validation loop
     while dataset.loop():
         # get images and labels
         images, labels_onehot = dataset.read_next_batch()
         dataset.print_iter_info(len(images), len(labels_onehot))
-        summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],
+        summaries_val, logits = sess.run([summaries.val_merged, lrcn.accuracyVal],
                                            feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-        test_accuracies.append(accuracy)
+        test_logits.append(logits)
+        test_labels.append(labels_onehot)
+    # compute accuracy
+    dataset.logger.debug("Computing test accuracy")
+    if dataset.num_clips_per_video > 1:
+        # for multiple clips, we have to do an extra inter-clip aggregation per video
+        # an important assumption is that clips and clipframes are sequential in the dataset
+        # TODO: for better security, add a video index + clip index output files @ serialization script
+        # group data per video
+        num_frames_per_video = dataset.num_clips_per_video * dataset.num_frames_per_clip
+        test_logits = sublist(test_logits, num_frames_per_video)
+        test_labels = sublist(test_labels, num_frames_per_video)
+        # aggregate
+        for vid_idx in range(len(test_logits)):
+            video_logits = test_logits[vid_idx]
+            # aggregate the frames per clip, ending in num_clips logit vectors
+             = np.mean()
+
+
+    else:
+        # no clip-level aggregation necessary. Go straight from frames to video
     accuracy = sum(test_accuracies) / len(test_accuracies)
     dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
     tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
