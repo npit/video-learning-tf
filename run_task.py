@@ -47,7 +47,8 @@ class Settings:
     # architecture settings
     lstm_input_layer = "fc7"
     lstm_num_hidden = 256
-    video_pooling_type = defs.pooling.avg
+    frame_pooling_type = defs.pooling.avg
+    clip_pooling_type = defs.pooling.avg
     num_classes = None
     mean_image = None
 
@@ -163,57 +164,10 @@ class Settings:
 
         config = config[tag_to_read]
 
-        if config['run_id']:
-            self.run_id = eval(config['run_id'])
-        if config['run_type']:
-            self.run_type = eval(config['run_type'])
-        if config['resume_file']:
-            self.resume_file = eval(config['resume_file'])
-        if config['run_folder']:
-            self.run_folder = eval(config['run_folder'])
-        if config['path_prepend_folder']:
-            self.path_prepend_folder = eval(config['path_prepend_folder'])
-        if config['lstm_input_layer']:
-            self.lstm_input_layer = eval(config['lstm_input_layer'])
-        if config['num_classes']:
-            self.num_classes = eval(config['num_classes'])
-        if config['mean_image']:
-            self.mean_image = eval(config['mean_image'])
-        if config['raw_image_shape']:
-            self.raw_image_shape = eval(config['raw_image_shape'])
-        if config['image_shape']:
-            self.image_shape = eval(config['image_shape'])
-        if config['frame_format']:
-            self.frame_format = eval(config['frame_format'])
-        if config['data_format']:
-            self.data_format = eval(config['data_format'])
-        if config['input_mode']:
-            self.input_mode = eval(config['input_mode'])
-        if config['do_random_mirroring']:
-            self.do_random_mirroring = eval(config['do_random_mirroring'])
-        if config['do_random_cropping']:
-            self.do_random_cropping = eval(config['do_random_cropping'])
-        if config['batch_size_train']:
-            self.batch_size_train = eval(config['batch_size_train'])
-        if config['do_training']:
-            self.do_training = eval(config['do_training'])
-        if config['epochs']:
-            self.epochs = eval(config['epochs'])
-        if config['optimizer']:
-            self.optimizer = eval(config['optimizer'])
-        if config['learning_rate']:
-            self.learning_rate = eval(config['learning_rate'])
-        if config['do_validation']:
-            self.do_validation = eval(config['do_validation'])
-        if config['validation_interval']:
-            self.validation_interval = eval(config['validation_interval'])
-        if config['batch_size_val']:
-            self.batch_size_val = eval(config['batch_size_val'])
-        if config['logging_level']:
-            self.logging_level = eval(config['logging_level'])
-        if config['tensorboard_folder']:
-            self.tensorboard_folder = eval(config['tensorboard_folder'])
+        for var in config:
+            exec("self.%s=%s" % (var, config[var]))
         print("Successfully initialized from file %s" % self.init_file)
+
 
     # initialize stuff
     def initialize(self, args):
@@ -339,7 +293,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             tboard_writer.flush()
 
             if settings.do_validation:
-                test_ran = test(dataset, lrcn, sess, tboard_writer, summaries)
+                test_ran = test(dataset, lrcn, settings, sess, tboard_writer, summaries)
                 if test_ran:
                     dataset.set_or_swap_phase(defs.phase.train)
 
@@ -355,7 +309,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     settings.logger.info("Time elapsed for %d epochs : %s ." % (settings.epochs, elapsed_str(sum(timings))))
 
 # test the network on validation data
-def test(dataset, lrcn, sess, tboard_writer, summaries):
+def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     # if testing within training, check if it should run
     if dataset.do_training:
         if not dataset.should_test_now():
@@ -369,8 +323,8 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
     dataset.reset_phase(dataset.phase)
 
     test_accuracies = []
-    test_logits = []
-    test_labels = []
+    logits_list = []
+    labels_list = []
     dataset.logger.debug("Gathering test logits")
     # validation loop
     while dataset.loop():
@@ -379,23 +333,44 @@ def test(dataset, lrcn, sess, tboard_writer, summaries):
         dataset.print_iter_info(len(images), len(labels_onehot))
         summaries_val, logits = sess.run([summaries.val_merged, lrcn.accuracyVal],
                                            feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-        test_logits.append(logits)
-        test_labels.append(labels_onehot)
+        logits_list.append(logits)
+        labels_list.append(labels_onehot)
     # compute accuracy
     dataset.logger.debug("Computing test accuracy")
+
+
+
+
     if dataset.num_clips_per_video > 1:
+        # compute clip aggregation. In lstm workflow, frame aggregation is done within the lstm... should it though?
         # for multiple clips, we have to do an extra inter-clip aggregation per video
         # an important assumption is that clips and clipframes are sequential in the dataset
         # TODO: for better security, add a video index + clip index output files @ serialization script
         # group data per video
+
+        # concat to np array
+        logits = np.vstack(logits_list)
+        labels = np.vstack(labels_list)
+        # group logits per video
         num_frames_per_video = dataset.num_clips_per_video * dataset.num_frames_per_clip
-        test_logits = sublist(test_logits, num_frames_per_video)
-        test_labels = sublist(test_labels, num_frames_per_video)
-        # aggregate
-        for vid_idx in range(len(test_logits)):
-            video_logits = test_logits[vid_idx]
-            # aggregate the frames per clip, ending in num_clips logit vectors
-             = np.mean()
+        logits_per_video = logits.vsplit(logits, dataset.num_items_val / num_frames_per_video)
+        # get the logits of each video
+        for vid_idx in logits_per_video:
+            # split the video logits to <num_clips> chunks
+            clip_chunks = np.vsplit(logits_per_video[vid_idx], dataset.num_clips_per_video)
+            # aggregate the logits in each chunk - this is already done in lstm workflow
+            if settings.clip_pooling_type == defs.pooling.avg:
+                clip_chunks = [np.mean(clip) for clip in clip_chunks]
+            elif settings.clip_pooling_type == defs.pooling.last:
+                clip_chunks = clip_chunks[-1]
+            # result is <num_clips> logit vectors for the video. Aggregate
+            if settings.clip_pooling_type == defs.pooling.avg:
+                logits_per_video[vid_idx] = np.mean(clip_chunks)
+
+
+
+
+
 
 
     else:

@@ -11,7 +11,8 @@ path_prepend_folder =
 # architecture settings
 lstm_input_layer = "fc7"
 lstm_num_hidden = 256
-video_pooling_type = defs.pooling.avg
+frame_pooling_type = defs.pooling.avg
+clip_pooling_type = defs.pooling.avg
 num_classes = 101
 mean_image = [103.939, 116.779, 123.68]
 
