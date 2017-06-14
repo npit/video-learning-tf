@@ -29,6 +29,7 @@ clip_offset_or_num = 1
 frame_format = "jpg"
 force_video_metadata = False
 do_shuffle = False
+do_serialize = False
 
 # initialize from file
 def initialize_from_file(init_file):
@@ -400,11 +401,12 @@ def write():
         paths = [ p for video in paths_ for clip in video for p in clip]
 
         outpaths_per_input.append([paths, labels, mode])
-
-        serialize_multithread(item_paths, paths, labels,output_file , mode)
-
-        logger.info("Done serializing %s " % inp)
-        logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
+        if do_serialize:
+            logger.info("Serializing %s " % inp)
+            serialize_multithread(item_paths, paths, labels,output_file , mode)
+            logger.info("Done serializing %s " % inp)
+            logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
+        logger.info("Done processing input file %s" % inp)
     return outpaths_per_input
 
 # verify the serialization validity
@@ -481,7 +483,8 @@ print("Successfully initialized from file %s" % init_file)
 
 # outpaths is either the input frame paths in image mode, or the expanded frame paths in video mode
 written_data = write()
-validate(written_data)
 write_paths_file(written_data)
+if do_serialize:
+    validate(written_data)
 
 

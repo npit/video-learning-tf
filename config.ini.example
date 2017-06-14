@@ -49,22 +49,12 @@ tensorboard_folder = "tensorboard_graphs"
 path_prepend_folder = "/path/to/frames/folder"
 input_files = [ "path/to/inputfile1" , "path/to/inputfile2"]
 
+do_shuffle = True
+do_serialize = False
 num_threads = 3
 num_items_per_thread = 500
 raw_image_shape = (240,320,3)
-num_clips_per_video = 2
-clip_offset_size = 32
+clip_offset_or_num = 2
 num_frames_per_clip = 16
 clipframe_mode = defs.video_frame_mode.random
 frame_format = "jpg"
-
-[framesprod]
-
-input_files = [ "path/to/inputfile1" , "path/to/inputfile2"]
-
-num_frames_per_clip = 16
-num_clips_per_video = 3
-input_mode = defs.input_mode.video
-paths_prepend_folder = "path/to/frames"
-frame_format = "jpg"
-
