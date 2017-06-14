@@ -367,7 +367,14 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         # drop extraneous label information, keepign 1 per videe
         labels = labels[0:: dataset.num_clips_per_video]
         # group logits per video
-        logits_per_video = np.vsplit(logits,logits.shape[0] // dataset.num_clips_per_video)
+        logits_per_video = []
+        start_idx = 0
+        for num_clips in dataset.clips_per_video:
+            logits_for_video = logits[start_idx : start_idx+num_clips,:]
+            logits_per_video.append(logits_for_video)
+        logits = None # for memory issues
+        # for constant num. of clips per video
+        #logits_per_video = np.vsplit(logits,logits.shape[0] // dataset.num_clips_per_video)
         # get the logits of each video
         for cidx in range(len(logits_per_video)):
             # aggregate the logits in each clip

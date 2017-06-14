@@ -356,16 +356,16 @@ def read_file(inp):
     return paths, labels, mode
 
 
-def shuffle_pair(a,b):
-    z = list(zip(a,b))
+def shuffle_pair(*args):
+    z = list(zip(*args))
     shuffle(z)
-    a,b= zip(*z)
-    return a,b
+    args= zip(*z)
+    return args
 
-def shuffle_paths(paths, labels):
+def shuffle_paths(item_paths, paths, labels):
     logger.info("Shuffling data...")
     # outer shuffle, of video order
-    paths, labels = shuffle_pair(paths,labels)
+    item_paths, paths, labels = shuffle_pair(item_paths, paths,labels)
     # inner shuffle, of frames
     if  clipframe_mode == defs.clipframe_mode.rand_frames:
 
@@ -386,10 +386,10 @@ def shuffle_paths(paths, labels):
             new_paths.append(p)
         paths = tuple(new_paths)
         logger.info("Done shuffling.")
-        return paths, labels
+        return item_paths, paths, labels
 
 def write():
-    outpaths_per_input = []
+    framepaths_per_input = []
     for idx in range(len(input_files)):
         inp = input_files[idx]
         item_paths, labels, mode = read_file(inp)
@@ -398,26 +398,26 @@ def write():
         # generate paths per video
         paths = get_item_paths(item_paths, mode)
         if do_shuffle:
-            paths, labels = shuffle_paths(paths, labels)
+            item_paths, paths, labels = shuffle_paths(item_paths, paths, labels)
 
         clips_per_video = [ len(vid) for vid in paths ]
 
         # flatten: frame, for video in videos for frame in video
         labels_flat = []
-        for idx in range(len(labels_)):
+        for idx in range(len(labels)):
             ll = [labels[idx] for clip in paths[idx] for _ in clip]
             labels_flat.extend(ll)
         paths_flat = [ p for video in paths for clip in video for p in clip]
 
-        outpaths_per_input.append([paths_flat, labels_flat, mode])
+        framepaths_per_input.append([item_paths, paths_flat, labels_flat, mode])
         if do_serialize:
             tic = time.time()
-            logger.info("Serializing %s " % (inp,output_file))
+            logger.info("Serializing %s " % (output_file))
             serialize_multithread(clips_per_video, paths_flat, labels_flat,output_file , mode)
             logger.info("Done serializing %s " % inp)
             logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
         logger.info("Done processing input file %s" % inp)
-    return outpaths_per_input
+    return framepaths_per_input
 
 # verify the serialization validity
 def validate(written_data):
@@ -425,7 +425,7 @@ def validate(written_data):
     for index in range(len(input_files)):
         inp = input_files[index]
 
-        paths, labels, mode,  = written_data[index]
+        item_paths, paths, labels, mode,  = written_data[index]
 
         num_validate = 10000 if len(paths) >= 10000 else len(paths)
         error_free = True
@@ -471,7 +471,17 @@ def write_paths_file(data):
     for i in range(len(data)):
         inp = input_files[i]
 
-        paths, labels, mode = data[i]
+        item_paths, paths, labels, mode = data[i]
+
+        if do_shuffle:
+            # write videos, if they got shuffled
+            item_outfile = inp + ".shuffled"
+            with open(item_outfile,'w') as f:
+                for v in range(len(item_paths)):
+                    item = item_paths[v]
+                    f.write("%s %d\n" % (item, labels[v]))
+
+
         clip_info = "" if clipframe_mode == defs.clipframe_mode.rand_frames else ".%d.cpv" % clip_offset_or_num
         outfile = "%s%s.%dfpc.%s" % (inp, clip_info, num_frames_per_clip, defs.clipframe_mode.str(clipframe_mode))
 

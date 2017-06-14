@@ -26,7 +26,7 @@ class Dataset:
 
     # run settings
     run_folder = None
-    num_clips_per_video = None
+    clips_per_video = None
     num_frames_per_clip = None
     frame_format = None
     data_format = None
@@ -241,7 +241,7 @@ class Dataset:
             # read images from a TFrecord serialization file
             num_items_in_batch = currentBatch
             if self.input_mode == defs.input_mode.video:
-                num_items_in_batch = num_items_in_batch * self.num_frames_per_clip * self.num_clips_per_video
+                num_items_in_batch = num_items_in_batch * self.num_frames_per_clip * self.clips_per_video
             images, labels = self.deserialize_from_tfrecord(self.iterator, num_items_in_batch)
             # limit to 1 label per video
             if self.input_mode == defs.input_mode.video:
@@ -513,16 +513,37 @@ class Dataset:
 
         # read number of clips per video
         if len(contents) > 2 :
-            num_clips = int(contents[2])
-            if self.num_clips_per_video is not None:
-                self.logger.error("Read value of clips per video clashes with already set value of %d " % self.num_clips_per_video)
-            else:
-                self.logger.info("Read a value of %d clips per video " % num_clips)
-            self.num_clips_per_video = num_clips
+            try:
+                # read a single number of clips, for each video
+                num_clips = int(contents[2])
+                if self.clips_per_video is not None:
+                    self.logger.error(
+                        "Read value of clips per video clashes with already set value of %d " % self.clips_per_video)
+                else:
+                    self.logger.info("Read a value of %d clips per video " % num_clips)
+                self.clips_per_video = num_clips
+            except Exception:
+                # read a collection of numbers, each denoting the number of clips per video
+                vals = contents[2].split("")
+                num_clips = []
+                for val in vals:
+                    val = val.strip()
+                    num_clips.append(int(val))
+                self.logger("Read %d values of number of clips per video" % (len(num_clips)))
+
         else:
             # else, if unset, set the default number of clips to 1
             self.logger.warning("No number of clips in size file, defaulting to 1 clip per video.")
-            self.num_clips_per_video = 1
+            self.clips_per_video = 1
+
+        # if a single value was read for cpv, expand to number of videos
+        if type(self.clips_per_video) == list:
+            if not len(self.clips_per_video) == num_items:
+                self.logger.error("Unequal number of clips vector %d to the number of videos %d" % (len(self.clips_per_video),num_items))
+                error("Unequal number of clips vector to the input videos.")
+        else:
+            # replicate the single value for each video
+            self.clips_per_video = [ self.clips_per_video for _ in range(num_items) ]
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
