@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 import configparser
 import sys
 
+'''
+Script for production of training / testing data collections and serialization to tf.record files.
+'''
 
 init_file = "config.ini"
 
@@ -20,11 +23,12 @@ path_prepend_folder = None
 num_threads = 4
 num_items_per_thread = 500
 raw_image_shape = (240,320,3)
-video_frame_mode = defs.video_frame_mode.random
+clipframe_mode = defs.clipframe_mode.rand_clips
 num_frames_per_clip = 16
-num_clips_per_video = 1
+clip_offset_or_num = 1
 frame_format = "jpg"
 force_video_metadata = False
+do_shuffle = False
 
 # initialize from file
 def initialize_from_file(init_file):
@@ -86,18 +90,18 @@ def _bytes_feature( value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def serialize_multithread(paths, labels, outfile, mode):
+def serialize_multithread(item_paths,frame_paths, labels, outfile, mode):
 
     # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
-        f.write("%d\n" % len(paths))
+        f.write("%d\n" % len(item_paths))
         if mode == defs.input_mode.video or force_video_metadata:
             f.write("%d\n" % num_frames_per_clip)
-            f.write("%d\n" % num_clips_per_video)
+            f.write("%d\n" % clip_offset_or_num)
 
     # split up paths/labels list per thread run
     num_images_per_thread_run = num_items_per_thread * num_threads
-    paths_per_thread_run = sublist(paths, num_images_per_thread_run)
+    paths_per_thread_run = sublist(frame_paths, num_images_per_thread_run)
     labels_per_thread_run = sublist(labels, num_images_per_thread_run)
 
 
@@ -124,7 +128,7 @@ def serialize_multithread(paths, labels, outfile, mode):
         frames =  [[] for _ in range(num_threads_in_run)]
         output_paths = [[] for _ in range(num_threads_in_run)]
         for t in range(num_threads_in_run):
-            threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],mode,frames,t, output_paths))
+            threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],frames,t))
             threads[t].start()
 
 
@@ -137,16 +141,13 @@ def serialize_multithread(paths, labels, outfile, mode):
 
 
         # write the read images to the tfrecord
+
+
+
         for t in range(num_threads_in_run):
             if not frames[t]:
                 logger.error("Thread # %d encountered an error." % t)
                 exit(1)
-            if mode == defs.input_mode.video:
-                duplist = [[label for _ in range(num_frames_per_clip * num_clips_per_video)] for label in labels_per_thread[t]]
-                labels_per_thread[t] = []
-                for l in duplist:
-                    labels_per_thread[t].extend(l)
-
             serialize_to_tfrecord(frames[t], labels_per_thread[t], outfile, writer)
             count += len(frames[t])
 
@@ -155,28 +156,28 @@ def serialize_multithread(paths, labels, outfile, mode):
                     (count, sum(list(map(len,paths_per_thread))), elapsed_str(time.time()-tic)))
 
     writer.close()
-    output_paths = [ path for thread_paths in output_paths for path  in thread_paths]
-    output_labels = [ l for thread_labels in labels_per_thread for l  in thread_labels]
-    return output_paths , output_labels
 
-def read_item_list_threaded(paths, mode, storage, id, output_paths):
+
+def get_item_paths(paths_list, mode):
+    paths_per_video = []
     if mode == defs.input_mode.image:
-        for framepath in paths:
-            image = read_image(framepath)
-            if image is None:
-                return
-            storage[id].append(image)
-        output_paths[id].extend(paths)
+        return paths_list
     else:
-        for videopath in paths:
-            videoframepaths = get_video_frames(videopath)
-            vidframes = []
-            for framepath in videoframepaths:
-                vidframes.append(read_image(framepath))
-            if vidframes is None:
-                return
-            storage[id].extend(vidframes)
-            output_paths[id].extend(videoframepaths)
+        for vid_idx in range(len(paths_list)):
+            video_path = paths_list[vid_idx]
+            video_frame_paths = get_video_frame_paths(video_path)
+            paths_per_video.append(video_frame_paths)
+    return paths_per_video
+
+
+
+def read_item_list_threaded(paths, storage, id):
+    for framepath in paths:
+        image = read_image(framepath)
+        if image is None:
+            return
+        storage[id].append(image)
+
 
 def serialize_to_tfrecord( frames, labels, outfil, writer):
     for idx in range(len(frames)):
@@ -191,39 +192,46 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
         writer.write(example.SerializeToString())
 
 # read all frames for a video
-def get_video_frames(path):
-    frames = []
-    if not os.path.exists(path):
-        error("Path [%s] does not exist!" % path)
+def get_video_frame_paths(path):
+    frames_indexes = []
 
-    num_files = len(os.listdir(path))
+    files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
+    files = sorted(files)
+    num_files = len(files)
 
     # generate a number of frame paths from the video path
-    if video_frame_mode == defs.video_frame_mode.random:
+    if clipframe_mode == defs.clipframe_mode.rand_frames:
+
         # select frames randomly from the video
         avail_frames = list(range(num_files))
         shuffle(avail_frames)
         avail_frames = avail_frames[:num_frames_per_clip]
-        frames.extend(avail_frames)
-    elif video_frame_mode == defs.video_frame_mode.clip:
-        # get <num_clips> random chunks of a consequtive <num_frames> frames
+        frames_indexes.extend(avail_frames)
 
+    elif clipframe_mode == defs.clipframe_mode.rand_clips:
+
+        # get <num_clips> random chunks of a consequtive <num_frames> frames
         possible_chunk_start = list(range(num_files - num_frames_per_clip + 1))
-        if len(possible_chunk_start) < num_clips_per_video:
+        if len(possible_chunk_start) < clip_offset_or_num:
             error("Video %s cannot sustain a number of %d unique %d-frame clips" %
-                  (path, num_clips_per_video, num_frames_per_clip))
+                  (path, clip_offset_or_num, num_frames_per_clip))
         shuffle(possible_chunk_start)
-        for _ in range(num_clips_per_video):
+        for _ in range(clip_offset_or_num):
             start_index = possible_chunk_start[-1]
             possible_chunk_start = possible_chunk_start[:-1]
             clip_frames = list(range(start_index, start_index + num_frames_per_clip))
-            frames.extend(clip_frames)
+            frames_indexes.extend(clip_frames)
+
+    elif  clipframe_mode == defs.clipframe_mode.iterative:
+        # get all possible video clips.
+        start_indexes = list(range(0 , num_files - num_frames_per_clip + 1, num_frames_per_clip + clip_offset_or_num))
+        for s in start_indexes :
+            frames_indexes.extend(list(range(s,s+num_frames_per_clip )))
 
     frame_paths = []
-    for fridx in frames:
-        basename = os.path.basename(path)
-        fr_path = "%s.%04d.%s" % (os.path.join(path,basename),1 + fridx,frame_format)
-        frame_paths.append(fr_path)
+    for fridx in frames_indexes:
+        frame_path = os.path.join(path, files[fridx])
+        frame_paths.append(frame_path)
     return frame_paths
 
  # read image from disk
@@ -231,9 +239,7 @@ def get_video_frames(path):
 def read_image(imagepath):
     try:
         image = imread(imagepath)
-
         logger.debug("Reading image %s" % imagepath)
-
         # for grayscale images, duplicate
         # intensity to color channels
         if len(image.shape) <= 2:
@@ -252,7 +258,6 @@ def read_image(imagepath):
         logger.error("Error :" + str(ex))
         error("Error reading image.")
         return None
-
     return image
 
 
@@ -311,7 +316,7 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 
 def read_file(inp):
     mode = None
-    logger.info("Serializing %s in mode %s" % (inp, mode))
+    logger.info("Serializing %s " % (inp))
     logger.info("Reading input file.")
     paths = []
     labels = []
@@ -339,16 +344,65 @@ def read_file(inp):
             labels.append(int(label.strip()))
     return paths, labels, mode
 
+
+def shuffle_pair(a,b):
+    z = list(zip(a,b))
+    shuffle(z)
+    a,b= zip(*z)
+    return a,b
+
+def shuffle_paths(paths, labels):
+    logger.info("Shuffling data...")
+    # outer shuffle, of video order
+    paths, labels = shuffle_pair(paths,labels)
+    # inner shuffle, of frames
+    if  clipframe_mode == defs.clipframe_mode.rand_frames:
+
+        for vid_idx in range(len(paths)):
+            p,l = zip(paths[vid_idx], labels[vid_idx])
+            paths[vid_idx] = p
+            labels[vid_idx] = l
+        logger.info("Done shuffling.")
+        return paths, labels
+    else:
+        # here we can only shuffle the clips themselves, not the frames within
+        new_paths = []
+        for vid_idx in range(len(paths)):
+            # partition the paths to clips
+            p = sublist(paths[vid_idx], num_frames_per_clip)
+            # randomize the order of the clips
+            shuffle(p)
+            new_paths.append(p)
+        paths = tuple(new_paths)
+        logger.info("Done shuffling.")
+        return paths, labels
+
 def write():
     outpaths_per_input = []
     for idx in range(len(input_files)):
         inp = input_files[idx]
-        paths, labels, mode = read_file(inp)
+        item_paths, labels, mode = read_file(inp)
         output_file = inp + ".tfrecord"
         logger.info("Writing to %s" % output_file)
         tic = time.time()
-        outpaths, outlabels = serialize_multithread(paths, labels,output_file , mode)
-        outpaths_per_input.append( ( outpaths, outlabels, mode ) )
+
+        # generate paths per video
+        paths = get_item_paths(item_paths, mode)
+        if do_shuffle:
+            paths_, labels_ = shuffle_paths(paths, labels)
+
+
+        # flatten: frame, for video in videos for frame in video
+        labels = []
+        for idx in range(len(labels_)):
+            ll = [labels_[idx] for clip in paths_[idx] for _ in clip]
+            labels.extend(ll)
+        paths = [ p for video in paths_ for clip in video for p in clip]
+
+        outpaths_per_input.append([paths, labels, mode])
+
+        serialize_multithread(item_paths, paths, labels,output_file , mode)
+
         logger.info("Done serializing %s " % inp)
         logger.info("Time elapsed: %s " % elapsed_str(time.time() - tic))
     return outpaths_per_input
@@ -358,6 +412,7 @@ def validate(written_data):
 
     for index in range(len(input_files)):
         inp = input_files[index]
+
         paths, labels, mode,  = written_data[index]
 
         num_validate = 10000 if len(paths) >= 10000 else len(paths)
@@ -399,6 +454,21 @@ def validate(written_data):
             logger.info("Validation for %s ok" % (inp + ".tfrecord"))
 
 
+def write_paths_file(data):
+    # write the selected clips / frames
+    for i in range(len(data)):
+        inp = input_files[i]
+
+        paths, labels, mode = data[i]
+        clip_info = "" if clipframe_mode == defs.clipframe_mode.rand_frames else ".%d.cpv" % clip_offset_or_num
+        outfile = "%s%s.%dfpc.%s" % (inp, clip_info, num_frames_per_clip, defs.clipframe_mode.str(clipframe_mode))
+
+        if not mode == defs.input_mode.video:
+            continue
+        logger.info("Documenting selected paths from file %s \n\tto %s" % (inp, outfile))
+        with open(outfile, "w") as f:
+            for path, label in zip(paths, labels):
+                f.write("%s %d\n" % (path, label))
 
 if len(sys.argv) > 1:
     init_file = sys.argv[-1]
@@ -412,16 +482,6 @@ print("Successfully initialized from file %s" % init_file)
 # outpaths is either the input frame paths in image mode, or the expanded frame paths in video mode
 written_data = write()
 validate(written_data)
-# write the selected clips / frames for video mode
-for i in range(len(written_data)):
-    inp = input_files[i]
-    outfile = inp + ".frames"
-    paths, labels, mode = written_data[i]
-    if not mode == defs.input_mode.video:
-        continue
-    logger.info("Documenting selected paths for video mode file %s" % inp)
-    logger.info("Writing to file %s" % outfile)
-    with open(outfile,"w") as f:
-        for path, label in zip(paths,labels):
-            f.write("%s %d\n" % (path, label))
+write_paths_file(written_data)
+
 
