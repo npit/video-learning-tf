@@ -31,6 +31,7 @@ class LRCN:
             exit("File not found");
 
         if run_mode == defs.run_types.singleframe:
+
             with tf.name_scope("dcnn_workflow"):
                 self.logger.info("Dcnn workflow")
                 # single DCNN, classifying individual frames
@@ -41,14 +42,26 @@ class LRCN:
             if dataset.input_mode == defs.input_mode.video:
                 # average the logits on the frames dimension
                 with tf.name_scope("video_level_pooling"):
-                    # -1 on the number of videos (batchsize) to deal with varying values for test and train
-                    self.logger.info("raw per-frame logits : [%s]" % framesLogits.shape)
-                    frames_per_item = dataset.num_frames_per_clip if dataset.input_mode == defs.input_mode.video else 1
-                    frameLogits = tf.reshape(framesLogits, (-1, frames_per_item , dataset.num_classes),
-                                             name="reshape_framelogits_pervideo")
+                    if settings.frame_pooling_type == defs.pooling.avg:
+                        # -1 on the number of videos (batchsize) to deal with varying values for test and train
+                        self.logger.info("Raw logits : [%s]" % framesLogits.shape)
+                        frames_per_item = dataset.num_frames_per_clip if dataset.input_mode == defs.input_mode.video else 1
+                        frameLogits = tf.reshape(framesLogits, (-1, frames_per_item , dataset.num_classes),
+                                                 name="reshape_framelogits_pervideo")
 
-                    self.logits = tf.scalar_mul(1 / frames_per_item, tf.reduce_sum(frameLogits, axis=1))
-                    self.logger.info("logits out : [%s]" % self.logits.shape)
+                        self.logits = tf.scalar_mul(1 / frames_per_item, tf.reduce_sum(frameLogits, axis=1))
+                        self.logger.info("Averaged logits out : [%s]" % self.logits.shape)
+                    elif settings.frame_pooling_type == defs.pooling.last:
+                        # keep only the response at the last time step
+                        self.logits = tf.slice(framesLogits, [0, dataset.num_frames_per_clip - 1, 0], [-1, 1, dataset.num_classes],
+                                          name="last_pooling")
+                        self.logger.debug("Last-liced logits: %s" % str(self.logits.shape))
+                        # squeeze empty dimension to get vector
+                        output = tf.squeeze(self.logits, axis=1, name="last_pooling_squeeze")
+                        self.logger.debug("Last-sliced squeezed out : %s" % str(output.shape))
+                    else:
+                        self.logger.error("Undefined pooling method: %d " % settings.frame_pooling_type)
+                        error("Undefined frame pooling method.")
             else:
                 self.logits = framesLogits
                 self.logger.info("logits out : [%s]" % self.logits.shape)

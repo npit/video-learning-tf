@@ -241,7 +241,7 @@ class Dataset:
             # read images from a TFrecord serialization file
             num_items_in_batch = currentBatch
             if self.input_mode == defs.input_mode.video:
-                num_items_in_batch = num_items_in_batch * self.num_frames_per_clip
+                num_items_in_batch = num_items_in_batch * self.num_frames_per_clip * self.num_clips_per_video
             images, labels = self.deserialize_from_tfrecord(self.iterator, num_items_in_batch)
             # limit to 1 label per video
             if self.input_mode == defs.input_mode.video:
@@ -460,70 +460,69 @@ class Dataset:
                 pass
             self.logger.info("Counted tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
             self.reset_iterator(iterator)
+            if phase == defs.phase.train:
+                self.num_items_train = num
+            elif phase == defs.phase.val:
+                self.num_items_val = num
+            return
 
-        else:
 
-            # It exists. Read the count and optionally # frames per clip and # clips
-            size_file = input_file + ".size"
-            self.logger.info("Reading data meta-parameters file [%s]" % size_file)
-            with open(size_file,"r") as ff:
-                contents = []
-                for line in ff:
-                    contents.append(line.strip())
+        # .size file  exists. Read the count and optionally # frames per clip and # clips
+        # format expected is one value per line, in the order of num_items, num_frames_per_clip, num_clips_per_video
+        # read the data
+        size_file = input_file + ".size"
+        self.logger.info("Reading data meta-parameters file [%s]" % size_file)
+        contents = read_file_lines(size_file)
 
-            # number of items
-            num_items = int(contents[0])
-            num_frames_per_clip, num_clips = None, None
+        # check contents
+        if len(contents) == 0 :
+            # no number of frames per video, it's gotta be an image run, else error
+            if not self.input_mode == defs.input_mode.image:
+                self.logger.error(
+                    "Specified input mode %s but size file contains no data" %
+                    (defs.input_mode.str(self.input_mode)))
+                error("Input mode mismatch with data.")
 
-            # number of frames per clip
-            if len(contents) == 0 :
-                # no number of frames per video, it's gotta be an image run
-                if not self.input_mode == defs.input_mode.image:
-                    self.logger.error(
-                        "Specified input mode %s but size file contains no number of frames per video" %
-                        (defs.input_mode.str(self.input_mode)))
-                    error("Input mode mismatch with data.")
-            else:
-                # read number of frames per video
-                num_frames_per_clip = int(contents[1])
-                #  make sure it's a video run
-                if not self.input_mode == defs.input_mode.video:
-                    self.logger.error("Specified input mode %s but size file contains a number of frames" %
-                                      (defs.input_mode.str(self.input_mode)))
-                    error("Input mode mismatch with data.")
-                # check if there's a clash with the one specified
-                if self.num_frames_per_clip is not None:
-                    if not num_frames_per_clip == self.num_frames_per_clip:
-                        self.logger.error("Read %d frames per video from the size file but specified %d" %
-                                          (num_frames_per_clip,  self.num_frames_per_clip))
-                        error("Number of video frames mismatch")
-                else:
-                    self.logger.warn("Read %d frames per video from %s " %
-                                      (num_frames_per_clip, size_file))
-                    self.num_frames_per_clip = num_frames_per_clip
-
-            # number of clips
-            if len(contents) > 2 :
-                # read number of clips per video
-                num_clips = int(contents[2])
-                if self.num_clips_per_video is not None:
-                    self.logger.error("Read value of clips per video clashes with already set value of %d " % self.num_clips_per_video)
-                else:
-                    self.logger.info("Read a value of %d clips per video " % num_clips)
-                    self.num_clips_per_video = num_clips
-
-            self.logger.info("Got tfrecord %s data: %d entries." % (defs.phase.str(phase), num_items))
-            if num_frames_per_clip is not None:
-                self.logger.info("Got tfrecord %s data: verified %d frames per clip." % (defs.phase.str(phase), num_frames_per_clip))
-            if num_clips is not None:
-                self.logger.info("Got tfrecord %s data: verified %d frames per item." % (defs.phase.str(phase), num_frames_per_clip))
+        # read number of items in the tfrecord
+        num_items = int(contents[0])
         if phase == defs.phase.train:
             self.num_items_train = num_items
         elif phase == defs.phase.val:
             self.num_items_val = num_items
+        self.logger.info("Read a count of %d [%s] items in the input data" % ( phase, num_items))
 
 
 
+        # read number of frames per clip
+        if len(contents) > 1:
+            num_frames_per_clip = int(contents[1])
+            # check if there's a clash with the run configuration specified
+            if self.num_frames_per_clip is not None:
+                if not num_frames_per_clip == self.num_frames_per_clip:
+                    self.logger.error("Read %d frames per video from the size file but specified %d" %
+                                      (num_frames_per_clip,  self.num_frames_per_clip))
+                    error("Number of video frames mismatch")
+            else:
+                self.logger.info("Read %d frames per video for %s from size file " %
+                                  (num_frames_per_clip, defs.phase.str(phase)))
+            self.num_frames_per_clip = num_frames_per_clip
+        else:
+            if self.input_mode == defs.input_mode.video:
+                self.logger.error("Specified %s input mode but no frames per clip information in input data." % defs.input_mode.str(self.input_mode))
+                error("Missing frames per clip information in data")
+
+        # read number of clips per video
+        if len(contents) > 2 :
+            num_clips = int(contents[2])
+            if self.num_clips_per_video is not None:
+                self.logger.error("Read value of clips per video clashes with already set value of %d " % self.num_clips_per_video)
+            else:
+                self.logger.info("Read a value of %d clips per video " % num_clips)
+            self.num_clips_per_video = num_clips
+        else:
+            # else, if unset, set the default number of clips to 1
+            self.logger.warning("No number of clips in size file, defaulting to 1 clip per video.")
+            self.num_clips_per_video = 1
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
@@ -586,7 +585,7 @@ class Dataset:
 
     # specify valid loop iteration
     def loop(self):
-        self.logger.debug("batch index: %d , batches len: %d" % (self.batch_index , len(self.batches)))
+        self.logger.debug("Checking loop @ batch index: %d , batches len: %d" % (self.batch_index+1 , len(self.batches)))
         return self.batch_index < len(self.batches)
 
     # check if testing should happen now

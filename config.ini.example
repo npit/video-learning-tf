@@ -1,6 +1,5 @@
 [run]
-# run mode and type
-run_id = "singleframe_run"
+# run type
 run_type = defs.run_types.singleframe
 
 # save / load configuration
@@ -30,12 +29,6 @@ num_clips_per_video = 1
 do_training = True
 do_random_mirroring = True
 do_random_cropping = True
-
-
-# training settings
-do_training = True
-do_random_mirroring = True
-do_random_cropping = True
 batch_size_train = 100
 epochs = 15
 optimizer = "SGD"
@@ -56,12 +49,13 @@ tensorboard_folder = "tensorboard_graphs"
 path_prepend_folder = "/path/to/frames/folder"
 input_files = [ "path/to/inputfile1" , "path/to/inputfile2"]
 
-num_threads = 4
+num_threads = 3
 num_items_per_thread = 500
 raw_image_shape = (240,320,3)
-
+num_clips_per_video = 2
+clip_offset_size = 32
 num_frames_per_clip = 16
-
+clipframe_mode = defs.video_frame_mode.random
 frame_format = "jpg"
 
 [framesprod]

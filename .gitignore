@@ -1,20 +1,14 @@
 # ignore all files and folders
 
-*/
-*
+# */
+# *
 
 
-# except from:
-!.gitignore
-!dataset
-!models/alexnet/get_weights_file.sh
-!*.py
-!README.md
-!view-tensorboard.sh
-!examples
-!config.ini.example
+
+
 
 # also ignore all:
+.idea
 *.tfrecord
 examples/checkpoints/**
 *.log
@@ -23,3 +17,12 @@ examples/checkpoints/**
 *~
 *#
 *.#
+config.ini
+examples/run
+
+# misc stuff
+notes
+tensorboard_graphs
+start.sh
+# examples/test_run/*
+

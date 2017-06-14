@@ -55,7 +55,7 @@ class Settings:
     # data input format
     raw_image_shape = (240, 320, 3)
     image_shape = (227, 227, 3)
-    data_format = defs.data_format.raw
+    data_format = defs.data_format.tfrecord
     frame_format = "jpg"
     input_mode = defs.input_mode.image
     num_frames_per_clip = 16
@@ -166,6 +166,10 @@ class Settings:
 
         for var in config:
             exec("self.%s=%s" % (var, config[var]))
+        # set append the config.ini.xxx suffix to the run id
+        if not self.init_file == "config.ini":
+            init_file_suffix = self.init_file.split(".")
+            self.run_id = self.run_id  + "_" + init_file_suffix[-1]
         print("Successfully initialized from file %s" % self.init_file)
 
 
@@ -326,22 +330,31 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     logits_list = []
     labels_list = []
     dataset.logger.debug("Gathering test logits")
-    # validation loop
-    while dataset.loop():
-        # get images and labels
-        images, labels_onehot = dataset.read_next_batch()
-        dataset.print_iter_info(len(images), len(labels_onehot))
-        summaries_val, logits = sess.run([summaries.val_merged, lrcn.accuracyVal],
-                                           feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-        logits_list.append(logits)
-        labels_list.append(labels_onehot)
-    # compute accuracy
-    dataset.logger.debug("Computing test accuracy")
+    # validation loop without clip aggregation
+    if dataset.num_clips_per_video == 1:
+        while dataset.loop():
+            # get images and labels
+            images, labels_onehot = dataset.read_next_batch()
+            dataset.print_iter_info(len(images), len(labels_onehot))
+            summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],
+                                               feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
+            test_accuracies.append(accuracy)
+
+        # compute accuracy
+        dataset.logger.debug("Computing test accuracy")
+        accuracy = sum(test_accuracies) / len(test_accuracies)
 
 
 
-
-    if dataset.num_clips_per_video > 1:
+    else:
+        while dataset.loop():
+            # get images and labels
+            images, labels_onehot = dataset.read_next_batch()
+            dataset.print_iter_info(len(images), len(labels_onehot))
+            summaries_val, logits = sess.run([summaries.val_merged, lrcn.logits],
+                                             feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
+            logits_list.append(logits)
+            labels_list.append(labels_onehot)
         # compute clip aggregation. In lstm workflow, frame aggregation is done within the lstm... should it though?
         # for multiple clips, we have to do an extra inter-clip aggregation per video
         # an important assumption is that clips and clipframes are sequential in the dataset
@@ -351,36 +364,30 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         # concat to np array
         logits = np.vstack(logits_list)
         labels = np.vstack(labels_list)
+        # drop extraneous label information, keepign 1 per videe
+        labels = labels[0:: dataset.num_clips_per_video]
         # group logits per video
-        num_frames_per_video = dataset.num_clips_per_video * dataset.num_frames_per_clip
-        logits_per_video = logits.vsplit(logits, dataset.num_items_val / num_frames_per_video)
+        logits_per_video = np.vsplit(logits,logits.shape[0] // dataset.num_clips_per_video)
         # get the logits of each video
-        for vid_idx in logits_per_video:
-            # split the video logits to <num_clips> chunks
-            clip_chunks = np.vsplit(logits_per_video[vid_idx], dataset.num_clips_per_video)
-            # aggregate the logits in each chunk - this is already done in lstm workflow
+        for cidx in range(len(logits_per_video)):
+            # aggregate the logits in each clip
             if settings.clip_pooling_type == defs.pooling.avg:
-                clip_chunks = [np.mean(clip) for clip in clip_chunks]
+                logits_per_video[cidx] = np.mean(logits_per_video[cidx],axis=0)
+
             elif settings.clip_pooling_type == defs.pooling.last:
-                clip_chunks = clip_chunks[-1]
-            # result is <num_clips> logit vectors for the video. Aggregate
-            if settings.clip_pooling_type == defs.pooling.avg:
-                logits_per_video[vid_idx] = np.mean(clip_chunks)
+                logits_per_video[cidx] = logits_per_video[cidx][-1,:]
+        # compute accuracy
+        predicted_classes = np.argmax(logits_per_video,axis=1)
+        correct_classes = np.argmax(labels, axis=1)
+        accuracy = np.mean(np.equal(predicted_classes, correct_classes))
 
-
-
-
-
-
-
-    else:
-        # no clip-level aggregation necessary. Go straight from frames to video
-    accuracy = sum(test_accuracies) / len(test_accuracies)
+    # loop done ##################################3
     dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
     tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
     tboard_writer.flush()
 
     return True
+
 
 
 # the main function
@@ -420,7 +427,7 @@ def main():
     if settings.do_training:
         train_test(settings, dataset, lrcn,  sess, tboard_writer, summaries)
     elif settings.do_validation:
-        test(dataset, lrcn,  sess, tboard_writer, summaries)
+        test(dataset, lrcn, settings,  sess, tboard_writer, summaries)
 
     # mop up
     tboard_writer.close()

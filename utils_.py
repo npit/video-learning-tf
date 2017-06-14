@@ -66,6 +66,14 @@ def sublist(list, sublist_length):
 # shortcut for tensor printing
 def print_tensor(tensor, message):
     return tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
+
+def read_file_lines(filename):
+    with open(filename, "r") as ff:
+        contents = []
+        for line in ff:
+            contents.append(line.strip())
+    return contents
+
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
 
@@ -102,22 +110,23 @@ class defs:
         avg, last = range(2)
         _str = ["avg", "last"]
         def str(arg):
-            return defs.run_types._str[arg]
+            return defs.pooling._str[arg]
 
     # how the video's frames are structured        
-    class video_frame_mode:
-        random, clip= range(2)
-        _str = ["random", "clip"]
+    class clipframe_mode:
+        rand_frames, rand_clips, iterative = range(3)
+        _str = ["rand_frames", "rand_clips", "iterative"]
         def str(arg):
-            return defs.run_types._str[arg]
+            return defs.clipframe_mode._str[arg]
 
-    # batch content type
-    images, labels = range(2)
-    _str = ["images", "labels"]
-    def str(arg):
-        return defs.data_format._str[arg]
+
     class loaded:
         train_index, val_index, epoch_index = range(3)
         _str = ["train_index", "val_index", "epoch_index"]
         def str(arg):
             return defs.loaded._str[arg]
+    # batch content type
+    images, labels = range(2)
+    _str = ["images", "labels"]
+    def str(arg):
+        return defs._str[arg]
