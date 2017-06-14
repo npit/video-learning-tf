@@ -22,9 +22,9 @@ input_files = []
 path_prepend_folder = None
 num_threads = 4
 num_items_per_thread = 500
+num_frames_per_clip = 16
 raw_image_shape = (240,320,3)
 clipframe_mode = defs.clipframe_mode.rand_clips
-num_frames_per_clip = 16
 clip_offset_or_num = 1
 frame_format = "jpg"
 force_video_metadata = False
@@ -91,14 +91,20 @@ def _bytes_feature( value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def serialize_multithread(item_paths,frame_paths, labels, outfile, mode):
+def serialize_multithread(clips_per_vid ,frame_paths, labels, outfile, mode):
 
     # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
-        f.write("%d\n" % len(item_paths))
+        f.write("%d\n" % len(clips_per_vid))
         if mode == defs.input_mode.video or force_video_metadata:
             f.write("%d\n" % num_frames_per_clip)
-            f.write("%d\n" % clip_offset_or_num)
+            if clipframe_mode == defs.clipframe_mode.iterative:
+                # write num clips per video, as it may vary
+                for numclips in clips_per_vid:
+                    f.write("%d " % numclips)
+            else:
+                # constant number of clips
+                f.write("%d\n" % clip_offset_or_num)
 
     # split up paths/labels list per thread run
     num_images_per_thread_run = num_items_per_thread * num_threads
@@ -160,14 +166,18 @@ def serialize_multithread(item_paths,frame_paths, labels, outfile, mode):
 
 
 def get_item_paths(paths_list, mode):
+    logger.info("Generating paths...")
+    tic = time.time()
     paths_per_video = []
     if mode == defs.input_mode.image:
         return paths_list
     else:
         for vid_idx in range(len(paths_list)):
+            #logger.info("Processing path %d / %d" % (vid_idx+1, len(paths_list)))
             video_path = paths_list[vid_idx]
             video_frame_paths = get_video_frame_paths(video_path)
             paths_per_video.append(video_frame_paths)
+    logger.info("Total path generation time: %s " % elapsed_str(time.time() - tic))            
     return paths_per_video
 
 
@@ -317,8 +327,8 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 
 def read_file(inp):
     mode = None
-    logger.info("Serializing %s " % (inp))
-    logger.info("Reading input file.")
+    logger.info("Reading input file %s " % (inp))
+
     paths = []
     labels = []
     with open(inp, 'r') as f:
@@ -384,26 +394,26 @@ def write():
         inp = input_files[idx]
         item_paths, labels, mode = read_file(inp)
         output_file = inp + ".tfrecord"
-        logger.info("Writing to %s" % output_file)
-        tic = time.time()
 
         # generate paths per video
         paths = get_item_paths(item_paths, mode)
         if do_shuffle:
-            paths_, labels_ = shuffle_paths(paths, labels)
+            paths, labels = shuffle_paths(paths, labels)
 
+        clips_per_video = [ len(vid) for vid in paths ]
 
         # flatten: frame, for video in videos for frame in video
-        labels = []
+        labels_flat = []
         for idx in range(len(labels_)):
-            ll = [labels_[idx] for clip in paths_[idx] for _ in clip]
-            labels.extend(ll)
-        paths = [ p for video in paths_ for clip in video for p in clip]
+            ll = [labels[idx] for clip in paths[idx] for _ in clip]
+            labels_flat.extend(ll)
+        paths_flat = [ p for video in paths for clip in video for p in clip]
 
-        outpaths_per_input.append([paths, labels, mode])
+        outpaths_per_input.append([paths_flat, labels_flat, mode])
         if do_serialize:
-            logger.info("Serializing %s " % inp)
-            serialize_multithread(item_paths, paths, labels,output_file , mode)
+            tic = time.time()
+            logger.info("Serializing %s " % (inp,output_file))
+            serialize_multithread(clips_per_video, paths_flat, labels_flat,output_file , mode)
             logger.info("Done serializing %s " % inp)
             logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
         logger.info("Done processing input file %s" % inp)
