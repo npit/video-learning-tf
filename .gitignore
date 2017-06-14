@@ -1,12 +1,7 @@
 # ignore all files and folders
 
-# */
-# *
-
-
-
-
-
+config.ini.*
+!config.ini.example
 # also ignore all:
 .idea
 *.tfrecord
