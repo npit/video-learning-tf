@@ -91,20 +91,24 @@ def _bytes_feature( value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def serialize_multithread(clips_per_vid ,frame_paths, labels, outfile, mode):
+def serialize_multithread(clips_per_vid_or_item_paths ,frame_paths, labels, outfile, mode):
 
     # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
-        f.write("%d\n" % len(clips_per_vid))
+        f.write("%d\n" % len(clips_per_vid_or_item_paths))
         if mode == defs.input_mode.video or force_video_metadata:
             f.write("%d\n" % num_frames_per_clip)
-            if clipframe_mode == defs.clipframe_mode.iterative:
-                # write num clips per video, as it may vary
-                for numclips in clips_per_vid:
-                    f.write("%d " % numclips)
-            else:
-                # constant number of clips
-                f.write("%d\n" % clip_offset_or_num)
+            if mode == defs.input_mode.video:
+                if clipframe_mode == defs.clipframe_mode.iterative:
+                    # write num clips per video, as it may vary
+                    for numclips in clips_per_vid_or_item_paths:
+                        f.write("%d " % numclips)
+                else:
+                    # constant number of clips
+                    f.write("%d\n" % clip_offset_or_num)
+        else:
+            # image mode
+            frame_paths = clips_per_vid_or_item_paths
 
     # split up paths/labels list per thread run
     num_images_per_thread_run = num_items_per_thread * num_threads
@@ -133,7 +137,6 @@ def serialize_multithread(clips_per_vid ,frame_paths, labels, outfile, mode):
         # start threads
         threads = [[] for _ in range(num_threads_in_run)]
         frames =  [[] for _ in range(num_threads_in_run)]
-        output_paths = [[] for _ in range(num_threads_in_run)]
         for t in range(num_threads_in_run):
             threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],frames,t))
             threads[t].start()
@@ -362,10 +365,17 @@ def shuffle_pair(*args):
     args= zip(*z)
     return args
 
-def shuffle_paths(item_paths, paths, labels):
+def shuffle_paths(item_paths, paths, labels, mode):
     logger.info("Shuffling data...")
+
+    if mode == defs.input_mode.image:
+        item_paths, labels = shuffle_pair(item_paths, labels)
+        return item_paths, labels
+
     # outer shuffle, of video order
     item_paths, paths, labels = shuffle_pair(item_paths, paths,labels)
+
+
     # inner shuffle, of frames
     if  clipframe_mode == defs.clipframe_mode.rand_frames:
 
@@ -392,28 +402,36 @@ def write():
     framepaths_per_input = []
     for idx in range(len(input_files)):
         inp = input_files[idx]
-        item_paths, labels, mode = read_file(inp)
-        output_file = inp + ".tfrecord"
+        item_paths, item_labels, mode = read_file(inp)
 
-        # generate paths per video
-        paths = get_item_paths(item_paths, mode)
-        if do_shuffle:
-            item_paths, paths, labels = shuffle_paths(item_paths, paths, labels)
+        if mode == defs.input_mode.image:
+            if do_shuffle:
+                item_paths, item_labels = shuffle_paths(item_paths, None, item_labels, mode)
+            paths_to_serialize, labels_to_serialize = item_paths, item_labels
+            clips_per_video_or_item_paths = item_paths
+            framepaths_per_input.append([item_paths, item_labels, None, None, mode])
 
-        clips_per_video = [ len(vid) for vid in paths ]
 
-        # flatten: frame, for video in videos for frame in video
-        labels_flat = []
-        for idx in range(len(labels)):
-            ll = [labels[idx] for clip in paths[idx] for _ in clip]
-            labels_flat.extend(ll)
-        paths_flat = [ p for video in paths for clip in video for p in clip]
+        if mode == defs.input_mode.video:
+            # generate paths per video
+            paths = get_item_paths(item_paths, mode)
+            if do_shuffle:
+                item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode)
+            clips_per_video_or_item_paths = [ len(vid) for vid in paths ]
 
-        framepaths_per_input.append([item_paths, paths_flat, labels_flat, mode])
+            # flatten: frame, for video in videos for frame in video
+            labels_to_serialize = []
+            for idx in range(len(item_labels)):
+                ll = [item_labels[idx] for clip in paths[idx] for _ in clip]
+                labels_to_serialize.extend(ll)
+            paths_to_serialize = [ p for video in paths for clip in video for p in clip]
+            framepaths_per_input.append([item_paths, item_labels, paths_to_serialize, labels_to_serialize, mode])
+
         if do_serialize:
             tic = time.time()
+            output_file = inp + ".tfrecord"
             logger.info("Serializing %s " % (output_file))
-            serialize_multithread(clips_per_video, paths_flat, labels_flat,output_file , mode)
+            serialize_multithread(clips_per_video_or_item_paths, paths_to_serialize, labels_to_serialize, output_file , mode)
             logger.info("Done serializing %s " % inp)
             logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
         logger.info("Done processing input file %s" % inp)
@@ -425,8 +443,10 @@ def validate(written_data):
     for index in range(len(input_files)):
         inp = input_files[index]
 
-        item_paths, paths, labels, mode,  = written_data[index]
-
+        item_paths, item_labels, paths, labels, mode,  = written_data[index]
+        if mode == defs.input_mode.image:
+            paths = item_paths
+            labels = item_labels
         num_validate = 10000 if len(paths) >= 10000 else len(paths)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
@@ -471,7 +491,7 @@ def write_paths_file(data):
     for i in range(len(data)):
         inp = input_files[i]
 
-        item_paths, paths, labels, mode = data[i]
+        item_paths, item_labels, paths, labels, mode = data[i]
 
         if do_shuffle:
             # write videos, if they got shuffled
@@ -480,10 +500,10 @@ def write_paths_file(data):
             with open(item_outfile,'w') as f:
                 for v in range(len(item_paths)):
                     item = item_paths[v]
-                    f.write("%s %d\n" % (item, labels[v]))
+                    f.write("%s %d\n" % (item, item_labels[v]))
 
 
-        clip_info = "" if clipframe_mode == defs.clipframe_mode.rand_frames else ".%d.cpv" % clip_offset_or_num
+        clip_info = "" if clipframe_mode == defs.clipframe_mode.rand_frames or mode == defs.input_mode.image else ".%d.cpv" % clip_offset_or_num
         outfile = "%s%s.%dfpc.%s" % (inp, clip_info, num_frames_per_clip, defs.clipframe_mode.str(clipframe_mode))
 
         if not mode == defs.input_mode.video:

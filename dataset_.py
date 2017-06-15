@@ -238,18 +238,42 @@ class Dataset:
                     labels = currentBatch[defs.labels]
 
         else:
-            # read images from a TFrecord serialization file
-            num_items_in_batch = currentBatch
+            # for video mode, get actual number of frames for the batch items
             if self.input_mode == defs.input_mode.video:
-                num_items_in_batch = num_items_in_batch * self.num_frames_per_clip * self.clips_per_video
-            images, labels = self.deserialize_from_tfrecord(self.iterator, num_items_in_batch)
-            # limit to 1 label per video
-            if self.input_mode == defs.input_mode.video:
-                labels = [ labels[l] for l in range(0,len(labels),self.num_frames_per_clip) ]
+                curr_cpv = self.clips_per_video[self.batch_index: self.batch_index + self.batch_size]
+                num_frames_in_batch = sum([self.num_frames_per_clip * x for x in curr_cpv])
+                # read images from a TFrecord serialization file
+                images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+                # # limit to 1 label per video.
+                # #  get label of first frame of each clip, per video
+                # # frames per vid
+                # fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
+                # fpv = np.cumsum(fpv)
+                # first_videoframe_idx = [0]
+                # first_videoframe_idx.extend(fpv[:-1])
+                # labels = [ labels_per_frame[idx] for idx in first_videoframe_idx]
+
+                # limit to <numclips> labels per video.
+                fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
+                fpv = np.cumsum(fpv)
+                first_videoframe_idx = [0]
+                first_videoframe_idx.extend(fpv[:-1])
+                labels = []
+                count = 0
+                for idx in first_videoframe_idx:
+                    for _ in range(curr_cpv[count]):
+                        labels.append(labels_per_frame[idx])
+
+            else:
+                num_frames_in_batch = currentBatch
+                # read images from a TFrecord serialization file
+                images, labels = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+                if self.input_mode == defs.input_mode.video:
+                    labels = [ labels[l] for l in range(0,len(labels),self.num_frames_per_clip) ]
 
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
         self.advance_batch_index()
-        return images, labels_onehot#, labels
+        return images, labels_onehot
 
     def advance_batch_index(self):
         self.batch_index = self.batch_index + 1
@@ -394,7 +418,7 @@ class Dataset:
                 # count or get number of items
                 self.get_input_data_count(defs.phase.val)
                 num_whole_batches = self.num_items_val // self.batch_size_val
-                self.batches_val = [ self.batch_size_val for i in range(num_whole_batches)]
+                self.batches_val = [ self.batch_size_val for _ in range(num_whole_batches)]
                 items_left = self.num_items_val - num_whole_batches * self.batch_size_val
                 if items_left:
                     self.batches_val.append(items_left)
@@ -528,6 +552,7 @@ class Dataset:
                     val = val.strip()
                     num_clips.append(int(val))
                 self.logger.info("Read %d values of number of clips per video" % (len(num_clips)))
+                self.clips_per_video = num_clips
         else:
             # else, if unset, set the default number of clips to 1
             self.logger.warning("No number of clips in size file, defaulting to 1 clip per video.")
@@ -615,5 +640,5 @@ class Dataset:
     # check if there's only one clip per video
     def single_clip(self):
         if type(self.clips_per_video) == int:
-            return clips_per_video == 1
+            return self.clips_per_video == 1
         return False

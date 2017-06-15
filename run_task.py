@@ -365,28 +365,36 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         # concat to np array
         logits = np.vstack(logits_list)
         labels = np.vstack(labels_list)
-        # drop extraneous label information, keepign 1 per videe
-        labels = labels[0:: dataset.num_clips_per_video]
-        # group logits per video
-        logits_per_video = []
-        start_idx = 0
-        for num_clips in dataset.clips_per_video:
-            logits_for_video = logits[start_idx : start_idx+num_clips,:]
-            logits_per_video.append(logits_for_video)
-        logits = None # for memory issues
-        # for constant num. of clips per video
-        #logits_per_video = np.vsplit(logits,logits.shape[0] // dataset.num_clips_per_video)
-        # get the logits of each video
-        for cidx in range(len(logits_per_video)):
-            # aggregate the logits in each clip
-            if settings.clip_pooling_type == defs.pooling.avg:
-                logits_per_video[cidx] = np.mean(logits_per_video[cidx],axis=0)
+        if dataset.input_mode == defs.input_mode.video:
+            labels_per_video = []
+            count, accum = 0, 0
+            for clipnum in dataset.clips_per_video:
+                labels_per_video.append(labels[accum])
+                accum = accum + clipnum
+            # group logits per video
+            logits_per_video = []
+            idx = 0
+            for num_clips in dataset.clips_per_video:
+                logits_for_video = logits[idx : idx+num_clips:]
+                logits_per_video.append(logits_for_video)
+                idx = idx + num_clips
+            logits = None # for memory issues
+            # for constant num. of clips per video
+            #logits_per_video = np.vsplit(logits,logits.shape[0] // dataset.num_clips_per_video)
+            # get the logits of each video
+            for cidx in range(len(logits_per_video)):
+                # aggregate the logits in each clip
+                if settings.clip_pooling_type == defs.pooling.avg:
+                    logits_per_video[cidx] = np.mean(logits_per_video[cidx],axis=0)
 
-            elif settings.clip_pooling_type == defs.pooling.last:
-                logits_per_video[cidx] = logits_per_video[cidx][-1,:]
+                elif settings.clip_pooling_type == defs.pooling.last:
+                    logits_per_video[cidx] = logits_per_video[cidx][-1,:]
+        else:
+            logits_per_video = logits
+            labels_per_video = labels
         # compute accuracy
         predicted_classes = np.argmax(logits_per_video,axis=1)
-        correct_classes = np.argmax(labels, axis=1)
+        correct_classes = np.argmax(labels_per_video, axis=1)
         accuracy = np.mean(np.equal(predicted_classes, correct_classes))
 
     # loop done ##################################3

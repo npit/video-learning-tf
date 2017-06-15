@@ -3,7 +3,7 @@
 run_type = defs.run_types.singleframe
 
 # save / load configuration
-resume_file = 
+resume_file = None
 run_folder = "path/to/runfolder"
 path_prepend_folder = ""
 
@@ -46,15 +46,15 @@ tensorboard_folder = "tensorboard_graphs"
 
 [serialize]
 
-path_prepend_folder = "/path/to/frames/folder"
-input_files = [ "path/to/inputfile1" , "path/to/inputfile2"]
+path_prepend_folder = "path/to/images/folder"
+input_files = [ "/path/to/imgfile1", "/path/to/imgfile2"]
 
 do_shuffle = True
-do_serialize = False
-num_threads = 3
-num_items_per_thread = 500
+do_serialize = True
+num_threads = 2
+num_items_per_thread = 20
 raw_image_shape = (240,320,3)
 clip_offset_or_num = 2
 num_frames_per_clip = 16
-clipframe_mode = defs.video_frame_mode.random
+clipframe_mode = defs.clipframe_mode.iterative
 frame_format = "jpg"
