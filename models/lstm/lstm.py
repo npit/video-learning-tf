@@ -8,11 +8,10 @@ def define(inputTensor, dataset, settings, summaries):
         num_hidden = settings.lstm_num_hidden
         num_classes = dataset.num_classes
         logger = dataset.logger
-
         sequence_len = dataset.num_frames_per_clip
-
-        video_pooling_type = settings.video_pooling_type
+        frame_pooling_type = settings.frame_pooling_type
         dropout_keep_prob = settings.dropout_keep_prob
+        
         # LSTM basic cell
         cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True)
         logger.debug("LSTM input : %s" % str(inputTensor.shape))
@@ -21,7 +20,7 @@ def define(inputTensor, dataset, settings, summaries):
         output = rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger)
         logger.debug("LSTM raw output : %s" % str(output.shape))
 
-        if video_pooling_type == defs.pooling.last:
+        if frame_pooling_type == defs.pooling.last:
             # keep only the response at the last time step
             output = tf.slice(output,[0,sequence_len-1,0],[-1,1,num_hidden],name="lstm_output_reshape")
             logger.debug("LSTM last timestep output : %s" % str(output.shape))
@@ -29,12 +28,13 @@ def define(inputTensor, dataset, settings, summaries):
             output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
             logger.debug("LSTM squeezed output : %s" % str(output.shape))
 
-        elif video_pooling_type == defs.pooling.avg:
+        elif frame_pooling_type == defs.pooling.avg:
             # average per-timestep results
             output = tf.reduce_mean(output, axis=1)
             logger.debug("LSTM time-averaged output : %s" % str(output.shape))
-
-
+        else:
+            logger.error("Undefined frame pooling type : %d" % frame_pooling_type)
+            error("Undefined frame pooling type")
 
 
         # add dropout
