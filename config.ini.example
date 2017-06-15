@@ -5,7 +5,7 @@ run_type = defs.run_types.singleframe
 # save / load configuration
 resume_file = 
 run_folder = "path/to/runfolder"
-path_prepend_folder = 
+path_prepend_folder = ""
 
 # architecture settings
 lstm_input_layer = "fc7"

@@ -499,11 +499,11 @@ class Dataset:
             # check if there's a clash with the run configuration specified
             if self.num_frames_per_clip is not None:
                 if not num_frames_per_clip == self.num_frames_per_clip:
-                    self.logger.error("Read %d frames per video from the size file but specified %d" %
+                    self.logger.error("Read %d frames per clip from the size file but specified %d" %
                                       (num_frames_per_clip,  self.num_frames_per_clip))
                     error("Number of video frames mismatch")
             else:
-                self.logger.info("Read %d frames per video for %s from size file " %
+                self.logger.info("Read %d frames per clip for %s from size file " %
                                   (num_frames_per_clip, defs.phase.str(phase)))
             self.num_frames_per_clip = num_frames_per_clip
         else:
@@ -524,12 +524,12 @@ class Dataset:
                 self.clips_per_video = num_clips
             except Exception:
                 # read a collection of numbers, each denoting the number of clips per video
-                vals = contents[2].split("")
+                vals = contents[2].split(" ")
                 num_clips = []
                 for val in vals:
                     val = val.strip()
                     num_clips.append(int(val))
-                self.logger("Read %d values of number of clips per video" % (len(num_clips)))
+                self.logger.info ("Read %d values of number of clips per video" % (len(num_clips)))
 
         else:
             # else, if unset, set the default number of clips to 1

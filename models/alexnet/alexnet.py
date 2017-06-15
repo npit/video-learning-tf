@@ -34,7 +34,7 @@ def define(xdim, weightsFile, num_classes, final_layer ="prob"):
     #net_data = load("bvlc_alexnet.npy").item()
     x = tf.placeholder(tf.float32, (None,) + xdim, name='input_frames')
 
-    with tf.name_scope("dcnn") as scope:
+    with tf.name_scope("dcnn"):
         # conv1
         # conv(11, 11, 96, 4, 4, padding='VALID', name='conv1')
         k_h = 11;
