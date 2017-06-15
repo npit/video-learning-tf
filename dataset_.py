@@ -344,7 +344,6 @@ class Dataset:
         self.batch_index_train = sett.train_index
         self.batch_index_val = sett.val_index
 
-
         self.do_mean_subtraction = (self.mean_image is not None)
         if self.do_mean_subtraction:
             # build the mean image
@@ -468,7 +467,7 @@ class Dataset:
 
 
         # .size file  exists. Read the count and optionally # frames per clip and # clips
-        # format expected is one value per line, in the order of num_items, num_frames_per_clip, num_clips_per_video
+        # format expected is one value per line, in the order of num_items, num_frames_per_clip, clips_per_video
         # read the data
         size_file = input_file + ".size"
         self.logger.info("Reading data meta-parameters file [%s]" % size_file)
@@ -490,7 +489,6 @@ class Dataset:
         elif phase == defs.phase.val:
             self.num_items_val = num_items
         self.logger.info("Read a count of %d [%s] items in the input data" % ( phase, num_items))
-
 
 
         # read number of frames per clip
@@ -529,8 +527,7 @@ class Dataset:
                 for val in vals:
                     val = val.strip()
                     num_clips.append(int(val))
-                self.logger.info ("Read %d values of number of clips per video" % (len(num_clips)))
-
+                self.logger.info("Read %d values of number of clips per video" % (len(num_clips)))
         else:
             # else, if unset, set the default number of clips to 1
             self.logger.warning("No number of clips in size file, defaulting to 1 clip per video.")
@@ -615,4 +612,8 @@ class Dataset:
         self.batch_count = self.batch_count + 1
         return retval
 
-
+    # check if there's only one clip per video
+    def single_clip(self):
+        if type(self.clips_per_video) == int:
+            return clips_per_video == 1
+        return False

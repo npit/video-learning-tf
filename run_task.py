@@ -59,7 +59,7 @@ class Settings:
     frame_format = "jpg"
     input_mode = defs.input_mode.image
     num_frames_per_clip = 16
-    num_clips_per_video = 1
+    clips_per_video = 1
 
     # training settings
     do_random_mirroring = True
@@ -232,6 +232,7 @@ class Settings:
 
             try:
                 # load saved graph file
+                tf.reset_default_graph()
                 self.saver.restore(sess, savefile_graph)
             except Exception as ex:
                 error(ex)
@@ -331,7 +332,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     labels_list = []
     dataset.logger.debug("Gathering test logits")
     # validation loop without clip aggregation
-    if dataset.num_clips_per_video == 1:
+    if dataset.single_clip():
         while dataset.loop():
             # get images and labels
             images, labels_onehot = dataset.read_next_batch()

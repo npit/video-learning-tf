@@ -476,6 +476,7 @@ def write_paths_file(data):
         if do_shuffle:
             # write videos, if they got shuffled
             item_outfile = inp + ".shuffled"
+            logger.info("Documenting shuffled video order to %s" % (item_outfile))
             with open(item_outfile,'w') as f:
                 for v in range(len(item_paths)):
                     item = item_paths[v]
