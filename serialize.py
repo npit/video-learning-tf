@@ -99,13 +99,9 @@ def serialize_multithread(clips_per_vid_or_item_paths ,frame_paths, labels, outf
         if mode == defs.input_mode.video or force_video_metadata:
             f.write("%d\n" % num_frames_per_clip)
             if mode == defs.input_mode.video:
-                if clipframe_mode == defs.clipframe_mode.iterative:
-                    # write num clips per video, as it may vary
-                    for numclips in clips_per_vid_or_item_paths:
-                        f.write("%d " % numclips)
-                else:
-                    # constant number of clips
-                    f.write("%d\n" % clip_offset_or_num)
+                # write num clips per video, as it may vary
+                for numclips in clips_per_vid_or_item_paths:
+                    f.write("%d " % numclips)
         else:
             # image mode
             frame_paths = clips_per_vid_or_item_paths

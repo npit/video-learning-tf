@@ -74,7 +74,7 @@ class Dataset:
     batch_index_val = None
     val_iterator = None
     num_items_val = 0
-
+    batch_item = None
     # misc
     logger = None
 
@@ -361,6 +361,7 @@ class Dataset:
 
         self.batch_size_train = sett.batch_size_train
         self.batch_size_val = sett.batch_size_val
+        self.batch_item_level = sett.batch_item_level
         self.initialize_data(sett)
 
         # transfer resumed snapshot settings
@@ -535,37 +536,25 @@ class Dataset:
 
         # read number of clips per video
         if len(contents) > 2 :
-            try:
-                # read a single number of clips, for each video
-                num_clips = int(contents[2])
-                if self.clips_per_video is not None:
-                    self.logger.error(
-                        "Read value of clips per video clashes with already set value of %d " % self.clips_per_video)
-                else:
-                    self.logger.info("Read a value of %d clips per video " % num_clips)
-                self.clips_per_video = num_clips
-            except Exception:
-                # read a collection of numbers, each denoting the number of clips per video
-                vals = contents[2].split(" ")
-                num_clips = []
-                for val in vals:
-                    val = val.strip()
-                    num_clips.append(int(val))
-                self.logger.info("Read %d values of number of clips per video" % (len(num_clips)))
-                self.clips_per_video = num_clips
+            # read a collection of numbers, each denoting the number of clips per video
+            vals = contents[2].split(" ")
+            num_clips = []
+            for val in vals:
+                val = val.strip()
+                num_clips.append(int(val))
+            self.logger.info("Read %d values of number of clips per video" % (len(num_clips)))
+            self.clips_per_video = num_clips
         else:
-            # else, if unset, set the default number of clips to 1
-            self.logger.warning("No number of clips in size file, defaulting to 1 clip per video.")
-            self.clips_per_video = 1
+            # else, if unset, we gotta be in frame mode
+            if not self.input_mode == defs.input_mode.image:
+                self.logger.warning("No number of clips in size file, but run is not in image mode.")
+                error("Missing cpv in size file")
 
-        # if a single value was read for cpv, expand to number of videos
-        if type(self.clips_per_video) == list:
-            if not len(self.clips_per_video) == num_items:
-                self.logger.error("Unequal number of clips vector %d to the number of videos %d" % (len(self.clips_per_video),num_items))
-                error("Unequal number of clips vector to the input videos.")
-        else:
-            # replicate the single value for each video
-            self.clips_per_video = [ self.clips_per_video for _ in range(num_items) ]
+        # check integrity
+        if not len(self.clips_per_video) == num_items:
+            self.logger.error("Unequal number of clips vector %d to the number of videos %d" % (len(self.clips_per_video),num_items))
+            error("Unequal number of clips vector to the input videos.")
+
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
