@@ -119,12 +119,12 @@ class defs:
         def str(arg):
             return defs.clipframe_mode._str[arg]
 
-
-    class loaded:
-        train_index, val_index, epoch_index = range(3)
-        _str = ["train_index", "val_index", "epoch_index"]
+    class batch_item:
+        frame, clip, video = range(3)
+        _str = ["frame", "clip", "video"]
         def str(arg):
-            return defs.loaded._str[arg]
+            return defs.batch_item._str[arg]
+
     # batch content type
     images, labels = range(2)
     _str = ["images", "labels"]

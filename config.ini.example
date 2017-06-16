@@ -23,7 +23,6 @@ frame_format = "jpg"
 input_mode = defs.input_mode.image
 
 num_frames_per_clip = 16
-num_clips_per_video = 1
 
 # training settings
 do_training = True
@@ -39,6 +38,7 @@ dropout_keep_prob = 0.5
 do_validation = False
 validation_interval = 1
 batch_size_val = 88
+batch_item = defs.batch_item.video
 
 # logging
 logging_level = logging.DEBUG

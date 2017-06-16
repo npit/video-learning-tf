@@ -74,7 +74,12 @@ class Dataset:
     batch_index_val = None
     val_iterator = None
     num_items_val = 0
-    batch_item = None
+    batch_item = defs.batch_item.video
+
+    # variables for validation clip batches
+    video_index = 0
+
+
     # misc
     logger = None
 
@@ -229,58 +234,65 @@ class Dataset:
                     videoframes = self.get_video_frames(videopath)
                     images.extend(videoframes)
                     labels.append(currentBatch[defs.labels])
-
             else:
                 # read image
                 for impath in currentBatch[0]:
                     frame = self.read_image(impath)
                     images.append(frame)
                     labels = currentBatch[defs.labels]
-
         else:
             # for video mode, get actual number of frames for the batch items
             if self.input_mode == defs.input_mode.video:
-                curr_cpv = self.clips_per_video[self.batch_index: self.batch_index + self.batch_size]
-                num_frames_in_batch = sum([self.num_frames_per_clip * x for x in curr_cpv])
-                # read images from a TFrecord serialization file
-                images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
-                # # limit to 1 label per video.
-                # #  get label of first frame of each clip, per video
-                # # frames per vid
-                # fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
-                # fpv = np.cumsum(fpv)
-                # first_videoframe_idx = [0]
-                # first_videoframe_idx.extend(fpv[:-1])
-                # labels = [ labels_per_frame[idx] for idx in first_videoframe_idx]
-
-                # limit to <numclips> labels per video.
-                fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
-                fpv = np.cumsum(fpv)
-                first_videoframe_idx = [0]
-                first_videoframe_idx.extend(fpv[:-1])
-                labels = []
-                count = 0
-                for idx in first_videoframe_idx:
-                    for _ in range(curr_cpv[count]):
-                        labels.append(labels_per_frame[idx])
-
+                images, labels = self.get_next_batch_video_tfr()
             else:
-                num_frames_in_batch = currentBatch
-                # read images from a TFrecord serialization file
-                images, labels = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
-                if self.input_mode == defs.input_mode.video:
-                    labels = [ labels[l] for l in range(0,len(labels),self.num_frames_per_clip) ]
+                images, labels = self.get_next_batch_frame_tfr(currentBatch)
+
 
         labels_onehot = labels_to_one_hot(labels, self.num_classes)
-        self.advance_batch_index()
+        self.advance_batch_indexes()
         return images, labels_onehot
 
-    def advance_batch_index(self):
+    def get_next_batch_video_tfr(self):
+        if self.batch_item == defs.batch_item.video:
+            # batch size refers to videos. Get num clips per videos in batch
+            curr_video = self.batch_index * self.batch_size
+            curr_cpv = self.clips_per_video[curr_video : curr_video + self.batch_size]
+            num_frames_in_batch = sum([self.num_frames_per_clip * x for x in curr_cpv])
+            # read the frames from the TFrecord serialization file
+            images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+
+            # limit to <numclips> labels per video.
+            fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
+            fpv = np.cumsum(fpv)
+            first_videoframe_idx = [0, *fpv[:-1] ]
+            labels = []
+            count = 0
+            for idx in first_videoframe_idx:
+                for _ in range(curr_cpv[count]):
+                    labels.append(labels_per_frame[idx])
+        elif self.batch_item == defs.batch_item.clip:
+            # batch size refers to number of clips.
+            num_frames_in_batch = self.batch_size * self.num_frames_per_clip
+            images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+            # limit to 1 label per clip
+            labels = labels_per_frame[0:: self.num_frames_per_clip]
+
+        return images,labels
+
+    def get_next_batch_frame_tfr(self, num_frames_in_batch):
+        # read images from a TFrecord serialization file
+        images, labels = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+        if self.input_mode == defs.input_mode.video:
+            labels = [labels[l] for l in range(0, len(labels), self.num_frames_per_clip)]
+        return images,labels
+
+    def advance_batch_indexes(self):
         self.batch_index = self.batch_index + 1
         if self.phase == defs.phase.train:
             self.batch_index_train = self.batch_index_train + 1
         else:
             self.batch_index_val = self.batch_index_val + 1
+
 
     # read all frames for a video
     def get_video_frames(self,videopath):
@@ -361,7 +373,7 @@ class Dataset:
 
         self.batch_size_train = sett.batch_size_train
         self.batch_size_val = sett.batch_size_val
-        self.batch_item_level = sett.batch_item_level
+        self.batch_item = sett.batch_item
         self.initialize_data(sett)
 
         # transfer resumed snapshot settings
@@ -418,9 +430,15 @@ class Dataset:
                 self.reset_iterator(defs.phase.val)
                 # count or get number of items
                 self.get_input_data_count(defs.phase.val)
-                num_whole_batches = self.num_items_val // self.batch_size_val
+                # calculate batches
+                if self.batch_item == defs.batch_item.video:
+                    num_whole_batches = self.num_items_val // self.batch_size_val
+                    items_left = self.num_items_val - num_whole_batches * self.batch_size_val
+                elif self.batch_item == defs.batch_item.clip:
+                    num_whole_batches = sum(self.clips_per_video) // self.batch_size_val
+                    items_left = sum(self.clips_per_video) - num_whole_batches * self.batch_size_val
                 self.batches_val = [ self.batch_size_val for _ in range(num_whole_batches)]
-                items_left = self.num_items_val - num_whole_batches * self.batch_size_val
+
                 if items_left:
                     self.batches_val.append(items_left)
                 self.logger.info("Calculated %d validation batches." % len(self.batches_val))
@@ -513,7 +531,7 @@ class Dataset:
             self.num_items_train = num_items
         elif phase == defs.phase.val:
             self.num_items_val = num_items
-        self.logger.info("Read a count of %d [%s] items in the input data" % ( phase, num_items))
+        self.logger.info("Read a count of %d [%s] items in the input data" % ( num_items, defs.phase.str(phase)))
 
 
         # read number of frames per clip
@@ -609,15 +627,17 @@ class Dataset:
     def print_iter_info(self, num_images, num_labels):
         if self.phase == defs.phase.train:
             self.logger.info("Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images, %3d labels" %
-                         (defs.phase.str(self.phase), self.epoch_index + 1, self.epochs, self.batch_index, len(self.batches), num_images, num_labels))
+                         (defs.phase.str(self.phase), self.epoch_index + 1,
+                          self.epochs, self.batch_index, len(self.batches),
+                          num_images, num_labels))
         # same as train, but no epoch
         elif self.phase == defs.phase.val:
             self.logger.info("Mode: [%s], batch %4d / %4d : %3d images, %3d labels" %
-                         (defs.phase.str(self.phase), self.batch_index, len(self.batches), num_images, num_labels))
+                         (defs.phase.str(self.phase), self.batch_index, len(self.batches),
+                          num_images, num_labels))
 
     # specify valid loop iteration
     def loop(self):
-        self.logger.debug("Checking loop @ batch index: %d , batches len: %d" % (self.batch_index+1 , len(self.batches)))
         return self.batch_index < len(self.batches)
 
     # check if testing should happen now
