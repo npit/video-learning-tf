@@ -11,7 +11,7 @@ def define(inputTensor, dataset, settings, summaries):
         sequence_len = dataset.num_frames_per_clip
         frame_pooling_type = settings.frame_pooling_type
         dropout_keep_prob = settings.dropout_keep_prob
-        
+
         # LSTM basic cell
         cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True)
         logger.debug("LSTM input : %s" % str(inputTensor.shape))

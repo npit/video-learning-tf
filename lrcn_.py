@@ -18,15 +18,15 @@ class LRCN:
     optimizer = None
     logits = None
     logger = None
-    video_logits = None
-    video_labels = None
+    item_logits = None
+    item_labels = None
     clip_logits = None
     clip_labels = None
     clip_pooling_type = None
     # let there be network
     def create(self, settings, dataset, run_mode,summaries):
-        self.video_logits = np.zeros([0, dataset.num_classes ], np.float32)
-        self.video_labels = np.zeros([0, dataset.num_classes ], np.float32)
+        self.item_logits = np.zeros([0, dataset.num_classes], np.float32)
+        self.item_labels = np.zeros([0, dataset.num_classes], np.float32)
         self.clip_logits = np.zeros([0, dataset.num_classes ], np.float32)
         self.clip_labels = np.zeros([0, dataset.num_classes ], np.float32)
         self.clip_pooling_type = settings.clip_pooling_type
@@ -119,64 +119,91 @@ class LRCN:
             with tf.name_scope('accuracy_train'):
                 self.accuracyTrain = tf.reduce_mean(tf.cast(correct_predictionTrain, tf.float32))
 
-        with tf.name_scope('validation_accuracy'):
-
-            with tf.name_scope('correct_prediction_val'):
-
-                #ok for this argmax we gotta squash the labels down to video level.
-                correct_predictionVal = tf.equal(tf.argmax(self.logits , 1), tf.argmax(self.inputLabels, 1))
-            with tf.name_scope('accuracy_val'):
-                self.accuracyVal = tf.reduce_mean(tf.cast(correct_predictionVal, tf.float32))
-
+        # with tf.name_scope('validation_accuracy'):
+        #
+        #     with tf.name_scope('correct_prediction_val'):
+        #
+        #         #ok for this argmax we gotta squash the labels down to video level.
+        #         correct_predictionVal = tf.equal(tf.argmax(self.logits , 1), tf.argmax(self.inputLabels, 1))
+        #     with tf.name_scope('accuracy_val'):
+        #         self.accuracyVal = tf.reduce_mean(tf.cast(correct_predictionVal, tf.float32))
+        #
+        # summaries.val.append(tf.summary.scalar('accuracyVal', self.accuracyVal))
         summaries.train.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
-        summaries.val.append(tf.summary.scalar('accuracyVal', self.accuracyVal))
         self.logger.debug("Completed network definitions.")
 
     # accuracy computation for videos with multiple clips, where logits are already fetched
     def process_validation_logits(self, logits, dataset, labels):
-        # append to video labels accumulator
-
-
+        # batch item contains individual clips. Accumulate to clip storage, and check for aggregation
         if dataset.batch_item == defs.batch_item.clip:
             # per-clip logits in input : append to clip logits accumulator
             self.clip_logits = np.vstack((self.clip_logits, logits))
             self.clip_labels = np.vstack((self.clip_labels, labels))
             self.logger.debug("Adding %d,%d clip logits and labels to a total of %d,%d." % (
                 logits.shape[0], labels.shape[0], self.clip_logits.shape[0], self.clip_labels.shape[0]))
+
+            cpv = dataset.clips_per_video[dataset.video_index]
             # while possible, pop a chunk for the current cpv, aggregate, and add to video logits accumulator
-            while dataset.video_index < len(dataset.clips_per_video) and \
-                            dataset.clips_per_video[dataset.video_index] <= self.clip_logits.shape[0]:
-                # get logits of the current video
-                curr_video_logits = self.clip_logits[0:dataset.clips_per_video[dataset.video_index]]
-                # get the label
-                curr_video_label = self.clip_labels[0,:]
-                # delete them from the accumulation
-                self.clip_logits = self.clip_logits[dataset.clips_per_video[dataset.video_index]:]
-                self.clip_labels = self.clip_labels[dataset.clips_per_video[dataset.video_index]:]
+            while dataset.video_index < len(dataset.clips_per_video) and cpv <= len(self.clip_logits):
+
                 # aggregate the logits and add to video logits accumulation
-                if self.clip_pooling_type == defs.pooling.avg:
-                    curr_video_logits = np.mean(curr_video_logits,axis=0)
-                elif self.clip_pooling_type == defs.pooling.last:
-                    curr_video_logits = curr_video_logits [-1,:]
-                self.video_logits = np.vstack((self.video_logits, curr_video_logits))
-                # add the label too
-                self.video_labels = np.vstack((self.video_labels, curr_video_label))
+                self.apply_clip_pooling(self.clip_logits, cpv, self.clip_labels)
+                # delete them from the accumulation
+                self.clip_logits = self.clip_logits[cpv:,:]
+                self.clip_labels = self.clip_labels[cpv:,:]
+
                 self.logger.debug("Aggregated %d clips to the %d-th video. Video accumulation is now %d,%d - clip accumulation is %d, %d." %
-                                  (dataset.clips_per_video[dataset.video_index], 1+dataset.video_index, len(self.video_logits),
-                                   len(self.video_labels), len(self.clip_logits), len(self.clip_labels)))
+                                  (dataset.clips_per_video[dataset.video_index], 1 + dataset.video_index, len(self.item_logits),
+                                   len(self.item_labels), len(self.clip_logits), len(self.clip_labels)))
                 # advance video index
                 dataset.video_index = dataset.video_index + 1
+                if dataset.video_index >= len(dataset.clips_per_video):
+                    break
+                cpv = dataset.clips_per_video[dataset.video_index]
         else:
-            # already video data - append to accumulators
-            self.video_logits = np.vstack((self.video_logits, logits))
-            self.video_labels = np.vstack((self.video_labels, labels))
-            self.logger.debug("Accumulated %d,%d video logits and labels in video batch mode." %
-                              (len(self.video_logits), len(self.video_labels)))
+            # batch items are whole items of data
+            if dataset.input_mode == defs.input_mode.video:
+                # can directly pool and append to video accumulators
+                maxvid = dataset.batch_index * dataset.batch_size
+                minvid = maxvid - dataset.batch_size
+
+                for vidx in range(minvid, maxvid):
+                    if vidx >= dataset.get_num_items():
+                        break
+                    cpv = dataset.clips_per_video[vidx]
+                    self.logger.debug("Aggregating %d clips for video %d in video batch mode" % (cpv, vidx + 1))
+                    self.apply_clip_pooling(logits,cpv,labels)
+                    logits = logits[cpv:,:]
+                    labels = labels[cpv:,:]
+                if not (len(logits) == 0 and len(labels) == 0):
+                    self.logger.error("Logits and/or labels non empty at the end of video item mode aggregation!")
+                    error("Video item mode aggregation error.")
+                self.logger.debug("Video logits and labels accumulation is now %d,%d video in video batch mode." %
+                                  (len(self.item_logits), len(self.item_labels)))
+            else:
+                # frames, simply append
+                self.add_item_logits_labels(logits,labels)
+
+    def apply_clip_pooling(self, clips_logits, cpv, video_labels):
+        curr_clips = clips_logits[0:cpv,:]
+        video_label = video_labels[0,:]
+        if self.clip_pooling_type == defs.pooling.avg:
+            video_logits = np.mean(curr_clips , axis=0)
+        elif self.clip_pooling_type == defs.pooling.last:
+            video_logits = curr_clips [-1, :]
+        # add logits, label to the video accumulation
+        self.add_item_logits_labels(video_logits, video_label)
+
+    def add_item_logits_labels(self,logits,label):
+        # add logits, label to the video accumulation
+        self.item_logits = np.vstack((self.item_logits, logits))
+        self.item_labels = np.vstack((self.item_labels, label))
 
     def get_accuracy(self):
         # compute accuracy
-        self.logger.info("Computing accuracy out of %d videos" % len(self.video_logits))
-        predicted_classes = np.argmax(self.video_logits,axis=1)
-        correct_classes = np.argmax(self.video_labels, axis=1)
+        print(self.item_logits)
+        self.logger.info("Computing accuracy out of %d items" % len(self.item_logits))
+        predicted_classes = np.argmax(self.item_logits, axis=1)
+        correct_classes = np.argmax(self.item_labels, axis=1)
         accuracy = np.mean(np.equal(predicted_classes, correct_classes))
         return accuracy

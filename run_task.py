@@ -21,8 +21,10 @@ class Summaries:
     train_merged = None
     val_merged = None
     def merge(self):
-        self.train_merged = tf.summary.merge(self.train)
-        self.val_merged = tf.summary.merge(self.val)
+        if self.train:
+            self.train_merged = tf.summary.merge(self.train)
+        if self.val:
+            self.val_merged = tf.summary.merge(self.val)
 
 # settings class
 ################
@@ -70,12 +72,14 @@ class Settings:
     optimizer = "SGD"
     learning_rate = 0.001
     dropout_keep_prob = 0.5
+    dropout_seed = None
+    tf_seed = None
 
     # validation settings
     do_validation = True
     validation_interval = 1
     batch_size_val = 88
-    batch_item_level = defs.batch_item.video
+    batch_item = defs.batch_item.default
 
     # logging
     logging_level = logging.DEBUG
@@ -96,9 +100,6 @@ class Settings:
     # training settings
     epoch_index = 0
     train_index = 0
-
-    # validation settings
-    val_index = 0
 
     # logging
     logger = None
@@ -143,8 +144,8 @@ class Settings:
         else:
             self.logger.error("Undefined input mode: [%s]" % str(self.input_mode))
             error("Undefined input mode")
-        self.input[defs.phase.train] = os.path.join(self.run_folder, basefilename + ".train")
-        self.input[defs.phase.val] = os.path.join(self.run_folder, basefilename + ".test")
+        self.input[defs.train_idx] = os.path.join(self.run_folder, basefilename + ".train")
+        self.input[defs.val_idx] = os.path.join(self.run_folder, basefilename + ".test")
 
     # file initialization
     def initialize_from_file(self):
@@ -197,10 +198,14 @@ class Settings:
             if self.do_training:
                 self.logger.info("Starting training from scratch.")
         self.set_input_files()
+        if not self.good():
+            error("Wacky configuration, exiting.")
 
-    # settings are ok
+    # check if settings are ok
     def good(self):
         if not self.epochs: error("Non positive number of epochs.")
+        if self.batch_item == defs.batch_item.clip and self.input_mode == defs.input_mode.image:
+            error("Clip batches set with image input mode")
         return True
 
     # restore dataset meta parameters
@@ -218,8 +223,8 @@ class Settings:
                 error(ex)
 
             # set run options from loaded stuff
-            self.train_index, self.val_index, self.epoch_index = params
-            self.logger.info("Restored epoch %d, train index %d, validation index %d" % (self.epoch_index, self.train_index, self.val_index))
+            self.train_index, self.epoch_index = params
+            self.logger.info("Restored epoch %d, train index %d" % (self.epoch_index, self.train_index))
 
     # restore graph variables
     def resume_graph(self, sess):
@@ -246,7 +251,7 @@ class Settings:
             if not os.path.exists(checkpoints_folder):
                 os.makedirs(checkpoints_folder)
 
-            basename = os.path.join(checkpoints_folder,get_datetime_str() + "-saved_" + progress)
+            basename = os.path.join(checkpoints_folder,get_datetime_str() + "_" + self.run_type + "_" + progress)
             savefile_graph = basename + ".graph"
 
             self.logger.info("Saving graph  to [%s]" % savefile_graph)
@@ -256,10 +261,10 @@ class Settings:
             savefile_metapars = saved_instance_name + ".snap"
 
             self.logger.info("Saving params to [%s]" % savefile_metapars)
-            self.logger.info("Saving params epoch %d, train index %d, validation index %d" %
-                (dataset.epoch_index, dataset.batch_index_train, dataset.batch_index_val))
+            self.logger.info("Saving params epoch %d, train index %d" %
+                (dataset.epoch_index, dataset.batch_index_train))
 
-            params2save = [dataset.batch_index_train , dataset.batch_index_val, dataset.epoch_index]
+            params2save = [dataset.batch_index_train , dataset.epoch_index]
 
             with open(savefile_metapars,'wb') as f:
                 pickle.dump(params2save,f)
@@ -272,10 +277,6 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     settings.logger.info("Starting train/test")
     start_time = time.time()
     timings = []
-
-
-    if not settings.good():
-        error("Wacky configuration, exiting.")
 
     for epochIdx in range(dataset.epochs):
         dataset.set_or_swap_phase(defs.phase.train)
@@ -300,7 +301,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
 
         dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
         # save a checkpoint every epoch
-        settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_global_step()),
+        settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_epoch_step()),
                           global_step=dataset.get_global_step())
         dataset.epoch_index = dataset.epoch_index + 1
         timings.append(time.time() - start_time)
@@ -329,94 +330,16 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         # get images and labels
         images, labels_onehot = dataset.read_next_batch()
         dataset.print_iter_info(len(images), len(labels_onehot))
-        summaries_val, logits = sess.run([summaries.val_merged, lrcn.logits],
+        logits = sess.run(lrcn.logits,
                                            feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
         lrcn.process_validation_logits(logits, dataset, labels_onehot)
     # done, get accuracy
     accuracy = lrcn.get_accuracy()
+    summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
     dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
-    tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
+    tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_step())
     tboard_writer.flush()
     return True
-
-    #
-    # test_accuracies = []
-    # logits_list = []
-    # labels_list = []
-    # dataset.logger.debug("Gathering test logits")
-    #
-    # # validation loop without clip aggregation
-    # if dataset.single_clip():
-    #     while dataset.loop():
-    #         # get images and labels
-    #         images, labels_onehot = dataset.read_next_batch()
-    #         dataset.print_iter_info(len(images), len(labels_onehot))
-    #         summaries_val, accuracy = sess.run([summaries.val_merged, lrcn.accuracyVal],
-    #                                            feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-    #         test_accuracies.append(accuracy)
-    #
-    #     # compute accuracy
-    #     dataset.logger.debug("Computing test accuracy")
-    #     accuracy = sum(test_accuracies) / len(test_accuracies)
-    #
-    #
-    #
-    # else:
-    #     while dataset.loop():
-    #         # get images and labels
-    #         images, labels_onehot = dataset.read_next_batch()
-    #         dataset.print_iter_info(len(images), len(labels_onehot))
-    #         summaries_val, logits = sess.run([summaries.val_merged, lrcn.logits],
-    #                                          feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-    #         logits_list.append(logits)
-    #         labels_list.append(labels_onehot)
-    #     # compute clip aggregation. In lstm workflow, frame aggregation is done within the lstm... should it though?
-    #     # for multiple clips, we have to do an extra inter-clip aggregation per video
-    #     # an important assumption is that clips and clipframes are sequential in the dataset
-    #     # TODO: for better security, add a video index + clip index output files @ serialization script
-    #     # group data per video
-    #
-    #     # concat to np array
-    #     logits = np.vstack(logits_list)
-    #     labels = np.vstack(labels_list)
-    #     if dataset.input_mode == defs.input_mode.video:
-    #         labels_per_video = []
-    #         count, accum = 0, 0
-    #         for clipnum in dataset.clips_per_video:
-    #             labels_per_video.append(labels[accum])
-    #             accum = accum + clipnum
-    #         # group logits per video
-    #         logits_per_video = []
-    #         idx = 0
-    #         for num_clips in dataset.clips_per_video:
-    #             logits_for_video = logits[idx : idx+num_clips:]
-    #             logits_per_video.append(logits_for_video)
-    #             idx = idx + num_clips
-    #         logits = None # for memory issues
-    #         # for constant num. of clips per video
-    #         #logits_per_video = np.vsplit(logits,logits.shape[0] // dataset.num_clips_per_video)
-    #         # get the logits of each video
-    #         for cidx in range(len(logits_per_video)):
-    #             # aggregate the logits in each clip
-    #             if settings.clip_pooling_type == defs.pooling.avg:
-    #                 logits_per_video[cidx] = np.mean(logits_per_video[cidx],axis=0)
-    #
-    #             elif settings.clip_pooling_type == defs.pooling.last:
-    #                 logits_per_video[cidx] = logits_per_video[cidx][-1,:]
-    #     else:
-    #         logits_per_video = logits
-    #         labels_per_video = labels
-    #     # compute accuracy
-    #     predicted_classes = np.argmax(logits_per_video,axis=1)
-    #     correct_classes = np.argmax(labels_per_video, axis=1)
-    #     accuracy = np.mean(np.equal(predicted_classes, correct_classes))
-    #
-    # # loop done ##################################3
-    # dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
-    # tboard_writer.add_summary(summaries_val, global_step=dataset.get_global_step())
-    # tboard_writer.flush()
-    #
-    # return True
 
 
 
@@ -427,7 +350,7 @@ def main():
     settings = Settings()
     settings.initialize(sys.argv)
 
-    settings.logger.info('Running the activity recognition task in mode: [%s]' % defs.run_types.str(settings.run_type))
+    settings.logger.info('Running the activity recognition task in mode: [%s]' % settings.run_type)
     # init summaries for printage
     summaries=Summaries()
 

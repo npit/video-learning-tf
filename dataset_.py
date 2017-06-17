@@ -74,7 +74,7 @@ class Dataset:
     batch_index_val = None
     val_iterator = None
     num_items_val = 0
-    batch_item = defs.batch_item.video
+    batch_item = None
 
     # variables for validation clip batches
     video_index = 0
@@ -95,26 +95,26 @@ class Dataset:
         self.frame_classes.extend([[], []])
 
         if self.do_training:
-            with open(self.input_source_files[defs.phase.train], 'r') as f:
+            with open(self.input_source_files[defs.train_idx], 'r') as f:
                 for path_label_str in f:
                     item_path, item_label = path_label_str.split()
                     if self.path_prepend_folder is not None:
                         item_path = os.path.join(self.path_prepend_folder, item_path)
-                    self.frame_paths[defs.phase.train].append(item_path)
-                    self.frame_classes[defs.phase.train].append(item_label)
+                    self.frame_paths[defs.train_idx].append(item_path)
+                    self.frame_classes[defs.train_idx].append(item_label)
             self.logger.info("Done reading image and label data %d frames for %s" % (
-                len(self.frame_paths[defs.phase.train]), defs.phase.str(defs.phase.train),
+                len(self.frame_paths[defs.train_idx]), defs.phase.train,
             ))
 
         if self.do_validation:
-            with open(self.input_source_files[defs.phase.val], 'r') as f:
+            with open(self.input_source_files[defs.val_idx], 'r') as f:
                 for path_label_str in f:
                     item_path, item_label = path_label_str.split()
-                    self.frame_paths[defs.phase.val].append(item_path)
-                    self.frame_classes[defs.phase.val].append(item_label)
+                    self.frame_paths[defs.val_idx].append(item_path)
+                    self.frame_classes[defs.val_idx].append(item_label)
 
             self.logger.info("Done reading image and label data %d frames for %s" % (
-                len(self.frame_paths[defs.phase.val]), defs.phase.str(defs.phase.val),
+                len(self.frame_paths[defs.val_idx]), defs.phase.val,
             ))
 
     # display image
@@ -180,7 +180,7 @@ class Dataset:
         if self.phase == phase:
             return
         if self.phase is not None:
-            self.logger.info("Suspending phase [%s] @ batch [%d]" % (defs.phase.str(self.phase), self.batch_index))
+            self.logger.info("Suspending phase [%s] @ batch [%d]" % (self.phase, self.batch_index))
             if self.phase == defs.phase.train:
                 self.batch_index_train = self.batch_index
             else:
@@ -203,11 +203,11 @@ class Dataset:
             self.iterator = self.val_iterator
             self.batch_size = self.batch_size_val
         if is_new_phase:
-            self.logger.info("Starting phase [%s] @ batch [%d]." % (defs.phase.str(phase), self.batch_index))
+            self.logger.info("Starting phase [%s] @ batch [%d]." % (phase, self.batch_index))
 
     # reset data reading params for phase
     def reset_phase(self, phase):
-        self.logger.info("Reseting phase [%s]." % defs.phase.str(phase))
+        self.logger.info("Reseting phase [%s]." % phase)
         if phase == defs.phase.train:
             self.batch_index_train = 0
             self.reset_iterator(defs.phase.train)
@@ -230,16 +230,16 @@ class Dataset:
             # read stuff from disk directly
             if self.input_mode == defs.input_mode.video:
                 # read video
-                for videopath in currentBatch[defs.images]:
+                for videopath in currentBatch[0]:
                     videoframes = self.get_video_frames(videopath)
                     images.extend(videoframes)
-                    labels.append(currentBatch[defs.labels])
+                    labels.append(currentBatch[1])
             else:
                 # read image
                 for impath in currentBatch[0]:
                     frame = self.read_image(impath)
                     images.append(frame)
-                    labels = currentBatch[defs.labels]
+                    labels = currentBatch[1]
         else:
             # for video mode, get actual number of frames for the batch items
             if self.input_mode == defs.input_mode.video:
@@ -253,7 +253,7 @@ class Dataset:
         return images, labels_onehot
 
     def get_next_batch_video_tfr(self):
-        if self.batch_item == defs.batch_item.video:
+        if self.batch_item == defs.batch_item.default:
             # batch size refers to videos. Get num clips per videos in batch
             curr_video = self.batch_index * self.batch_size
             curr_cpv = self.clips_per_video[curr_video : curr_video + self.batch_size]
@@ -266,10 +266,11 @@ class Dataset:
             fpv = np.cumsum(fpv)
             first_videoframe_idx = [0, *fpv[:-1] ]
             labels = []
-            count = 0
-            for idx in first_videoframe_idx:
-                for _ in range(curr_cpv[count]):
-                    labels.append(labels_per_frame[idx])
+            for vidx in range(len(curr_cpv)):
+                fvi = first_videoframe_idx [vidx]
+                for _ in range(curr_cpv[vidx]):
+                    labels.append(labels_per_frame[fvi])
+
         elif self.batch_item == defs.batch_item.clip:
             # batch size refers to number of clips.
             num_frames_in_batch = self.batch_size * self.num_frames_per_clip
@@ -292,6 +293,16 @@ class Dataset:
             self.batch_index_train = self.batch_index_train + 1
         else:
             self.batch_index_val = self.batch_index_val + 1
+
+    def get_num_items(self, *varargs):
+        if len(varargs) > 0:
+            phase = varargs[0]
+        else:
+            phase = self.phase
+        if phase == defs.phase.train:
+            return self.num_items_train
+        elif phase == defs.phase.val:
+            return self.num_items_val
 
 
     # read all frames for a video
@@ -374,12 +385,14 @@ class Dataset:
         self.batch_size_train = sett.batch_size_train
         self.batch_size_val = sett.batch_size_val
         self.batch_item = sett.batch_item
-        self.initialize_data(sett)
+        self.batch_index_val = 0
 
         # transfer resumed snapshot settings
         self.epoch_index = sett.epoch_index
         self.batch_index_train = sett.train_index
-        self.batch_index_val = sett.val_index
+
+        # iniitalize data
+        self.initialize_data(sett)
 
         self.do_mean_subtraction = (self.mean_image is not None)
         if self.do_mean_subtraction:
@@ -401,14 +414,14 @@ class Dataset:
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):
-        self.logger.info("Initializing %s data on input mode %s." % (defs.data_format.str(self.data_format), defs.input_mode.str(self.input_mode)))
+        self.logger.info("Initializing %s data on input mode %s." % (self.data_format, self.input_mode))
         if self.data_format == defs.data_format.tfrecord:
 
             # initialize tfrecord, check file consistency
             if self.do_training:
-                self.input_source_files[defs.phase.train] = sett.input[defs.phase.train] + ".tfrecord"
-                if not os.path.exists(self.input_source_files[defs.phase.train]):
-                    error("Input file does not exist: %s" % self.input_source_files[defs.phase.train])
+                self.input_source_files[defs.train_idx] = sett.input[defs.train_idx] + ".tfrecord"
+                if not os.path.exists(self.input_source_files[defs.train_idx]):
+                    error("Input file does not exist: %s" % self.input_source_files[defs.train_idx])
                 self.reset_iterator(defs.phase.train)
                 # count or get number of items
                 self.get_input_data_count(defs.phase.train)
@@ -416,22 +429,28 @@ class Dataset:
                 if self.batch_index > 0:
                     self.fast_forward_iter(self.train_iterator)
                 # calculate batches: just batchsizes per batch; all is in the tfrecord
-                num_whole_batches =  self.num_items_train // self.batch_size_train
+                # calculate batches
+                if self.batch_item == defs.batch_item.default:
+                    num_whole_batches = self.num_items_train // self.batch_size_train
+                    items_left = self.num_items_train - num_whole_batches * self.batch_size_train
+                elif self.batch_item == defs.batch_item.clip:
+                    num_whole_batches = sum(self.clips_per_video) // self.batch_size_train
+                    items_left = sum(self.clips_per_video) - num_whole_batches * self.batch_size_train
+
                 self.batches_train = [self.batch_size_train for _ in range(num_whole_batches)]
-                items_left =  self.num_items_train - num_whole_batches * self.batch_size_train
                 if items_left:
                     self.batches_train.append(items_left)
                 self.logger.info("Calculated %d training batches." % len(self.batches_train))
 
             if self.do_validation:
-                self.input_source_files[defs.phase.val] = sett.input[defs.phase.val] + ".tfrecord"
-                if not os.path.exists(self.input_source_files[defs.phase.val]):
-                    error("Input file does not exist: %s" % self.input_source_files[defs.phase.val])
+                self.input_source_files[defs.val_idx] = sett.input[defs.val_idx] + ".tfrecord"
+                if not os.path.exists(self.input_source_files[defs.val_idx]):
+                    error("Input file does not exist: %s" % self.input_source_files[defs.val_idx])
                 self.reset_iterator(defs.phase.val)
                 # count or get number of items
                 self.get_input_data_count(defs.phase.val)
                 # calculate batches
-                if self.batch_item == defs.batch_item.video:
+                if self.batch_item == defs.batch_item.default:
                     num_whole_batches = self.num_items_val // self.batch_size_val
                     items_left = self.num_items_val - num_whole_batches * self.batch_size_val
                 elif self.batch_item == defs.batch_item.clip:
@@ -444,36 +463,36 @@ class Dataset:
                 self.logger.info("Calculated %d validation batches." % len(self.batches_val))
         elif self.data_format == defs.data_format.raw:
             # read input files
-            self.input_source_files[defs.phase.train] = sett.input[defs.phase.train]
-            self.input_source_files[defs.phase.val] = sett.input[defs.phase.val]
+            self.input_source_files[defs.train_idx] = sett.input[defs.train_idx]
+            self.input_source_files[defs.val_idx] = sett.input[defs.val_idx]
 
             # read frames and classes
             self.read_frames_metadata()
             if self.do_training:
 
                 # for raw input mode, calculate batches for paths and labels
-                imgs = sublist(self.frame_paths[defs.phase.train], self.batch_size_train)
-                lbls = sublist(self.frame_classes[defs.phase.train], self.batch_size_train)
+                imgs = sublist(self.frame_paths[defs.train_idx], self.batch_size_train)
+                lbls = sublist(self.frame_classes[defs.train_idx], self.batch_size_train)
                 for l in range(len(lbls)):
                     self.batches_train.append([
                         imgs[l],
                         list(map(int, lbls[l]))
                     ])
             if self.do_validation:
-                imgs = sublist(self.frame_paths[defs.phase.val], self.batch_size_val)
-                lbls = sublist(self.frame_classes[defs.phase.val], self.batch_size_val)
+                imgs = sublist(self.frame_paths[defs.val_idx], self.batch_size_val)
+                lbls = sublist(self.frame_classes[defs.val_idx], self.batch_size_val)
                 for l in range(len(lbls)):
                     self.batches_val.append([
                         imgs[l],
                         list(map(int, lbls[l]))
                     ])
-            self.num_items_train = len(self.frame_paths[defs.phase.train])
-            self.num_items_val = len(self.frame_paths[defs.phase.val])
+            self.num_items_train = len(self.frame_paths[defs.train_idx])
+            self.num_items_val = len(self.frame_paths[defs.val_idx])
 
-            self.num_items_train = len(self.frame_paths[defs.phase.train])
-            self.num_items_val = len(self.frame_paths[defs.phase.val])
+            self.num_items_train = len(self.frame_paths[defs.train_idx])
+            self.num_items_val = len(self.frame_paths[defs.val_idx])
         else:
-            self.logger.error("Undefined data format [%s]" % (defs.data_format.str(self.data_format)))
+            self.logger.error("Undefined data format [%s]" % self.data_format)
             error("Data format error")
 
 
@@ -481,10 +500,10 @@ class Dataset:
     def get_input_data_count(self,phase):
         # init reading
         if phase == defs.phase.train:
-            input_file  = self.input_source_files[defs.phase.train]
+            input_file  = self.input_source_files[defs.train_idx]
             iterator = self.train_iterator
         else:
-            input_file = self.input_source_files[defs.phase.val]
+            input_file = self.input_source_files[defs.val_idx]
             iterator = self.val_iterator
 
         # check if a .size file exists
@@ -492,7 +511,7 @@ class Dataset:
             # does not. Just count the entries :(
             num = 0
             num_print = 1000
-            self.logger.info("No size file for %s data. Counting..." % defs.phase.str(phase))
+            self.logger.info("No size file for %s data. Counting..." % phase)
             try:
                 for _ in iterator:
                     num = num + 1
@@ -500,7 +519,7 @@ class Dataset:
                         self.logger.info("Counted %d instances so far." % num)
             except StopIteration:
                 pass
-            self.logger.info("Counted tfrecord %s data: %d entries." % (defs.phase.str(phase), num))
+            self.logger.info("Counted tfrecord %s data: %d entries." % (phase, num))
             self.reset_iterator(iterator)
             if phase == defs.phase.train:
                 self.num_items_train = num
@@ -520,9 +539,7 @@ class Dataset:
         if len(contents) == 0 :
             # no number of frames per video, it's gotta be an image run, else error
             if not self.input_mode == defs.input_mode.image:
-                self.logger.error(
-                    "Specified input mode %s but size file contains no data" %
-                    (defs.input_mode.str(self.input_mode)))
+                self.logger.error("Specified input mode %s but size file contains no data" %self.input_mode)
                 error("Input mode mismatch with data.")
 
         # read number of items in the tfrecord
@@ -531,7 +548,7 @@ class Dataset:
             self.num_items_train = num_items
         elif phase == defs.phase.val:
             self.num_items_val = num_items
-        self.logger.info("Read a count of %d [%s] items in the input data" % ( num_items, defs.phase.str(phase)))
+        self.logger.info("Read a count of %d [%s] items in the input data" % ( num_items, phase))
 
 
         # read number of frames per clip
@@ -545,11 +562,11 @@ class Dataset:
                     error("Number of video frames mismatch")
             else:
                 self.logger.info("Read %d frames per clip for %s from size file " %
-                                  (num_frames_per_clip, defs.phase.str(phase)))
+                                  (num_frames_per_clip, phase))
             self.num_frames_per_clip = num_frames_per_clip
         else:
             if self.input_mode == defs.input_mode.video:
-                self.logger.error("Specified %s input mode but no frames per clip information in input data." % defs.input_mode.str(self.input_mode))
+                self.logger.error("Specified %s input mode but no frames per clip information in input data." % self.input_mode)
                 error("Missing frames per clip information in data")
 
         # read number of clips per video
@@ -562,16 +579,18 @@ class Dataset:
                 num_clips.append(int(val))
             self.logger.info("Read %d values of number of clips per video" % (len(num_clips)))
             self.clips_per_video = num_clips
+            # check integrity
+            if not len(self.clips_per_video) == num_items:
+                self.logger.error("Unequal number of clips vector %d to the number of videos %d" % (
+                len(self.clips_per_video), num_items))
+                error("Unequal number of clips vector to the input videos.")
         else:
             # else, if unset, we gotta be in frame mode
             if not self.input_mode == defs.input_mode.image:
                 self.logger.warning("No number of clips in size file, but run is not in image mode.")
                 error("Missing cpv in size file")
 
-        # check integrity
-        if not len(self.clips_per_video) == num_items:
-            self.logger.error("Unequal number of clips vector %d to the number of videos %d" % (len(self.clips_per_video),num_items))
-            error("Unequal number of clips vector to the input videos.")
+
 
 
     # set iterator to point to the beginning of the tfrecord file, per phase
@@ -579,9 +598,9 @@ class Dataset:
         if not self.data_format == defs.data_format.tfrecord:
             return
         if phase == defs.phase.train:
-            self.train_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.phase.train])
+            self.train_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.train_idx])
         else:
-            self.val_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.phase.val])
+            self.val_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.val_idx])
 
     # move up an iterator
     def fast_forward_iter(self):
@@ -608,9 +627,11 @@ class Dataset:
     # print active settings
     def tell(self):
         self.logger.info("Dataset batch information per run mode:" )
-        self.logger.info("%-8s %-10s %-6s %-6s %-6s" % ("Mode","total","b-size","num-b","b-index"))
-        self.logger.info("%-8s %-10d %-6d %-6d %-6d" % (defs.phase.str(defs.phase.train), self.num_items_train, self.batch_size_train, len(self.batches_train), self.batch_index_train))
-        self.logger.info("%-8s %-10d %-6d %-6d %-6d" % (defs.phase.str(defs.phase.val), self.num_items_val, self.batch_size_val, len(self.batches_val), self.batch_index_val))
+        self.logger.info("%-6s %-8s %-10s %-6s %-6s %-6s" % ("Mode","bmode","total","b-size","num-b","b-index"))
+        if self.do_training:
+            self.logger.info("%-6s %-8s %-10d %-6d %-6d %-6d" % (defs.phase.train,self.batch_item, self.num_items_train, self.batch_size_train, len(self.batches_train), self.batch_index_train))
+        if self.do_validation:
+            self.logger.info("%-6s %-8s %-10d %-6d %-6d %-6d" % (defs.phase.val, self.batch_item, self.num_items_val, self.batch_size_val, len(self.batches_val), self.batch_index_val))
 
     # get the batch size
     def get_batch_size(self):
@@ -622,18 +643,21 @@ class Dataset:
     # get the global step
     def get_global_step(self):
         return self.epoch_index * self.batch_size_train + self.batch_index_train
+    # get the global step
+    def get_epoch_step(self):
+        return self.batch_size_train + self.batch_index_train
 
     # print iteration information
     def print_iter_info(self, num_images, num_labels):
         if self.phase == defs.phase.train:
             self.logger.info("Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images, %3d labels" %
-                         (defs.phase.str(self.phase), self.epoch_index + 1,
+                         (self.phase, self.epoch_index + 1,
                           self.epochs, self.batch_index, len(self.batches),
                           num_images, num_labels))
         # same as train, but no epoch
         elif self.phase == defs.phase.val:
             self.logger.info("Mode: [%s], batch %4d / %4d : %3d images, %3d labels" %
-                         (defs.phase.str(self.phase), self.batch_index, len(self.batches),
+                         (self.phase, self.batch_index, len(self.batches),
                           num_images, num_labels))
 
     # specify valid loop iteration

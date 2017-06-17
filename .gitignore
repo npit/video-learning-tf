@@ -5,7 +5,7 @@ config.ini.*
 # also ignore all:
 .idea
 *.tfrecord
-examples/checkpoints/**
+examples/test_files
 *.log
 **/__pycache__/*
 *.npy
@@ -19,5 +19,7 @@ examples/run
 notes
 tensorboard_graphs
 start.sh
-# examples/test_run/*
+examples/test_run/checkpoints/
+examples/test_run/frames*
+examples/test_run/videos*
 

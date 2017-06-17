@@ -79,54 +79,30 @@ class defs:
 
     # run phase
     class phase:
-        train, val = range(2)
-        _str = ["train", "val"]
-        def str(arg):
-            return defs.phase._str[arg]
+        train, val ="train", "val"
 
     # input mode is framewise dataset vs videowise, each video having n frames
     class input_mode:
-        video, image = range(2)
-        _str = ["video", "image"]
-        def str(arg):
-            return defs.input_mode._str[arg]
+        video, image = "video", "image"
 
     # direct reading from disk or from packed tfrecord format
     class data_format:
-        raw, tfrecord = range(2)
-        _str = ["raw", "tfrecord"]
-        def str(arg):
-            return defs.data_format._str[arg]
+        raw, tfrecord = "raw", "tfrecord"
 
     # run type indicates usage of lstm or singleframe dcnn
     class run_types:
-        lstm, singleframe = range(2)
-        _str=["lstm","singleframe"]
-        def str(arg):
-            return defs.run_types._str[arg]
+        lstm, singleframe = "lstm","singleframe"
 
     # video pooling methods
     class pooling:
-        avg, last = range(2)
-        _str = ["avg", "last"]
-        def str(arg):
-            return defs.pooling._str[arg]
+        avg, last = "avg", "last"
 
     # how the video's frames are structured        
     class clipframe_mode:
-        rand_frames, rand_clips, iterative = range(3)
-        _str = ["rand_frames", "rand_clips", "iterative"]
-        def str(arg):
-            return defs.clipframe_mode._str[arg]
+        rand_frames, rand_clips, iterative = "rand_frames", "rand_clips", "iterative"
 
     class batch_item:
-        frame, clip, video = range(3)
-        _str = ["frame", "clip", "video"]
-        def str(arg):
-            return defs.batch_item._str[arg]
+        default, clip = "default", "clip"
 
-    # batch content type
-    images, labels = range(2)
-    _str = ["images", "labels"]
-    def str(arg):
-        return defs._str[arg]
+    train_idx, val_idx = 0, 1
+    image, label = 0, 1
