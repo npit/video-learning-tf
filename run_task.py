@@ -191,9 +191,9 @@ class Settings:
         # if not resuming, set start folder according to now()
         if  self.should_resume():
             if self.do_training:
+                # load batch and epoch where training left off
                 self.logger.info("Resuming training.")
-            # else, do the resume
-            self.resume_metadata()
+                self.resume_metadata()
         else:
             if self.do_training:
                 self.logger.info("Starting training from scratch.")
