@@ -136,14 +136,7 @@ class Settings:
 
     # set the input files
     def set_input_files(self):
-        # setup input files
-        if self.input_mode == defs.input_mode.image:
-            basefilename = "frames"
-        elif self.input_mode == defs.input_mode.video:
-            basefilename = "videos"
-        else:
-            self.logger.error("Undefined input mode: [%s]" % str(self.input_mode))
-            error("Undefined input mode")
+        basefilename = "data"
         self.input[defs.train_idx] = os.path.join(self.run_folder, basefilename + ".train")
         self.input[defs.val_idx] = os.path.join(self.run_folder, basefilename + ".test")
 
@@ -329,12 +322,14 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     while dataset.loop():
         # get images and labels
         images, labels_onehot = dataset.read_next_batch()
+
         dataset.print_iter_info(len(images), len(labels_onehot))
         logits = sess.run(lrcn.logits,
                                            feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
         lrcn.process_validation_logits(logits, dataset, labels_onehot)
     # done, get accuracy
     accuracy = lrcn.get_accuracy()
+    print(lrcn.item_logits)
     summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
     dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
     tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_step())

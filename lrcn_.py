@@ -55,10 +55,11 @@ class LRCN:
                         # -1 on the number of videos (batchsize) to deal with varying values for test and train
                         self.logger.info("Raw logits : [%s]" % framesLogits.shape)
                         frames_per_item = dataset.num_frames_per_clip if dataset.input_mode == defs.input_mode.video else 1
+
                         frameLogits = tf.reshape(framesLogits, (-1, frames_per_item , dataset.num_classes),
                                                  name="reshape_framelogits_pervideo")
+                        self.logits = tf.reduce_mean(frameLogits, axis=1)
 
-                        self.logits = tf.scalar_mul(1 / frames_per_item, tf.reduce_sum(frameLogits, axis=1))
                         self.logger.info("Averaged logits out : [%s]" % self.logits.shape)
                     elif settings.frame_pooling_type == defs.pooling.last:
                         # keep only the response at the last time step
@@ -119,22 +120,12 @@ class LRCN:
             with tf.name_scope('accuracy_train'):
                 self.accuracyTrain = tf.reduce_mean(tf.cast(correct_predictionTrain, tf.float32))
 
-        # with tf.name_scope('validation_accuracy'):
-        #
-        #     with tf.name_scope('correct_prediction_val'):
-        #
-        #         #ok for this argmax we gotta squash the labels down to video level.
-        #         correct_predictionVal = tf.equal(tf.argmax(self.logits , 1), tf.argmax(self.inputLabels, 1))
-        #     with tf.name_scope('accuracy_val'):
-        #         self.accuracyVal = tf.reduce_mean(tf.cast(correct_predictionVal, tf.float32))
-        #
-        # summaries.val.append(tf.summary.scalar('accuracyVal', self.accuracyVal))
         summaries.train.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
         self.logger.debug("Completed network definitions.")
 
     # accuracy computation for videos with multiple clips, where logits are already fetched
     def process_validation_logits(self, logits, dataset, labels):
-        # batch item contains individual clips. Accumulate to clip storage, and check for aggregation
+        # batch item contains logits that correspond to whole clips. Accumulate to clip storage, and check for aggregation.
         if dataset.batch_item == defs.batch_item.clip:
             # per-clip logits in input : append to clip logits accumulator
             self.clip_logits = np.vstack((self.clip_logits, logits))
@@ -201,7 +192,6 @@ class LRCN:
 
     def get_accuracy(self):
         # compute accuracy
-        print(self.item_logits)
         self.logger.info("Computing accuracy out of %d items" % len(self.item_logits))
         predicted_classes = np.argmax(self.item_logits, axis=1)
         correct_classes = np.argmax(self.item_labels, axis=1)
