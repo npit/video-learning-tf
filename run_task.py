@@ -69,11 +69,11 @@ class Settings:
     batch_size_train = 100
     do_training = False
     epochs = 15
-    optimizer = "SGD"
-    learning_rate = 0.001
+    optimizer = defs.optim.sgd
+    base_lr = 0.001
+    lr_mult = 2
+    lr_decay = (defs.decay.exp, 1000, 0.96)
     dropout_keep_prob = 0.5
-    dropout_seed = None
-    tf_seed = None
 
     # validation settings
     do_validation = True
@@ -107,9 +107,9 @@ class Settings:
     # misc
     saver = None
 
-    # should resume
+    # should resume, if set and non-empty
     def should_resume(self):
-        return self.resume_file is not None
+        return self.resume_file is not None and self.resume_file
 
     # configure logging settings
     def configure_logging(self):
@@ -186,10 +186,13 @@ class Settings:
             if self.do_training:
                 # load batch and epoch where training left off
                 self.logger.info("Resuming training.")
+                # resume training metadata only in training
                 self.resume_metadata()
         else:
             if self.do_training:
                 self.logger.info("Starting training from scratch.")
+            if not self.do_training and self.do_validation:
+                self.logger.warning("Starting validation-only run with an untrained network.")
         self.set_input_files()
         if not self.good():
             error("Wacky configuration, exiting.")
@@ -278,11 +281,11 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             images, labels_onehot = dataset.read_next_batch()
             dataset.print_iter_info( len(images) , len(labels_onehot))
 
-            summaries_train, batch_loss, _ = sess.run(
-                [summaries.train_merged, lrcn.loss, lrcn.optimizer],
+            summaries_train, batch_loss, learning_rate, _ = sess.run(
+                [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.optimizer],
                 feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
 
-            settings.logger.info("Batch loss : %2.5f" % batch_loss)
+            settings.logger.info("Learning rate %2.8f, batch loss : %2.5f " % (learning_rate, batch_loss))
 
             tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_step())
             tboard_writer.flush()
@@ -329,7 +332,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         lrcn.process_validation_logits(logits, dataset, labels_onehot)
     # done, get accuracy
     accuracy = lrcn.get_accuracy()
-    print(lrcn.item_logits)
+
     summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
     dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
     tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_step())

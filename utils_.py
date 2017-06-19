@@ -73,6 +73,10 @@ def read_file_lines(filename):
         for line in ff:
             contents.append(line.strip())
     return contents
+def get_vars_in_scope(starting, scope):
+    vars = [v for v in tf.global_variables()]
+    for i in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope):
+        print(i.name)
 
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
@@ -91,7 +95,7 @@ class defs:
 
     # run type indicates usage of lstm or singleframe dcnn
     class run_types:
-        lstm, singleframe = "lstm","singleframe"
+        lstm, singleframe, imgdesc = "lstm","singleframe", "imgdesc"
 
     # video pooling methods
     class pooling:
@@ -104,5 +108,17 @@ class defs:
     class batch_item:
         default, clip = "default", "clip"
 
+    class optim:
+        sgd = "sgd"
+
+    class decay:
+        exp, staircase = "exp", "staircase"
+
     train_idx, val_idx = 0, 1
     image, label = 0, 1
+
+
+# trainable object class
+class Trainable:
+    train_regular = []
+    train_modified = []

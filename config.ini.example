@@ -32,8 +32,10 @@ do_random_mirroring = True
 do_random_cropping = True
 batch_size_train = 100
 epochs = 15
-optimizer = "SGD"
-learning_rate = 0.001
+optimizer = defs.optim.sgd
+base_lr= 0.001
+lr_mult = 2
+lr_decay = ( defs.decay.exp, 1000, 0.96)
 dropout_keep_prob = 0.5
 
 # validation settings

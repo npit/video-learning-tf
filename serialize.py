@@ -332,7 +332,9 @@ def read_file(inp):
     labels = []
     with open(inp, 'r') as f:
         for line in f:
-
+            line = line.strip()
+            if not line:
+                continue
             path, label = line.split(' ')
             path = path.strip()
 

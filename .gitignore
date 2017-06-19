@@ -20,6 +20,5 @@ notes
 tensorboard_graphs
 start.sh
 examples/test_run/checkpoints/
-examples/test_run/frames*
-examples/test_run/videos*
+examples/test_run/data*
 
