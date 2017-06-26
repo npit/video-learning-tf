@@ -14,6 +14,8 @@ examples/test_files
 *.#
 config.ini
 examples/run
+*.vocab
+*.embeddings
 
 # misc stuff
 notes

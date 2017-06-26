@@ -1,11 +1,13 @@
 [run]
 # run type
 run_type = defs.run_types.singleframe
+run_id = None
 
 # save / load configuration
 resume_file = None
 run_folder = "path/to/runfolder"
 path_prepend_folder = ""
+word_embeddings_file = "path/to/word/embeddings"
 
 # architecture settings
 lstm_input_layer = "fc7"

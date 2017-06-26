@@ -38,7 +38,7 @@ class Settings:
     init_file = "config.ini"
 
     # run mode and type
-    run_id = "run_id"
+    run_id = ""
     run_type = defs.run_types.singleframe
 
     # save / load configuration
@@ -164,7 +164,16 @@ class Settings:
         # set append the config.ini.xxx suffix to the run id
         if not self.init_file == "config.ini":
             init_file_suffix = self.init_file.split(".")
-            self.run_id = self.run_id  + "_" + init_file_suffix[-1]
+            trainval = ""
+            if self.do_training:
+                trainval = "train"
+            if self.do_validation:
+                trainval = trainval + "val"
+            if self.should_resume():
+                trainval = trainval + "_resume"
+            else:
+                trainval = trainval + "_scratch"
+            self.run_id = self.run_id  + "_" + trainval + "_" + init_file_suffix[-1]
         print("Successfully initialized from file %s" % self.init_file)
 
 
@@ -268,6 +277,46 @@ class Settings:
             error(ex)
 
 
+def get_feed_dict(lrcn, settings, images, ground_truth):
+    fdict = {}
+    fdict[lrcn.inputData] = images
+
+
+    if settings.run_type == defs.run_types.imgdesc:
+        # get words per caption, onehot labels, embeddings
+
+        embeddings = ground_truth[0]
+        labels = ground_truth[1]
+        metadata = ground_truth[2]
+        fdict[lrcn.inputLabels] = labels
+        fdict[lrcn.words_per_image] = metadata
+        fdict[lrcn.word_embeddings] = embeddings
+        # create base index list
+        idx_list = []
+        seq_len =  int(len(embeddings) / 2)
+        # for the batch item other than the first, add the offset of the sequence length
+        for idx, num_captions in enumerate(metadata):
+            offset = idx * seq_len
+            # generate, adding one more index for the EOS
+            idxs_of_seq = [i + offset for i in range(num_captions + 1)]
+
+
+            idx_list.extend(idxs_of_seq)
+        binary_word_idx = np.asarray(idx_list,np.int32)
+        fdict[lrcn.binary_word_idx] = binary_word_idx
+
+        num_labels = len(labels)
+    else:
+        fdict[lrcn.inputLabels] = ground_truth
+        num_labels = len(ground_truth)
+
+    return fdict, num_labels
+
+
+
+
+# we should also supply number of captions per image
+
 # train the network
 def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     settings.logger.info("Starting train/test")
@@ -278,12 +327,12 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         dataset.set_or_swap_phase(defs.phase.train)
         while dataset.loop():
             # read  batch
-            images, labels_onehot = dataset.read_next_batch()
-            dataset.print_iter_info( len(images) , len(labels_onehot))
+            images, ground_truth = dataset.read_next_batch()
+            fdict, num_labels = get_feed_dict(lrcn, settings, images, ground_truth)
+            dataset.print_iter_info( len(images) , num_labels)
 
             summaries_train, batch_loss, learning_rate, _ = sess.run(
-                [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.optimizer],
-                feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
+                [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.optimizer],feed_dict=fdict)
 
             settings.logger.info("Learning rate %2.8f, batch loss : %2.5f " % (learning_rate, batch_loss))
 

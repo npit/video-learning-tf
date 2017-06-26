@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 # Dataset class
 class Dataset:
-
+    run_type = None
     num_classes = None
 
     # input file names
@@ -81,6 +81,9 @@ class Dataset:
 
 
     # misc
+    embedding_matrix = None
+    vocabulary = None
+
     logger = None
 
     # mean subtraction
@@ -154,7 +157,11 @@ class Dataset:
                 #          .value[0])
                 label = (example.features.feature['label']
                          .int64_list
-                         .value[0])
+                         .value)
+                label = list(label)
+                label = label[0] if len(label) == 0 else label
+
+
                 img_1d = np.fromstring(img_string, dtype=np.uint8)
                 # watch it : hardcoding preferd dimensions according to the dataset object.
                 # it should be the shape of the stored image instead, for generic use
@@ -218,7 +225,6 @@ class Dataset:
         if phase == self.phase:
             self.set_current_phase(phase, is_new_phase=False)
 
-
     # read next batch
     def read_next_batch(self):
         images = []
@@ -247,10 +253,37 @@ class Dataset:
             else:
                 images, labels = self.get_next_batch_frame_tfr(currentBatch)
 
+        if self.run_type == defs.run_types.imgdesc:
+            ground_truth = self.labels_to_words(labels)
+        else:
+            ground_truth = labels_to_one_hot(labels, self.num_classes)
 
-        labels_onehot = labels_to_one_hot(labels, self.num_classes)
         self.advance_batch_indexes()
-        return images, labels_onehot
+        return images, ground_truth
+
+    # get word vectors from their indices
+    def labels_to_words(self, labels):
+        batch_word_vectors = np.zeros([0, self.embedding_matrix.shape[1]], np.float32)
+        batch_onehot_labels = np.zeros([0, self.num_classes], np.int32)
+        embedding_dim = self.embedding_matrix.shape[1]
+        # first item is the BOS
+        bos_index = self.vocabulary.index("BOS")
+        eos_index = self.vocabulary.index("EOS")
+
+        for label in labels:
+            # get input embeddings & labels. Prepend the input embeddings with BOS
+            image_word_vectors = np.vstack((self.embedding_matrix[bos_index,:],self.embedding_matrix[label,:]))
+            image_onehot_labels = np.vstack((labels_to_one_hot(label, self.num_classes)))
+            # pad to the max number of words with zeros
+            num_left_to_max = 1+self.num_frames_per_clip - image_word_vectors.shape[0]
+            image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
+            # append to the total
+            batch_word_vectors = np.vstack((batch_word_vectors,image_word_vectors ))
+            # append output labels with EOS
+            image_onehot_labels =  np.vstack((image_onehot_labels, labels_to_one_hot([eos_index], self.num_classes)))
+            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
+
+        return (batch_word_vectors, batch_onehot_labels, list(map(len,labels)) )
 
     def get_next_batch_video_tfr(self):
         if self.batch_item == defs.batch_item.default:
@@ -303,7 +336,6 @@ class Dataset:
             return self.num_items_train
         elif phase == defs.phase.val:
             return self.num_items_val
-
 
     # read all frames for a video
     def get_video_frames(self,videopath):
@@ -363,6 +395,7 @@ class Dataset:
     # do preparatory work
     def initialize(self, sett):
         # transfer configuration from settings
+        self.run_type = sett.run_type
         self.logger = sett.logger
         self.epochs = sett.epochs
         self.do_random_mirroring = sett.do_random_mirroring
@@ -391,8 +424,11 @@ class Dataset:
         self.epoch_index = sett.epoch_index
         self.batch_index_train = sett.train_index
 
-        # iniitalize data
+        # iniitalize image data
         self.initialize_data(sett)
+
+        # perform run mode - specific initializations
+        self.initialize_run_type(sett)
 
         self.do_mean_subtraction = (self.mean_image is not None)
         if self.do_mean_subtraction:
@@ -411,6 +447,29 @@ class Dataset:
 
         self.logger.debug("Completed dataset initialization.")
         self.tell()
+
+    # initialize run mode specific data
+    def initialize_run_type(self, settings):
+        if self.run_type == defs.run_types.imgdesc:
+            # read embedding matrix
+            self.logger.info("Reading embedding matrix from file [%s]" % settings.word_embeddings_file)
+            self.vocabulary = []
+            vectors = []
+            with open(settings.word_embeddings_file,"r") as f:
+                for line in f:
+                    token, vector = line.strip().split("\t")
+                    vector = [float(v) for v in vector.split()]
+                    vectors.append(vector)
+                    self.vocabulary.append(token)
+            self.embedding_matrix = np.asarray(vectors, np.float32)
+            self.logger.debug("Read embedding matrix of shape %s " % str(self.embedding_matrix.shape))
+            if "BOS" not in self.vocabulary:
+                self.logger.error("BOS not found in vocabulary.")
+                error("Vocabulary error")
+            if "EOS" not in self.vocabulary:
+                self.logger.error("EOS not found in vocabulary.")
+                error("Vocabulary error")
+            self.num_classes = len(self.vocabulary)
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):
@@ -495,7 +554,6 @@ class Dataset:
             self.logger.error("Undefined data format [%s]" % self.data_format)
             error("Data format error")
 
-
     # read or count how many data items are in training / validation
     def get_input_data_count(self,phase):
         # init reading
@@ -557,17 +615,17 @@ class Dataset:
             # check if there's a clash with the run configuration specified
             if self.num_frames_per_clip is not None:
                 if not num_frames_per_clip == self.num_frames_per_clip:
-                    self.logger.error("Read %d frames per clip from the size file but specified %d" %
+                    self.logger.error("Read %d sequence length but specified %d" %
                                       (num_frames_per_clip,  self.num_frames_per_clip))
-                    error("Number of video frames mismatch")
+                    error("Sequence length mismatch")
             else:
-                self.logger.info("Read %d frames per clip for %s from size file " %
+                self.logger.info("Read a sequence length of %d for %s from size file " %
                                   (num_frames_per_clip, phase))
             self.num_frames_per_clip = num_frames_per_clip
         else:
             if self.input_mode == defs.input_mode.video:
-                self.logger.error("Specified %s input mode but no frames per clip information in input data." % self.input_mode)
-                error("Missing frames per clip information in data")
+                self.logger.error("Specified %s input mode but no sequence length information in input data." % self.input_mode)
+                error("Missing sequence length information in data")
 
         # read number of clips per video
         if len(contents) > 2 :
@@ -589,9 +647,6 @@ class Dataset:
             if not self.input_mode == defs.input_mode.image:
                 self.logger.warning("No number of clips in size file, but run is not in image mode.")
                 error("Missing cpv in size file")
-
-
-
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
@@ -635,7 +690,7 @@ class Dataset:
 
     # get the batch size
     def get_batch_size(self):
-        if self.phase == defs.phase.train:
+        if self.do_training:
             return self.batch_size_train
         else:
             return self.batch_size_val
@@ -643,6 +698,7 @@ class Dataset:
     # get the global step
     def get_global_step(self):
         return self.epoch_index * self.batch_size_train + self.batch_index_train
+
     # get the global step
     def get_epoch_step(self):
         return self.batch_size_train + self.batch_index_train

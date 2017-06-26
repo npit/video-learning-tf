@@ -45,19 +45,6 @@ def add_descriptive_summary(var):
         res.append(tf.summary.histogram('histogram', var))
     return res
 
-# add a tensor to be printed
-def add_print_tensor(tens, msg):
-    graph_tensor = tf.Print(tens, [tens], message=msg + " " + str(tens.shape))
-    return graph_tensor
-
-# view print tf ops
-def view_print_tensors(lrcn,dataset, settings,tensorlist):
-    if not tensorlist:
-        return
-    sess = tf.InteractiveSession(); sess.run(tf.global_variables_initializer())
-    images, labels_onehot, labels = dataset.read_next_batch(settings)
-    sess.run(tensorlist, feed_dict={lrcn.inputData:images, lrcn.inputLabels:labels_onehot})
-    sess.close()
 
 # list of sublists of size n from list
 def sublist(list, sublist_length):
@@ -65,7 +52,8 @@ def sublist(list, sublist_length):
 
 # shortcut for tensor printing
 def print_tensor(tensor, message):
-    return tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
+    tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
+    return tens
 
 def read_file_lines(filename):
     with open(filename, "r") as ff:
@@ -113,6 +101,9 @@ class defs:
 
     class decay:
         exp, staircase = "exp", "staircase"
+
+    class label_type:
+        single, multiple = "single", "multiple"
 
     train_idx, val_idx = 0, 1
     image, label = 0, 1

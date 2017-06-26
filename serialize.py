@@ -31,6 +31,9 @@ force_video_metadata = False
 do_shuffle = False
 do_serialize = False
 
+# internals
+max_num_labels = -1
+
 # initialize from file
 def initialize_from_file(init_file):
     if init_file is None:
@@ -83,7 +86,9 @@ def configure_logging():
 logger = configure_logging()
 # helper tfrecord function
 def _int64_feature( value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+    if not type(value) == list:
+        value = [value]
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
 
 # helper tfrecord function
@@ -91,7 +96,7 @@ def _bytes_feature( value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def serialize_multithread(clips_per_vid_or_item_paths ,frame_paths, labels, outfile, mode):
+def serialize_multithread(clips_per_vid_or_item_paths, frame_paths, labels, outfile, mode, max_num_labels):
 
     # first of all, write the number of items and the image size in the tfrecord
     with open(outfile + ".size","w") as f:
@@ -101,10 +106,13 @@ def serialize_multithread(clips_per_vid_or_item_paths ,frame_paths, labels, outf
             if mode == defs.input_mode.video:
                 # write num clips per video, as it may vary
                 for numclips in clips_per_vid_or_item_paths:
-                    f.write("%d " % numclips)
+                    f.write("%d\n" % numclips)
         else:
             # image mode
             frame_paths = clips_per_vid_or_item_paths
+            # write the max. number of labels in multi-label settings
+            if max_num_labels > 0:
+                f.write("%d\n" % max_num_labels)
 
     # split up paths/labels list per thread run
     num_images_per_thread_run = num_items_per_thread * num_threads
@@ -197,7 +205,7 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
             'height': _int64_feature(raw_image_shape[0]),
             'width': _int64_feature(raw_image_shape[1]),
             'depth': _int64_feature(raw_image_shape[2]),
-            'label': _int64_feature(int(label)),
+            'label': _int64_feature(label),
             'image_raw': _bytes_feature(frame.tostring())}))
         writer.write(example.SerializeToString())
 
@@ -304,7 +312,9 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
             #          .value[0])
             label = (example.features.feature['label']
                      .int64_list
-                     .value[0])
+                     .value)
+            label = list(label)
+            label = label[0] if len(label) == 0 else label
             img_1d = np.fromstring(img_string, dtype=np.uint8)
             # watch it : hardcoding preferd dimensions according to the dataset object.
             # it should be the shape of the stored image instead, for generic use
@@ -327,7 +337,7 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 def read_file(inp):
     mode = None
     logger.info("Reading input file %s " % (inp))
-
+    max_num_labels = -1
     paths = []
     labels = []
     with open(inp, 'r') as f:
@@ -335,14 +345,19 @@ def read_file(inp):
             line = line.strip()
             if not line:
                 continue
-            path, label = line.split(' ')
-            path = path.strip()
+
+            path, label = line.strip().split(" ",1)
+            label = [ int(l) for l in label.split() ]
+            # document the maximum number of labels
+            if len(label) > max_num_labels:
+                max_num_labels = len(label)
 
             if mode is None:
                 if path.lower().endswith("." + frame_format.lower()):
                     mode = defs.input_mode.image
                     logger.info("Set input mode to frames from paths-file items suffixes.")
                 else:
+
                     mode = defs.input_mode.video
                     strlen = min(len(path), len(frame_format) + 1)
                     suffix = path[-strlen:]
@@ -353,8 +368,8 @@ def read_file(inp):
             if path_prepend_folder is not None:
                 path = os.path.join(path_prepend_folder, path)
             paths.append(path)
-            labels.append(int(label.strip()))
-    return paths, labels, mode
+            labels.append(label)
+    return paths, labels, mode, max_num_labels
 
 
 def shuffle_pair(*args):
@@ -400,7 +415,7 @@ def write():
     framepaths_per_input = []
     for idx in range(len(input_files)):
         inp = input_files[idx]
-        item_paths, item_labels, mode = read_file(inp)
+        item_paths, item_labels, mode, max_num_labels = read_file(inp)
 
         if mode == defs.input_mode.image:
             if do_shuffle:
@@ -429,7 +444,7 @@ def write():
             tic = time.time()
             output_file = inp + ".tfrecord"
             logger.info("Serializing %s " % (output_file))
-            serialize_multithread(clips_per_video_or_item_paths, paths_to_serialize, labels_to_serialize, output_file , mode)
+            serialize_multithread(clips_per_video_or_item_paths, paths_to_serialize, labels_to_serialize, output_file , mode, max_num_labels)
             logger.info("Done serializing %s " % inp)
             logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
         logger.info("Done processing input file %s" % inp)
@@ -492,13 +507,20 @@ def write_paths_file(data):
         item_paths, item_labels, paths, labels, mode = data[i]
 
         if do_shuffle:
-            # write videos, if they got shuffled
+            # write paths, if they got shuffled
             item_outfile = inp + ".shuffled"
             logger.info("Documenting shuffled video order to %s" % (item_outfile))
             with open(item_outfile,'w') as f:
                 for v in range(len(item_paths)):
                     item = item_paths[v]
-                    f.write("%s %d\n" % (item, item_labels[v]))
+                    f.write("%s " % item)
+                    if type(item_labels[v]) == list:
+                        for l in item_labels[v]:
+                            f.write("%d " % l)
+                    else:
+                        f.write("%d" % item_labels[v])
+                    f.write("\n")
+
 
 
         clip_info = "" if clipframe_mode == defs.clipframe_mode.rand_frames or mode == defs.input_mode.image else ".%d.cpv" % clip_offset_or_num
