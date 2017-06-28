@@ -105,6 +105,12 @@ class defs:
     class label_type:
         single, multiple = "single", "multiple"
 
+    class caption_search:
+        max = "max"
+
+    class eval_type:
+        coco = "coco"
+
     train_idx, val_idx = 0, 1
     image, label = 0, 1
 

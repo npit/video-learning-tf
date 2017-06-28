@@ -11,7 +11,7 @@ import dataset_
 from utils_ import *
 
 import logging, configparser
-
+from tools import evaluate_imgdesc
 
 
 # summaries for training & validation
@@ -80,6 +80,10 @@ class Settings:
     validation_interval = 1
     batch_size_val = 88
     batch_item = defs.batch_item.default
+
+    # caption generation settings
+    caption_search = defs.caption_search.max
+    eval_type = defs.eval_type.coco
 
     # logging
     logging_level = logging.DEBUG
@@ -373,18 +377,38 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     # validation
     while dataset.loop():
         # get images and labels
-        images, labels_onehot = dataset.read_next_batch()
-
-        dataset.print_iter_info(len(images), len(labels_onehot))
-        logits = sess.run(lrcn.logits,
-                                           feed_dict={lrcn.inputData: images, lrcn.inputLabels: labels_onehot})
-        lrcn.process_validation_logits(logits, dataset, labels_onehot)
+        images, ground_truth = dataset.read_next_batch()
+        fdict, num_labels = get_feed_dict(lrcn, settings, images, ground_truth)
+        dataset.print_iter_info(len(images), num_labels)
+        logits = sess.run(lrcn.logits, feed_dict=fdict)
+        lrcn.process_validation_logits(logits, dataset, fdict[lrcn.inputLabels])
     # done, get accuracy
-    accuracy = lrcn.get_accuracy()
+    if settings.run_type == defs.run_types.imgdesc:
+        # get description metric
+        # do an ifthenelse on the evaluation type (eg coco)
 
-    summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
-    dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
-    tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_step())
+        # default eval. should be sth like a json production
+        if settings.eval_type == defs.eval_type.coco:
+            # evaluate coco
+            # format expected is as per  http://mscoco.org/dataset/#format
+            # [{ "image_id" : int, "caption" : str, }]
+
+            # get captions from logits, write them in the needed format,
+            # pass them to the evaluation function
+
+            # also, get captions from the read image paths - labels files
+            # initialize with it the COCO object
+            # ....
+            results_file = ""
+            evaluate_imgdesc.evaluate_coco(results_file)
+
+
+    else:
+        accuracy = lrcn.get_accuracy()
+
+        summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
+        dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
+        tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_step())
     tboard_writer.flush()
     return True
 
@@ -407,7 +431,7 @@ def main():
 
     # create and configure the nets : CNN and / or lstm
     lrcn = lrcn_. LRCN()
-    lrcn.create(settings, dataset, settings.run_type, summaries)
+    lrcn.create(settings, dataset, summaries)
 
     # view_print_tensors(lrcn,dataset,settings,lrcn.print_tensors)
 

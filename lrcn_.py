@@ -12,6 +12,7 @@ class LRCN:
     inputData = None
     inputLabels = None
     words_per_image = None
+    run_type = None
 
     # output data
     logits = None
@@ -34,19 +35,24 @@ class LRCN:
 
     dcnn_weights_file = None
     # let there be network
-    def create(self, settings, dataset, run_mode,summaries):
-        # initializations
-        # items refer to the primary unit we operate one, i.e. videos or frames
-        self.item_logits = np.zeros([0, dataset.num_classes], np.float32)
-        self.item_labels = np.zeros([0, dataset.num_classes], np.float32)
-        # clips refers to image groups that compose a video, for training with clip information
-        self.clip_logits = np.zeros([0, dataset.num_classes], np.float32)
-        self.clip_labels = np.zeros([0, dataset.num_classes], np.float32)
-        self.clip_pooling_type = settings.clip_pooling_type
+    def create(self, settings, dataset, summaries):
+        if settings.run_type == defs.run_types.imgdesc:
+            self.item_logits = []
+            self.item_labels = []
+            self.binary_word_idx = tf.placeholder(tf.int32, (None))
+        else:
+            # initializations
+            # items refer to the primary unit we operate one, i.e. videos or frames
+            self.item_logits = np.zeros([0, dataset.num_classes], np.float32)
+            self.item_labels = np.zeros([0, dataset.num_classes], np.float32)
+            # clips refers to image groups that compose a video, for training with clip information
+            self.clip_logits = np.zeros([0, dataset.num_classes], np.float32)
+            self.clip_labels = np.zeros([0, dataset.num_classes], np.float32)
+            self.clip_pooling_type = settings.clip_pooling_type
 
         # define network input
         self.logger = settings.logger
-
+        self.run_type = settings.run_type
 
         # make sure dcnn weights are good2go
         self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
@@ -55,14 +61,14 @@ class LRCN:
             exit("File not found");
 
         # create the workflow
-        if run_mode == defs.run_types.singleframe:
+        if self.run_type == defs.run_types.singleframe:
            self.create_singleframe(settings,dataset)
-        elif run_mode == defs.run_types.lstm:
+        elif self.run_type == defs.run_types.lstm:
             self.create_lstm(settings,dataset)
-        elif run_mode == defs.run_types.imgdesc:
+        elif self.run_type == defs.run_types.imgdesc:
             self.create_imgdesc(settings,dataset)
         else:
-            error("Unknown run mode [%s]" % run_mode)
+            error("Unknown run mode [%s]" % self.run_type)
 
         # create the training ops
         if settings.do_training:
@@ -84,8 +90,7 @@ class LRCN:
         self.logits = print_tensor(self.logits, "training: logits : ")
         # self.inputLabels = print_tensor(self.inputLabels, "training: labels : ")
         with tf.name_scope("cross_entropy_loss"):
-            loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels,
-                                                                   name="loss")
+            loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
             with tf.name_scope('total'):
                 self.loss = tf.reduce_mean(loss_per_vid)
 
@@ -215,9 +220,15 @@ class LRCN:
             self.logger.info("logits : [%s]" % self.logits.shape)
 
     def create_imgdesc(self, settings, dataset):
+
+        # implementation below separates train and validation. gotta fix
+        # 1 - architectural alternatives are karpathy's image vector h_0 bias
+        # 2 - spatial attention backwards lookup (show attend and tell. xu et al. 2015)
+
         # for two types of evaluating an lstm cell
         # https://stackoverflow.com/questions/37252977/whats-the-difference-between-two-implementations-of-rnn-in-tensorflow
 
+        self.logger.warning("ADD Grad clipping")
 
         # use the pretrained embedding like this
         # https://stackoverflow.com/questions/35687678/using-a-pre-trained-word-embedding-word2vec-or-glove-in-tensorflow?rq=1
@@ -252,29 +263,31 @@ class LRCN:
 
             # if we feed the image into the lstm input, just concat the word embeddings to the images
 
-            label_shape = tf.shape(labels)
-
             frame_encoding_dim = int(encodedFrames.shape[-1])
 
-
-            # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
-            encodedFrames = tf.tile(encodedFrames, [1, dataset.num_frames_per_clip + 1])
-            encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames")
-            self.logger.debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
-            encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
-            encodedFrames = print_tensor(encodedFrames, "restored frames")
-            self.logger.debug("restored : [%s]" % encodedFrames.shape)
+            if settings.do_training:
+                # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
+                encodedFrames = tf.tile(encodedFrames, [1, dataset.num_frames_per_clip + 1])
+                encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames")
+                self.logger.debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
+                encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
+                encodedFrames = print_tensor(encodedFrames, "restored frames")
+                self.logger.debug("restored : [%s]" % encodedFrames.shape)
 
 
             # horizontal concat the images to the words
             frames_words = tf.concat([encodedFrames, self.word_embeddings],axis=1)
             self.logger.debug("frames concat words : [%s]" % frames_words.shape)
             frames_words = print_tensor(frames_words,"frames concat words ")
-            word_embedding_dim = label_shape[1]
-            composite_dimension = word_embedding_dim + frame_encoding_dim
+
             # feed to lstm
             self.lstm_model = lstm.lstm()
-            self.lstm_model.define_image_description(frames_words, composite_dimension, len(dataset.vocabulary), self.words_per_image, dataset, settings)
+            if settings.do_training:
+                self.lstm_model.define_image_description(frames_words, frame_encoding_dim, len(dataset.vocabulary), self.words_per_image, dataset, settings)
+            else:
+                self.lstm_model.define_image_description_validation(frames_words, frame_encoding_dim,
+                                                                    len(dataset.vocabulary), self.words_per_image,
+                                                                    dataset, settings)
             self.logits = self.lstm_model.get_output()
 
             # remove the tensor rows where no ground truth caption is present
@@ -283,41 +296,66 @@ class LRCN:
             # split the logits to the chunks in the words_per_image. First append the number of rows left to complete
             # the sequence length, so as to subsequently tf.split the tensor
 
-            # get the number of useless logits per batch item
-            num_useless = dataset.num_frames_per_clip - self.words_per_image
-            num_useless = print_tensor(num_useless, "num useless")
-            wpi = tf.identity(self.words_per_image)
-            wpi = wpi + 1
-            wpi = print_tensor(wpi , "wpi plus EOS logits postproc")
-            # split the logits in [p1,u1,p2,u2,...], where ni,ui the number of predictions and useless output per item
-            chunks_sizes = tf.stack([wpi, num_useless])
-            chunks_sizes = print_tensor(chunks_sizes , "chunks sizes concatted")
+            if settings.do_training:
+                # get the number of useless logits per batch item
+                num_useless = dataset.num_frames_per_clip - self.words_per_image
+                num_useless = print_tensor(num_useless, "num useless")
+                wpi = tf.identity(self.words_per_image)
+                wpi = wpi + 1
+                wpi = print_tensor(wpi , "wpi plus EOS logits postproc")
+                # split the logits in [p1,u1,p2,u2,...], where ni,ui the number of predictions and useless output per item
+                chunks_sizes = tf.stack([wpi, num_useless])
+                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes concatted")
 
-            chunks_sizes = tf.transpose(chunks_sizes)
-            chunks_sizes = print_tensor(chunks_sizes , "chunks sizes transposed")
+                chunks_sizes = tf.transpose(chunks_sizes)
+                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes transposed")
 
-            chunks_sizes = tf.reshape(chunks_sizes,shape=[-1])
-            chunks_sizes = tf.cast(chunks_sizes, tf.int32)
-            chunks_sizes = print_tensor(chunks_sizes , "chunks sizes ")
+                chunks_sizes = tf.reshape(chunks_sizes,shape=[-1])
+                chunks_sizes = tf.cast(chunks_sizes, tf.int32)
+                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes ")
 
 
-            self.binary_word_idx = tf.placeholder(tf.int32,(None))
-            bwi = tf.identity(self.binary_word_idx)
-            bwi = print_tensor(bwi,"binary word index to keep")
-            self.logits= tf.gather(self.logits, bwi)
 
-            # static_batch_size = dataset.get_batch_size()
-            # logit_chunks = tf.split(self.logits, chunks_sizes, num = static_batch_size * 2,  axis=0, name="caption_split")
-            # logit_chunks = print_tensor(logit_chunks, "logits list")
-            # drop the useless ones; this pre-supposes the obvious that each item has at least one caption word
-            self.logits = print_tensor(self.logits, "filtered logits list")
-            # re-merge the tensor list into a tensor
-            self.logits = tf.concat(self.logits, axis=0)
-            self.logits = print_tensor(self.logits,"final filtered logits")
-            self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
+                bwi = tf.identity(self.binary_word_idx)
+                bwi = print_tensor(bwi,"binary word index to keep")
+                self.logits= tf.gather(self.logits, bwi)
+
+                # static_batch_size = dataset.get_batch_size()
+                # logit_chunks = tf.split(self.logits, chunks_sizes, num = static_batch_size * 2,  axis=0, name="caption_split")
+                # logit_chunks = print_tensor(logit_chunks, "logits list")
+                # drop the useless ones; this pre-supposes the obvious that each item has at least one caption word
+                self.logits = print_tensor(self.logits, "filtered logits list")
+                # re-merge the tensor list into a tensor
+                self.logits = tf.concat(self.logits, axis=0)
+                self.logits = print_tensor(self.logits,"final filtered logits")
+                self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
+            else:
+                # for validation, just return the logits and we'll process them on the driver
+                pass
 
     # validation accuracy computation
     def process_validation_logits(self, logits, dataset, labels):
+        # processing for image description
+        if self.run_type == defs.run_types.imgdesc:
+            eos_index = dataset.vocabulary.index("EOS")
+            # logits is words
+            for i in range(0,len(logits), dataset.num_frames_per_clip):
+                logits_seq = logits[i:i+dataset.num_frames_per_clip]
+                # one is True, at the pos of the eos
+                eos_position_boolean = [ x == eos_index for x in logits_seq]
+                # one is 1, at the position of the eos
+                eos_position = [1 if x == eos_index else 0 for x in logits_seq]
+
+                if any(eos_position):
+                    # keep up to but not including eos. Get first index, if multiple .
+                    eos_index = eos_position.index(1)
+                    logits_seq = logits_seq[0:eos_index]
+                # else, no EOS exists in the predicted caption
+                # append the vector
+                self.item_logits.append(logits_seq)
+                self.item_labels.append(labels)
+                return
+
         # batch item contains logits that correspond to whole clips. Accumulate to clip storage, and check for aggregation.
         if dataset.batch_item == defs.batch_item.clip:
             # per-clip logits in input : append to clip logits accumulator

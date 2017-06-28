@@ -271,17 +271,21 @@ class Dataset:
         eos_index = self.vocabulary.index("EOS")
 
         for label in labels:
+            if self.do_training:
+                image_word_vectors = np.vstack((self.embedding_matrix[bos_index, :], self.embedding_matrix[label, :]))
+                # pad to the max number of words with zeros
+                num_left_to_max = 1+self.num_frames_per_clip - image_word_vectors.shape[0]
+                image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
+                # append to the total
+                batch_word_vectors = np.vstack((batch_word_vectors, image_word_vectors))
+
             # get input embeddings & labels. Prepend the input embeddings with BOS
-            image_word_vectors = np.vstack((self.embedding_matrix[bos_index,:],self.embedding_matrix[label,:]))
             image_onehot_labels = np.vstack((labels_to_one_hot(label, self.num_classes)))
-            # pad to the max number of words with zeros
-            num_left_to_max = 1+self.num_frames_per_clip - image_word_vectors.shape[0]
-            image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
-            # append to the total
-            batch_word_vectors = np.vstack((batch_word_vectors,image_word_vectors ))
             # append output labels with EOS
             image_onehot_labels =  np.vstack((image_onehot_labels, labels_to_one_hot([eos_index], self.num_classes)))
             batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
+        if self.do_validation:
+            batch_word_vectors =  np.vstack((batch_word_vectors, self.embedding_matrix[bos_index, :]))
 
         return (batch_word_vectors, batch_onehot_labels, list(map(len,labels)) )
 
