@@ -16,6 +16,7 @@ config.ini
 examples/run
 *.vocab
 *.embeddings
+*.pyc
 
 # misc stuff
 notes

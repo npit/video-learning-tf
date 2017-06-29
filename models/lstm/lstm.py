@@ -149,7 +149,7 @@ class lstm(Trainable):
                 # data_io = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
                 # logger.debug("LSTM final output : %s" % str(data_io.shape))
                 # data_io = print_tensor(data_io, "lstm fc output")
-                data_io, word_index = self.logits_to_word_vectors(embedding_matrix, 0,logger, fc_out_w, fc_out_b, output, defs.caption_search.max)
+                data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, 0, logger, fc_out_w, fc_out_b, output, defs.caption_search.max)
                 image_vector = inputTensor[:,0:image_vector_dim]
 
                 predicted_words = tf.Variable(  np.zeros([0], np.int64) ,tf.float32)
@@ -166,7 +166,7 @@ class lstm(Trainable):
                     data_io, state = cell(input_vec, initial_state)
                     initial_state = state
                     logger.debug("LSTM iteration #%d state : %s" % (step, [str(x.shape) for x in state]))
-                    data_io, word_index = self.logits_to_word_vectors(embedding_matrix, step,logger, fc_out_w, fc_out_b, data_io, defs.caption_search.max)
+                    data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, step, logger, fc_out_w, fc_out_b, data_io, defs.caption_search.max)
                     logger.debug("LSTM iteration #%d output : %s" % (step, data_io.shape))
                     predicted_words = tf.concat([predicted_words, word_index], axis=0)
 
@@ -175,7 +175,7 @@ class lstm(Trainable):
 
 
 
-    def logits_to_word_vectors(self, embedding_matrix, step, logger, weights, biases, logits, strategy=defs.caption_search.max):
+    def logits_to_word_vectors_tf(self, embedding_matrix, step, logger, weights, biases, logits, strategy=defs.caption_search.max):
         if strategy == defs.caption_search.max:
             # here we should select a word from the output
             data_io = tf.nn.xw_plus_b(logits, weights, biases)

@@ -79,7 +79,6 @@ class Dataset:
     # variables for validation clip batches
     video_index = 0
 
-
     # misc
     embedding_matrix = None
     vocabulary = None
@@ -260,6 +259,52 @@ class Dataset:
 
         self.advance_batch_indexes()
         return images, ground_truth
+    # get captions from logit vectors
+    def logits_to_captions(self, logits):
+        return_data = []
+        captions = []
+        # for validation mode, we better have the image ids
+        if self.phase == defs.phase.val:
+            if self.eval_type == defs.eval_type.coco:
+                image_ids = []
+                parts = self.input_source_files[defs.val_idx].split(".")
+                image_paths_file = ".".join(parts[0:-1])
+                self.logger.info("Reading image paths for id extraction from %s", image_paths_file)
+                # read image ids, presumed to be the suffixless basename
+                with open(image_paths_file, "r") as fp:
+                    for line in fp:
+                        # format example : COCO_val2014_000000000042.jpg
+                        # strip id from path
+                        try:
+                            # get filename
+                            parts = line.strip().split()
+                            filename = os.path.basename(parts[0]).split('.')[0]
+                            # get image id
+                            image_id = filename.split("_") [-1]
+                            image_id = int(image_id)
+                        except Exception:
+                            self.logger.warning("Could not convert image id %s to int. Storing as string." % image_id)
+                        image_ids.append(image_id)
+                # return it
+                return_data.append(image_ids)
+        # read captions
+        print ("caption indices per image")
+        for i,image_logits in enumerate(logits):
+            image_caption = []
+            print(str(image_ids[i]),str(image_logits))
+            for caption_index in image_logits:
+                image_caption.append(self.vocabulary[caption_index])
+            if not image_caption:
+                image_caption = ' '
+            captions.append(" ".join(image_caption))
+        return_data.append(captions)
+
+        for i in range(len(image_ids)):
+            print(image_ids[i]," caption:",captions[i])
+        return return_data
+
+
+
 
     # get word vectors from their indices
     def labels_to_words(self, labels):
@@ -428,6 +473,9 @@ class Dataset:
         self.epoch_index = sett.epoch_index
         self.batch_index_train = sett.train_index
 
+        self.caption_search = sett.caption_search
+        self.eval_type = sett.eval_type
+
         # iniitalize image data
         self.initialize_data(sett)
 
@@ -473,7 +521,7 @@ class Dataset:
             if "EOS" not in self.vocabulary:
                 self.logger.error("EOS not found in vocabulary.")
                 error("Vocabulary error")
-            self.num_classes = len(self.vocabulary)
+            self.num_classes = len(self.vocabulary) - 1
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):

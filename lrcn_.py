@@ -243,7 +243,7 @@ class LRCN:
             self.words_per_image = tf.placeholder(tf.int32,shape=(None), name="words_per_image")
             # self.words_per_image = print_tensor(self.words_per_image, "words per image tensor:")
 
-            self.inputLabels = tf.placeholder(tf.int32, [None, len(dataset.vocabulary) ], name="input_labels")
+            self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes ], name="input_labels")
             labels = tf.identity(self.inputLabels)
             labels = print_tensor(labels,"input labels")
             self.word_embeddings = tf.placeholder(tf.float32,shape=(None,dataset.embedding_matrix.shape[1]), name="word_embeddings")
@@ -283,10 +283,10 @@ class LRCN:
             # feed to lstm
             self.lstm_model = lstm.lstm()
             if settings.do_training:
-                self.lstm_model.define_image_description(frames_words, frame_encoding_dim, len(dataset.vocabulary), self.words_per_image, dataset, settings)
+                self.lstm_model.define_image_description(frames_words, frame_encoding_dim, dataset.num_classes, self.words_per_image, dataset, settings)
             else:
                 self.lstm_model.define_image_description_validation(frames_words, frame_encoding_dim,
-                                                                    len(dataset.vocabulary), self.words_per_image,
+                                                                    dataset.num_classes, self.words_per_image,
                                                                     dataset, settings)
             self.logits = self.lstm_model.get_output()
 
@@ -341,8 +341,6 @@ class LRCN:
             # logits is words
             for i in range(0,len(logits), dataset.num_frames_per_clip):
                 logits_seq = logits[i:i+dataset.num_frames_per_clip]
-                # one is True, at the pos of the eos
-                eos_position_boolean = [ x == eos_index for x in logits_seq]
                 # one is 1, at the position of the eos
                 eos_position = [1 if x == eos_index else 0 for x in logits_seq]
 

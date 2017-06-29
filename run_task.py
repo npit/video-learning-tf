@@ -13,6 +13,7 @@ from utils_ import *
 import logging, configparser
 from tools import evaluate_imgdesc
 
+import json
 
 # summaries for training & validation
 class Summaries:
@@ -166,19 +167,23 @@ class Settings:
         for var in config:
             exec("self.%s=%s" % (var, config[var]))
         # set append the config.ini.xxx suffix to the run id
+        trainval = ""
+        if self.do_training:
+            trainval = "train"
+        if self.do_validation:
+            trainval = trainval + "val"
+        if self.should_resume():
+            trainval = trainval + "_resume"
+        else:
+            trainval = trainval + "_scratch"
+        if self.run_id:
+            self.run_id = "_" + self.run_id
+        self.run_id = self.run_type + self.run_id + "_" + trainval
         if not self.init_file == "config.ini":
             init_file_suffix = self.init_file.split(".")
-            trainval = ""
-            if self.do_training:
-                trainval = "train"
-            if self.do_validation:
-                trainval = trainval + "val"
-            if self.should_resume():
-                trainval = trainval + "_resume"
-            else:
-                trainval = trainval + "_scratch"
-            self.run_id = self.run_id  + "_" + trainval + "_" + init_file_suffix[-1]
-        print("Successfully initialized from file %s" % self.init_file)
+            self.run_id = self.run_id + "_" + init_file_suffix[-1]
+        print("Initialized run [%s] from file %s" % ( self.run_id, self.init_file))
+
 
 
     # initialize stuff
@@ -395,12 +400,26 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
 
             # get captions from logits, write them in the needed format,
             # pass them to the evaluation function
+            ids_captions = dataset.logits_to_captions(lrcn.item_logits)
+            if not len(ids_captions[0]) == len(ids_captions[1]):
+                settings.logger.error("Unequal number of image ids and captions")
+                error("Image ids / captions mismatch")
+
+            json_data = [ { "image_id" : ids_captions[0][i] , "caption" : ids_captions[1][i] }
+                          for i in range(len(ids_captions[0]))]
+            # write results
+            results_file = dataset.input_source_files[defs.val_idx] + ".coco.json"
+            with open(results_file , "w") as fp:
+                json.dump(json_data, fp)
 
             # also, get captions from the read image paths - labels files
             # initialize with it the COCO object
             # ....
-            results_file = ""
-            evaluate_imgdesc.evaluate_coco(results_file)
+            settings.logger.info("Evaluating captioning using ground truth file %s" % settings.caption_ground_truth)
+            command = '$(which python2) tools/python2_coco_eval/coco_eval.py %s %s' % (results_file, settings.caption_ground_truth)
+            print(command)
+            os.system(command)
+            # evaluate_imgdesc.evaluate_coco(results_file, settings.caption_ground_truth)
 
 
     else:

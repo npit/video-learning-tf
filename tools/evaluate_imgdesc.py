@@ -8,9 +8,8 @@ from json import encoder
 encoder.FLOAT_REPR = lambda o: format(o, '.3f')
 
 
-def evaluate_coco(results_json_file):
-    annFile = './annotations/captions_val2014.json'
-    coco = COCO(annFile)
+def evaluate_coco(results_json_file, ground_truth_file):
+    coco = COCO(ground_truth_file)
 
     cocoRes = coco.loadRes(results_json_file)
     cocoEval = COCOEvalCap(coco, cocoRes)
