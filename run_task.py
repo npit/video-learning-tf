@@ -11,7 +11,6 @@ import dataset_
 from utils_ import *
 
 import logging, configparser
-from tools import evaluate_imgdesc
 
 import json
 
@@ -419,7 +418,6 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
             command = '$(which python2) tools/python2_coco_eval/coco_eval.py %s %s' % (results_file, settings.caption_ground_truth)
             print(command)
             os.system(command)
-            # evaluate_imgdesc.evaluate_coco(results_file, settings.caption_ground_truth)
 
 
     else:
