@@ -36,7 +36,12 @@ The generated files for an input of `data.train` include
 - `data.train.tfrecord.size`: metadata containing the number of items, the number of frames per video and the number of clips of video, for a `.tfrecord` file.
 
 ## Workflows
-### Activity recognition / image classification
+Available workflows are defined in `defs.workflows` and explained below.
+### Activity recognition 
+The activity recognition workflows classify videos to a predifined number of classes. It can be instantiated by the following two workflows.
 #### Single-frame 
+The single-frame workflow uses a Alexnet DCNN to classify each video frame individually. Video-level predictions are produced by pooling the predicted label of each video frame using an aggregation method defined in `defs.pooling`.
 #### LSTM
+The lstm workflow uses an LSTM to classify a video taking into account the temporal dynamics across the video frames. Per-frame predictions are pooled similarly to the single-frame case.
 ### Image description
+The image description workflow produces captions for a given input image. 
