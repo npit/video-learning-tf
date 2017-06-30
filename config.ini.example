@@ -1,5 +1,5 @@
 [run]
-# run type
+# run type and an identifier for it
 run_type = defs.run_types.singleframe
 run_id = None
 
@@ -24,6 +24,7 @@ data_format = defs.data_format.tfrecord
 frame_format = "jpg"
 input_mode = defs.input_mode.image
 
+# batch settings
 num_frames_per_clip = 16
 batch_item = defs.batch_item.default
 
@@ -51,15 +52,21 @@ tensorboard_folder = "tensorboard_graphs"
 
 [serialize]
 
+# path to prepend to each image path
 path_prepend_folder = "path/to/images/folder"
+
+# video / image list to serialize
 input_files = [ "/path/to/imgfile1", "/path/to/imgfile2"]
 
+# run type
 do_shuffle = True
 do_serialize = True
 num_threads = 2
 num_items_per_thread = 20
-raw_image_shape = (240,320,3)
+
+# video frames generation parameters 
 clip_offset_or_num = 2
 num_frames_per_clip = 16
+raw_image_shape = (240,320,3)
 clipframe_mode = defs.clipframe_mode.iterative
 frame_format = "jpg"
