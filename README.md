@@ -30,4 +30,7 @@ Variables for video generation are :
 - `clipframe_mode`: The clip / frame generation mode
 - `frame_format`: The image format 
 
-
+The generated files for an input of `data.train` include
+- `data.train.shuffled`: the output shuffled paths, if `do_shuffle` is enabled
+- `data.train.tfrecord`: the tfrecord serialization, if `do_serialize` is enabled
+- `data.train.tfrecord.size`: metadata containing the number of items, the number of frames per video and the number of clips of video, for a `.tfrecord` file.
