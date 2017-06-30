@@ -1,10 +1,10 @@
-## Image / Video classification and description using tensorflow
+# Image / Video classification and description using tensorflow
 This is a python3 / tensorflow implementation of the architectures described in [Donahue et al. 2015](https://arxiv.org/abs/1411.4389) for image & video classification and description.
-### Overview
+## Overview
 - Use the `run_task.py` script to begin the execution of a workflow.
 - Use the `config.ini` files to provide execution or serialization parameters to the associated scripts. Parameter values should be python3 code.
 - You can see non-primitive supported parameters and options in `utils_.defs`
-### Data preprocessing : `serialize.py`
+## Data preprocessing : `serialize.py`
 Tensorflow recommended serialization format is the [TFRecord ](https://www.tensorflow.org/programmers_guide/reading_data). You can serialize a list of images or videos by using the `serialize.py` script.
 
 To serialize a list of items (images or videos), provide a list with file paths to the `input_files` ini variable, followed by their label index(es). You can find examples in `examples/test_run` folder per data type. Use the `path_prepend_folder` variable to complete relative paths in the input files.
@@ -34,3 +34,9 @@ The generated files for an input of `data.train` include
 - `data.train.shuffled`: the output shuffled paths, if `do_shuffle` is enabled
 - `data.train.tfrecord`: the tfrecord serialization, if `do_serialize` is enabled
 - `data.train.tfrecord.size`: metadata containing the number of items, the number of frames per video and the number of clips of video, for a `.tfrecord` file.
+
+## Workflows
+### Activity recognition / image classification
+#### Single-frame 
+#### LSTM
+### Image description
