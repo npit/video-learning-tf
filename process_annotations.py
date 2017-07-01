@@ -26,34 +26,35 @@ word_count_thresh = 5
 
 # study karpathy imgdesc papers
 
-
-# reread
-caption_files =  ["/home/nik/uoa/msc-thesis/dataset/coco14/annotations/captions_val2014.json",
-                            "/home/nik/uoa/msc-thesis/dataset/flickr30k/results_20130124.token"]
-
+#########################
+# settable parameters
+# caption files to process
+caption_files =  ["/home/nik/uoa/msc-thesis/dataset/coco14/annotations/captions_val2014.json"]
+# format per file
 formats = ("coco","flickr")
-avail_formats = ["coco", "flickr"]
-train_mode = True
-vocabulary_file = "/home/nik/uoa/msc-thesis/dataset/coco14/annotations/captions_val2014.jsonresults_20130124.token.vocab"
+# train mode: will produce a vocabulary if true
+train_mode = False
+# vocabulary file: if tran_mode is false, it will produce caption encodings as per the vocabulary
+vocabulary_file = "/home/nik/uoa/msc-thesis/implementation/vocabulary_captions_train2014.json.vocab"
+# if true, it will first seek for already processed caption files before generating them
 canLoad = False
-# file containing w, [v1,v2,..]. Each occurence of w in a caption will be replaced by v1,v2,...]
-# this is so that weird slang and compositions are replaced by common words, for which pretrained embeddings exist.
+# replacement file: a file containing w, [v1,v2,..]. Each occurence of w in a caption will be replaced by v1,v2,...]
+# this is so that weird slang and compositions are replaced by common words, for which pretrained embeddings exist
 vocab_replacement_file="/home/nik/uoa/msc-thesis/dataset/glove/missing_words.txt"
+########################
 
-replacements = {}
-with open(vocab_replacement_file, "r") as f:
-    for line in f:
-        word, repl = line.strip().split("\t")
-        repl = repl.split()
-        replacements[word] = " ".join(repl)
+# recognizable formats to automatically parse
+avail_formats = ["coco", "flickr"]
 
-def replace_problematic_words(toklist):
+
+
+def replace_problematic_words(toklist, replacements):
 
     for w in replacements:
         for i,t in enumerate(toklist):
             if t == w:
                 toklist = [*toklist[:i] , * replacements[w].split(), *toklist[i+1 :] ]
-                print("Replaced %s with %s" % (w,toklist[i : i + len(replacements[w].split())]))
+                # print("Replaced %s with %s" % (w,toklist[i : i + len(replacements[w].split())]))
     return toklist
 # read data
 def read_file(filename, format):
@@ -131,8 +132,22 @@ def prepro_captions(imgs_json):
         img['processed_tokens'] = []
         for j, s in enumerate(img['raw_captions']):
             txt = str(s).lower().translate(translator).strip().split()
-            txt = replace_problematic_words(txt)
             img['processed_tokens'].append(txt)
+
+    if vocab_replacement_file is not None:
+        # read replacements file
+        replacements = {}
+        with open(vocab_replacement_file, "r") as f:
+            for line in f:
+                word, repl = line.strip().split("\t")
+                repl = repl.split()
+                replacements[word] = " ".join(repl)
+
+        for i, img in enumerate(imgs_json):
+            for t, txt in enumerate(img['processed_tokens']):
+                txt = replace_problematic_words(txt, replacements)
+                imgs_json[i]['processed_tokens'][t] = txt
+
 
 
 def build_vocab(imgs):
@@ -239,12 +254,10 @@ def main():
             img_json.extend(obj)
 
         vocab = build_vocab(img_json)
-
-        # add special tokens
-        vocab.extend(["BOS", "EOS"])
-
-        filename = caption_files[0]
-        filename = "vocabulary" + "_".join([ os.path.basename(capfile) for capfile in caption_files[1:]])
+        # add EOS, BOS
+        vocab.extend(["EOS","BOS"])
+        filename = "vocabulary_" + "_".join([ os.path.basename(capfile) for capfile in caption_files])
+        print("Produced vocabulary of", len(vocab)," words, including the UNK, EOS, BOS symbols.")
         print("Writing vocabulary to ",filename + ".vocab")
         with open(filename + ".vocab", "w") as f:
             for w in vocab:
@@ -271,6 +284,7 @@ def main():
                         for word in cap:
                             labels.append(str(vocab[word]))
                         f.write("%s %s\n" % (imgname, " ".join(labels)))
+            print("Wrote file ",filename + ".paths.txt")
 
 
 

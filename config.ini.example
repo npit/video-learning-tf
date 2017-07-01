@@ -1,6 +1,6 @@
 [run]
 # run type and an identifier for it
-run_type = defs.run_types.singleframe
+workflow = defs.workflows.singleframe
 run_id = None
 
 # save / load configuration

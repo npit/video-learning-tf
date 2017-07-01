@@ -82,8 +82,8 @@ class defs:
         raw, tfrecord = "raw", "tfrecord"
 
     # run type indicates usage of lstm or singleframe dcnn
-    class run_types:
-        lstm, singleframe, imgdesc = "lstm","singleframe", "imgdesc"
+    class workflows:
+        lstm, singleframe, imgdesc, videodesc = "lstm","singleframe", "imgdesc", "videodesc"
 
     # video pooling methods
     class pooling:

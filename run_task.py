@@ -39,7 +39,7 @@ class Settings:
 
     # run mode and type
     run_id = ""
-    run_type = defs.run_types.singleframe
+    workflow = defs.workflows.singleframe
 
     # save / load configuration
     resume_file = None
@@ -177,7 +177,7 @@ class Settings:
             trainval = trainval + "_scratch"
         if self.run_id:
             self.run_id = "_" + self.run_id
-        self.run_id = self.run_type + self.run_id + "_" + trainval
+        self.run_id = self.workflow + self.run_id + "_" + trainval
         if not self.init_file == "config.ini":
             init_file_suffix = self.init_file.split(".")
             self.run_id = self.run_id + "_" + init_file_suffix[-1]
@@ -264,7 +264,7 @@ class Settings:
             if not os.path.exists(checkpoints_folder):
                 os.makedirs(checkpoints_folder)
 
-            basename = os.path.join(checkpoints_folder,get_datetime_str() + "_" + self.run_type + "_" + progress)
+            basename = os.path.join(checkpoints_folder, get_datetime_str() + "_" + self.workflow + "_" + progress)
             savefile_graph = basename + ".graph"
 
             self.logger.info("Saving graph  to [%s]" % savefile_graph)
@@ -290,7 +290,7 @@ def get_feed_dict(lrcn, settings, images, ground_truth):
     fdict[lrcn.inputData] = images
 
 
-    if settings.run_type == defs.run_types.imgdesc:
+    if settings.workflow == defs.workflows.imgdesc:
         # get words per caption, onehot labels, embeddings
 
         embeddings = ground_truth[0]
@@ -387,7 +387,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         logits = sess.run(lrcn.logits, feed_dict=fdict)
         lrcn.process_validation_logits(logits, dataset, fdict[lrcn.inputLabels])
     # done, get accuracy
-    if settings.run_type == defs.run_types.imgdesc:
+    if settings.workflow == defs.workflows.imgdesc:
         # get description metric
         # do an ifthenelse on the evaluation type (eg coco)
 
@@ -438,7 +438,7 @@ def main():
     settings = Settings()
     settings.initialize(sys.argv)
 
-    settings.logger.info('Running the activity recognition task in mode: [%s]' % settings.run_type)
+    settings.logger.info('Running the activity recognition task in mode: [%s]' % settings.workflow)
     # init summaries for printage
     summaries=Summaries()
 

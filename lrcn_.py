@@ -12,7 +12,7 @@ class LRCN:
     inputData = None
     inputLabels = None
     words_per_image = None
-    run_type = None
+    workflow = None
 
     # output data
     logits = None
@@ -36,7 +36,7 @@ class LRCN:
     dcnn_weights_file = None
     # let there be network
     def create(self, settings, dataset, summaries):
-        if settings.run_type == defs.run_types.imgdesc:
+        if settings.workflow == defs.workflows.imgdesc:
             self.item_logits = []
             self.item_labels = []
             self.binary_word_idx = tf.placeholder(tf.int32, (None))
@@ -52,7 +52,7 @@ class LRCN:
 
         # define network input
         self.logger = settings.logger
-        self.run_type = settings.run_type
+        self.workflow = settings.workflow
 
         # make sure dcnn weights are good2go
         self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
@@ -61,14 +61,16 @@ class LRCN:
             exit("File not found");
 
         # create the workflow
-        if self.run_type == defs.run_types.singleframe:
+        if self.workflow == defs.workflows.singleframe:
            self.create_singleframe(settings,dataset)
-        elif self.run_type == defs.run_types.lstm:
+        elif self.workflow == defs.workflows.lstm:
             self.create_lstm(settings,dataset)
-        elif self.run_type == defs.run_types.imgdesc:
+        elif self.workflow == defs.workflows.imgdesc:
             self.create_imgdesc(settings,dataset)
+        elif self.workflow == defs.workflows.videodesc:
+            self.create_videodesc(settings,dataset)
         else:
-            error("Unknown run mode [%s]" % self.run_type)
+            error("Unknown run mode [%s]" % self.workflow)
 
         # create the training ops
         if settings.do_training:
@@ -333,10 +335,12 @@ class LRCN:
                 # for validation, just return the logits and we'll process them on the driver
                 pass
 
+    def create_videodesc(self, settings, dataset):
+        pass
     # validation accuracy computation
     def process_validation_logits(self, logits, dataset, labels):
         # processing for image description
-        if self.run_type == defs.run_types.imgdesc:
+        if self.workflow == defs.workflows.imgdesc:
             eos_index = dataset.vocabulary.index("EOS")
             # logits is words
             for i in range(0,len(logits), dataset.num_frames_per_clip):

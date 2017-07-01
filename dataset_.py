@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 # Dataset class
 class Dataset:
-    run_type = None
+    workflow = None
     num_classes = None
 
     # input file names
@@ -252,7 +252,7 @@ class Dataset:
             else:
                 images, labels = self.get_next_batch_frame_tfr(currentBatch)
 
-        if self.run_type == defs.run_types.imgdesc:
+        if self.workflow == defs.workflows.imgdesc:
             ground_truth = self.labels_to_words(labels)
         else:
             ground_truth = labels_to_one_hot(labels, self.num_classes)
@@ -444,7 +444,7 @@ class Dataset:
     # do preparatory work
     def initialize(self, sett):
         # transfer configuration from settings
-        self.run_type = sett.run_type
+        self.workflow = sett.workflow
         self.logger = sett.logger
         self.epochs = sett.epochs
         self.do_random_mirroring = sett.do_random_mirroring
@@ -480,7 +480,7 @@ class Dataset:
         self.initialize_data(sett)
 
         # perform run mode - specific initializations
-        self.initialize_run_type(sett)
+        self.initialize_workflow(sett)
 
         self.do_mean_subtraction = (self.mean_image is not None)
         if self.do_mean_subtraction:
@@ -501,8 +501,8 @@ class Dataset:
         self.tell()
 
     # initialize run mode specific data
-    def initialize_run_type(self, settings):
-        if self.run_type == defs.run_types.imgdesc:
+    def initialize_workflow(self, settings):
+        if self.workflow == defs.workflows.imgdesc:
             # read embedding matrix
             self.logger.info("Reading embedding matrix from file [%s]" % settings.word_embeddings_file)
             self.vocabulary = []
