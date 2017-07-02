@@ -79,7 +79,7 @@ caption_file_formats = ("coco","flickr")
 can_load_processed = False
 vocab_replacement_file= None
 word_count_thresh = 5
-caption_max_length = 16
+caption_max_length = 50
 
 # vocabulary to encode captions or produce embeddings. None to generate it
 vocabulary_file = None
