@@ -323,7 +323,6 @@ def get_feed_dict(lrcn, settings, images, ground_truth):
 
 
 
-# we should also supply number of captions per image
 
 # train the network
 def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):

@@ -70,3 +70,20 @@ num_frames_per_clip = 16
 raw_image_shape = (240,320,3)
 clipframe_mode = defs.clipframe_mode.iterative
 frame_format = "jpg"
+
+[captions]
+
+# caption processing
+caption_files =  ["/path/to/captionfile1","/path/to/captionfile2"]
+caption_file_formats = ("coco","flickr")
+can_load_processed = False
+vocab_replacement_file= None
+word_count_thresh = 5
+caption_max_length = 16
+
+# vocabulary to encode captions or produce embeddings. None to generate it
+vocabulary_file = None
+
+# embedding processing files
+embeddings_file = "/path/to/embedding/matrix"
+embedding_format = "glove"

@@ -5,14 +5,17 @@ from process_annotations import read_vocabulary
 '''
 Script to encode vocabulary contents into the embedding matrix. 
 '''
+init_file = "config.ini"
 # vocabulary and embeddings files
-vocabulary_file = "/home/nik/uoa/msc-thesis/implementation/vocabulary_captions_train2014.json.vocab"
-embeddings_file = "/home/nik/uoa/msc-thesis/dataset/glove/glove.6B.50d.txt"
-embedding_dim = 50
-# the range of embedding values
-embedding_value_minmax =  [-3.0575000000000001, 4.3657000000000004]
+vocabulary_file = None
 embeddings_file_type = "glove"
+embeddings_file = "/path/to/embeddings"
 
+keyvals = init_config(init_file, "captions")
+
+for key in keyvals:
+    exec("%s=%s" % (key, keyvals[key]))
+print("Successfully initialized from file %s" % init_file)
 
 vocab = read_vocabulary(vocabulary_file)
 
@@ -20,6 +23,7 @@ omit_count = 0
 total_count = 0
 if embeddings_file_type == "glove":
     embeddings = {}
+    embedding_minmax = [10000, -10000]
     # read the whole contents
     print("Reading embeddings file...",end="")
     with open(embeddings_file,"r") as fp:
@@ -28,6 +32,10 @@ if embeddings_file_type == "glove":
             token = contents[0]
             vector = list(map(float, contents[1:]))
             embeddings[token] = vector
+            mx, mn = max(vector), min(vector)
+            embedding_minmax[0] = embedding_minmax[0] if embedding_minmax[0] <= mn else mn
+            embedding_minmax[1] = embedding_minmax[1] if embedding_minmax[0] >= mx else mx
+    embedding_dim = len(list(embeddings.keys())[0])
     print("done.")
     vocab_embeddings =  dict( (w, embeddings[w]) for w in [ w for w in vocab if w in embeddings])
     missing_vocab_word_embeddings = [ w for w in vocab if w not in vocab_embeddings]
@@ -39,7 +47,7 @@ if embeddings_file_type == "glove":
     else:
         for w in missing_vocab_word_embeddings:
 
-            vocab_embeddings[w] = np.random.uniform(low=embedding_value_minmax[0], high=embedding_value_minmax[1], size=(embedding_dim,))
+            vocab_embeddings[w] = np.random.uniform(low=embedding_minmax[0], high=embedding_minmax[1], size=(embedding_dim,))
     # write out
     filename = vocabulary_file + ".embeddings"
     print("Writing embeddings for vocabulary at ",filename)
@@ -51,7 +59,7 @@ if embeddings_file_type == "glove":
             if mn < mmx[0]: mmx[0] = mn
             vec = " ".join([ "%5.5f" % v for v in vector])
             fp.write("%s\t%s\n" % (token ,vec))
-    print("Min / max embedding values : ",mmx)
+    print("Min / max embedding values for vocabulary: ",mmx)
 
 
 else:

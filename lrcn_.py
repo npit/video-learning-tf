@@ -336,6 +336,7 @@ class LRCN:
                 pass
 
     def create_videodesc(self, settings, dataset):
+        # http://www.cs.utexas.edu/users/ml/papers/venugopalan.naacl15.pdf does the obvious, simple impl: video to 1 vector by pooling, then lstm like image
         pass
     # validation accuracy computation
     def process_validation_logits(self, logits, dataset, labels):

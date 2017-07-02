@@ -1,9 +1,26 @@
 import numpy as np
 import tensorflow as tf
 import time
-import logging
+import configparser
 import os
 
+# init from config file
+def init_config(init_file, tag_to_read):
+    if init_file is None:
+        return
+    if not os.path.exists(init_file):
+        error("Unable to read initialization file [%s]." % init_file)
+        return
+
+    print("Initializing from file %s" % init_file)
+    config = configparser.ConfigParser()
+    config.read(init_file)
+
+    if not config[tag_to_read]:
+        error('Expected header [%s] in the configuration file!' % tag_to_read)
+
+    config = config[tag_to_read]
+    return config
 
 # timestamp print
 def elapsed_str(seconds):

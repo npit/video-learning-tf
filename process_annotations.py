@@ -1,9 +1,8 @@
-import json
-import string
-import os
+import json, string,  os
+from utils_ import  init_config
 
 
-caption_length = 16
+caption_max_length = 16
 word_count_thresh = 5
 
 # todo: add this as another mode is serialize?
@@ -26,18 +25,17 @@ word_count_thresh = 5
 
 # study karpathy imgdesc papers
 
+init_file = "config.ini"
 #########################
 # settable parameters
 # caption files to process
 caption_files =  ["/home/nik/uoa/msc-thesis/dataset/coco14/annotations/captions_val2014.json"]
 # format per file
-formats = ("coco","flickr")
-# train mode: will produce a vocabulary if true
-train_mode = False
-# vocabulary file: if tran_mode is false, it will produce caption encodings as per the vocabulary
-vocabulary_file = "/home/nik/uoa/msc-thesis/implementation/vocabulary_captions_train2014.json.vocab"
+caption_file_formats = ("coco", "flickr")
+# vocabulary file: if not None, it will produce caption encodings as per the vocabulary
+vocabulary_file = None
 # if true, it will first seek for already processed caption files before generating them
-canLoad = False
+can_load_processed = False
 # replacement file: a file containing w, [v1,v2,..]. Each occurence of w in a caption will be replaced by v1,v2,...]
 # this is so that weird slang and compositions are replaced by common words, for which pretrained embeddings exist
 vocab_replacement_file="/home/nik/uoa/msc-thesis/dataset/glove/missing_words.txt"
@@ -45,8 +43,14 @@ vocab_replacement_file="/home/nik/uoa/msc-thesis/dataset/glove/missing_words.txt
 
 # recognizable formats to automatically parse
 avail_formats = ["coco", "flickr"]
+keyvals = init_config(init_file, "captions")
 
+for key in keyvals:
+    exec("%s=%s" % (key, keyvals[key]))
+print("Successfully initialized from file %s" % init_file)
 
+#caption_files, formats, vocabulary_file, can_load, vocab_replacement_file = \
+# make generic configuration reader
 
 def replace_problematic_words(toklist, replacements):
 
@@ -60,7 +64,7 @@ def replace_problematic_words(toklist, replacements):
 def read_file(filename, format):
     print("Reading file ",filename)
     img_captions = None
-    if not os.path.exists(filename + ".per_image.json") or ( not canLoad ):
+    if not os.path.exists(filename + ".per_image.json") or ( not can_load_processed ):
         # read Coco caption data
         if format == "coco":
             print("Reading %s file." % format)
@@ -149,7 +153,6 @@ def prepro_captions(imgs_json):
                 imgs_json[i]['processed_tokens'][t] = txt
 
 
-
 def build_vocab(imgs):
     count_thr = word_count_thresh
 
@@ -205,6 +208,9 @@ def build_vocab(imgs):
         img['final_captions'] = []
         for txt in img['processed_tokens']:
             caption = [w if counts.get(w, 0) > count_thr else 'UNK' for w in txt]
+            if caption_max_length is not None and len(caption) > caption_max_length:
+                print("Limiting caption of size %d " % len(caption),caption," to ",caption[0:caption_max_length])
+                caption = caption[0:caption_max_length]
             img['final_captions'].append(caption)
 
     return vocab
@@ -238,7 +244,7 @@ def main():
 
     image_jsons = []
     for i,c in enumerate(caption_files):
-        image_jsons.append(read_file(c,formats[i]))
+        image_jsons.append(read_file(c, caption_file_formats[i]))
     for i,c in enumerate(image_jsons):
         print('Processing tokens of %s.' % (caption_files[i]))
         prepro_captions(c)
@@ -248,7 +254,7 @@ def main():
 
 
     # if train, build vocabulary
-    if train_mode:
+    if vocabulary_file is None:
         img_json = []
         for obj in image_jsons:
             img_json.extend(obj)
