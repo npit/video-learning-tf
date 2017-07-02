@@ -1,9 +1,8 @@
-import json, string,  os
+import json, string, os, sys
 from utils_ import  init_config
 
 
-caption_max_length = 16
-word_count_thresh = 5
+
 
 # todo: add this as another mode is serialize?
 # produce a frames list file out of all train, val images, as in act. rec. , associate each path with .. what? label to unique caption?
@@ -26,6 +25,10 @@ word_count_thresh = 5
 # study karpathy imgdesc papers
 
 init_file = "config.ini"
+if len(sys.argv) > 1:
+    init_file = sys.argv[1]
+print("Using initialization file : ",init_file)
+
 #########################
 # settable parameters
 # caption files to process
@@ -39,6 +42,8 @@ can_load_processed = False
 # replacement file: a file containing w, [v1,v2,..]. Each occurence of w in a caption will be replaced by v1,v2,...]
 # this is so that weird slang and compositions are replaced by common words, for which pretrained embeddings exist
 vocab_replacement_file="/home/nik/uoa/msc-thesis/dataset/glove/missing_words.txt"
+caption_max_length = 16
+word_count_thresh = 5
 ########################
 
 # recognizable formats to automatically parse

@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 from utils_ import *
 from process_annotations import read_vocabulary
 
@@ -11,6 +12,10 @@ vocabulary_file = None
 embeddings_file_type = "glove"
 embeddings_file = "/path/to/embeddings"
 
+if len(sys.argv) > 1:
+    init_file = sys.argv[1]
+print("Using initialization file : ",init_file)
+
 keyvals = init_config(init_file, "captions")
 
 for key in keyvals:
@@ -19,8 +24,6 @@ print("Successfully initialized from file %s" % init_file)
 
 vocab = read_vocabulary(vocabulary_file)
 
-omit_count = 0
-total_count = 0
 if embeddings_file_type == "glove":
     embeddings = {}
     embedding_minmax = [10000, -10000]
