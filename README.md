@@ -35,13 +35,15 @@ The generated files for an input of `data.train` include
 - `data.train.tfrecord`: the tfrecord serialization, if `do_serialize` is enabled
 - `data.train.tfrecord.size`: metadata containing the number of items, the number of frames per video and the number of clips of video, for a `.tfrecord` file.
 
-## Workflows
+## Workflows `run_task.py`
 Available workflows are defined in `defs.workflows` and explained below.
 ### Activity recognition 
 The activity recognition workflows classify videos to a predifined number of classes. It can be instantiated by the following two workflows.
-#### Single-frame 
-The single-frame workflow uses a Alexnet DCNN to classify each video frame individually. Video-level predictions are produced by pooling the predicted label of each video frame using an aggregation method defined in `defs.pooling`.
-#### LSTM
+#### Activity recognition/Single-frame 
+The single-frame workflow uses an Alexnet DCNN to classify each video frame individually. Video-level predictions are produced by pooling the predicted label of each video frame using an aggregation method defined in `defs.pooling`.
+#### Activity recognition/LSTM
 The lstm workflow uses an LSTM to classify a video taking into account the temporal dynamics across the video frames. Per-frame predictions are pooled similarly to the single-frame case.
 ### Image description
 The image description workflow produces captions for a given input image. 
+During training, an (image,caption) tuple is suppled to the workflow. The image is encoded into a feature vector using an Alexnet DCNN and each word in the caption is encoded to a vector using an embedding matrix and a vocabulary pre-computed on the training data. The image vector is then duplicated to the number of words in the caption and concatenated to the embedding of each word. The merged vectors are fed into an LSTM, the outputs of which are passed through a linear prediction layer. The latter produces logits vector on the vocabulary, from which we sample the most probable predicted caption, according to strategies defined in `defs.caption_search`.
+During validation, the input image is encoded and merged to a special Beginning-Of-Sequence (BOS) character. The output of each step is fed as input to the next, until an End-Of-Sequence character is generated, or we reach a maximum caption length.
