@@ -101,7 +101,7 @@ class LRCN:
         # configure learning rate
         base_lr = tf.constant(settings.base_lr, tf.float32)
         decay_params = settings.lr_decay
-        global_step = tf.Variable(0, tf.int32)
+        global_step = tf.Variable(0, dtype = tf.int32, trainable=False)
         if settings.lr_decay is not None:
             self.current_lr = self.get_current_lr(settings.base_lr, global_step, decay_params)
         else:
@@ -111,7 +111,6 @@ class LRCN:
         if settings.lr_mult is not None:
             with tf.name_scope("two_tier_optimizer"):
                 # lr decay
-
 
                 # split tensors to slow and fast learning
                 regular_vars, modified_vars  = [], []
@@ -123,23 +122,54 @@ class LRCN:
                     modified_vars.extend(self.lstm_model.train_modified)
                 self.logger.info("Setting up two-tier lr training, with modified layers: %s" % str(modified_vars))
                 # setup the two optimizers
-                if settings.optimizer == defs.optim.sgd:
+                if settings.clip_grads is None:
+                    if settings.optimizer == defs.optim.sgd:
 
-                    trainer_base = tf.train.GradientDescentOptimizer(self.current_lr,name="sgd_base")\
-                        .minimize(self.loss,var_list=regular_vars, global_step=global_step)
-                    modified_lr = self.current_lr * settings.lr_mult
-                    trainer_modified = tf.train.GradientDescentOptimizer(modified_lr,name="sgd_mod")\
-                        .minimize(self.loss,var_list=modified_vars, global_step=global_step)
+                        trainer_base = tf.train.GradientDescentOptimizer(self.current_lr,name="sgd_base")\
+                            .minimize(self.loss,var_list=regular_vars)
+                        modified_lr = self.current_lr * settings.lr_mult
+                        trainer_modified = tf.train.GradientDescentOptimizer(modified_lr,name="sgd_mod")\
+                            .minimize(self.loss,var_list=modified_vars, global_step=global_step)
+                    else:
+                        error("Undefined optimizer %s" % settings.optimizer)
                 else:
-                    error("Undefined optimizer %s" % settings.optimizer)
+                    # train with gradient clipping
+                    clipmin, clipmax = settings.clip_grads
+                    if settings.optimizer == defs.optim.sgd:
+                        opt = tf.train.GradientDescentOptimizer(self.current_lr,name="sgd_base")
+                        grads = opt.compute_gradients(self.loss, var_list=regular_vars)
+                        clipped_grads = [ (tf.clip_by_value(grad, clipmin, clipmax) , var) for grad, var in grads]
+                        trainer_base = opt.apply_gradients(clipped_grads)
 
+                        modified_lr = self.current_lr * settings.lr_mult
+                        opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
+                        grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars, global_step=global_step)
+                        clipped_grads_mod = [ (tf.clip_by_value(grad_mod, clipmin, clipmax) , var_mod) for grad_mod, var_mod in grads_mod]
+                        trainer_modified = opt.apply_gradients(clipped_grads_mod)
+                    else:
+                        error("Undefined optimizer %s" % settings.optimizer)
                 self.optimizer  = tf.group(trainer_base, trainer_modified)
         else:
+
             # single lr for all
             self.logger.info("Setting up training with a global learning rate.")
-            if settings.optimizer == defs.optim.sgd:
-                with tf.name_scope("optimizer"):
-                    self.optimizer = tf.train.GradientDescentOptimizer(self.current_lr).minimize(self.loss, global_step=global_step)
+            if settings.clip_grads is None:
+
+                if settings.optimizer == defs.optim.sgd:
+                    with tf.name_scope("optimizer"):
+                        self.optimizer = tf.train.GradientDescentOptimizer(self.current_lr).minimize(self.loss, global_step=global_step)
+                else:
+                    error("Undefined optimizer %s" % settings.optimizer)
+            else:
+                clipmin, clipmax = settings.clip_grads
+                if settings.optimizer == defs.optim.sgd:
+                    with tf.name_scope("optimizer"):
+                        opt = tf.train.GradientDescentOptimizer(self.current_lr)
+                        grads = opt.compute_gradients(self.loss, global_step=global_step)
+                        clipped_grads = [(tf.clip_by_value(grad,  clipmin, clipmax), var) for grad, var in grads]
+                        self.optimizer = opt.apply_gradients(clipped_grads)
+                else:
+                    error("Undefined optimizer %s" % settings.optimizer)
 
         # accuracies
         with tf.name_scope('training_accuracy'):
@@ -337,7 +367,9 @@ class LRCN:
 
     def create_videodesc(self, settings, dataset):
         # http://www.cs.utexas.edu/users/ml/papers/venugopalan.naacl15.pdf does the obvious, simple impl: video to 1 vector by pooling, then lstm like image
+        # get video frames. pool frames to a single video vector, carry on as image description.
         pass
+
     # validation accuracy computation
     def process_validation_logits(self, logits, dataset, labels):
         # processing for image description
