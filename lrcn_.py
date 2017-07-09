@@ -89,8 +89,8 @@ class LRCN:
     # training ops
     def create_training(self, settings, summaries):
         # configure loss
-        self.logits = print_tensor(self.logits, "training: logits : ")
-        # self.inputLabels = print_tensor(self.inputLabels, "training: labels : ")
+        self.logits = print_tensor(self.logits, "training: logits : ", settings.logging_level)
+        # self.inputLabels = print_tensor(self.inputLabels, "training: labels : ",settings.logging_level)
         with tf.name_scope("cross_entropy_loss"):
             loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
             with tf.name_scope('total'):
@@ -272,11 +272,11 @@ class LRCN:
             # set up placeholders
 
             self.words_per_image = tf.placeholder(tf.int32,shape=(None), name="words_per_image")
-            # self.words_per_image = print_tensor(self.words_per_image, "words per image tensor:")
+            # self.words_per_image = print_tensor(self.words_per_image, "words per image tensor:",settings.logging_level)
 
             self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes ], name="input_labels")
             labels = tf.identity(self.inputLabels)
-            labels = print_tensor(labels,"input labels")
+            labels = print_tensor(labels,"input labels",settings.logging_level)
             self.word_embeddings = tf.placeholder(tf.float32,shape=(None,dataset.embedding_matrix.shape[1]), name="word_embeddings")
 
             self.logger.debug("input labels : [%s]" % labels)
@@ -287,7 +287,7 @@ class LRCN:
             self.inputData, encodedFrames = self.dcnn_model.get_io()
             self.logger.debug("dcnn input : [%s]" % self.inputData.shape)
             self.logger.debug("dcnn output encodings: [%s]" % encodedFrames.shape)
-            encodedFrames = print_tensor(encodedFrames, "encoded frames")
+            encodedFrames = print_tensor(encodedFrames, "encoded frames",settings.logging_level)
 
             # if we feed the image into the state, we have to reshape the encoded vector to the state dim
             # this follows the neuraltalk2 architecture
@@ -299,17 +299,17 @@ class LRCN:
             if settings.do_training:
                 # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
                 encodedFrames = tf.tile(encodedFrames, [1, dataset.num_frames_per_clip + 1])
-                encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames")
+                encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames",settings.logging_level)
                 self.logger.debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
                 encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
-                encodedFrames = print_tensor(encodedFrames, "restored frames")
+                encodedFrames = print_tensor(encodedFrames, "restored frames",settings.logging_level)
                 self.logger.debug("restored : [%s]" % encodedFrames.shape)
 
 
             # horizontal concat the images to the words
             frames_words = tf.concat([encodedFrames, self.word_embeddings],axis=1)
             self.logger.debug("frames concat words : [%s]" % frames_words.shape)
-            frames_words = print_tensor(frames_words,"frames concat words ")
+            frames_words = print_tensor(frames_words,"frames concat words ",settings.logging_level)
 
             # feed to lstm
             self.lstm_model = lstm.lstm()
@@ -323,42 +323,42 @@ class LRCN:
 
             # remove the tensor rows where no ground truth caption is present
             self.logger.debug("logits : [%s]" % self.logits.shape)
-            self.logits = print_tensor(self.logits ,"logits to process")
+            self.logits = print_tensor(self.logits ,"logits to process",settings.logging_level)
             # split the logits to the chunks in the words_per_image. First append the number of rows left to complete
             # the sequence length, so as to subsequently tf.split the tensor
 
             if settings.do_training:
                 # get the number of useless logits per batch item
                 num_useless = dataset.num_frames_per_clip - self.words_per_image
-                num_useless = print_tensor(num_useless, "num useless")
+                num_useless = print_tensor(num_useless, "num useless",settings.logging_level)
                 wpi = tf.identity(self.words_per_image)
                 wpi = wpi + 1
-                wpi = print_tensor(wpi , "wpi plus EOS logits postproc")
+                wpi = print_tensor(wpi , "wpi plus EOS logits postproc",settings.logging_level)
                 # split the logits in [p1,u1,p2,u2,...], where ni,ui the number of predictions and useless output per item
                 chunks_sizes = tf.stack([wpi, num_useless])
-                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes concatted")
+                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes concatted",settings.logging_level)
 
                 chunks_sizes = tf.transpose(chunks_sizes)
-                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes transposed")
+                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes transposed",settings.logging_level)
 
                 chunks_sizes = tf.reshape(chunks_sizes,shape=[-1])
                 chunks_sizes = tf.cast(chunks_sizes, tf.int32)
-                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes ")
+                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes ",settings.logging_level)
 
 
 
                 bwi = tf.identity(self.binary_word_idx)
-                bwi = print_tensor(bwi,"binary word index to keep")
+                bwi = print_tensor(bwi,"binary word index to keep",settings.logging_level)
                 self.logits= tf.gather(self.logits, bwi)
 
                 # static_batch_size = dataset.get_batch_size()
                 # logit_chunks = tf.split(self.logits, chunks_sizes, num = static_batch_size * 2,  axis=0, name="caption_split")
-                # logit_chunks = print_tensor(logit_chunks, "logits list")
+                # logit_chunks = print_tensor(logit_chunks, "logits list",settings.logging_level)
                 # drop the useless ones; this pre-supposes the obvious that each item has at least one caption word
-                self.logits = print_tensor(self.logits, "filtered logits list")
+                self.logits = print_tensor(self.logits, "filtered logits list",settings.logging_level)
                 # re-merge the tensor list into a tensor
                 self.logits = tf.concat(self.logits, axis=0)
-                self.logits = print_tensor(self.logits,"final filtered logits")
+                self.logits = print_tensor(self.logits,"final filtered logits",settings.logging_level)
                 self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
             else:
                 # for validation, just return the logits and we'll process them on the driver

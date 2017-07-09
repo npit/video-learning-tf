@@ -327,8 +327,7 @@ def get_feed_dict(lrcn, settings, images, ground_truth):
 # train the network
 def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     settings.logger.info("Starting train/test")
-    start_time = time.time()
-    timings = []
+    run_batch_count = 0
 
     for epochIdx in range(dataset.epoch_index, dataset.epochs):
         dataset.set_or_swap_phase(defs.phase.train)
@@ -337,7 +336,8 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             images, ground_truth = dataset.read_next_batch()
             fdict, num_labels = get_feed_dict(lrcn, settings, images, ground_truth)
             dataset.print_iter_info( len(images) , num_labels)
-
+            # count batch iterations
+            run_batch_count = run_batch_count + 1
             summaries_train, batch_loss, learning_rate, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.optimizer],feed_dict=fdict)
 
@@ -350,17 +350,18 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
                 test_ran = test(dataset, lrcn, settings, sess, tboard_writer, summaries)
                 if test_ran:
                     dataset.set_or_swap_phase(defs.phase.train)
-
-        dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
-        # save a checkpoint every epoch
-        settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_epoch_step()),
-                          global_step=dataset.get_global_step())
-        dataset.epoch_index = dataset.epoch_index + 1
-        timings.append(time.time() - start_time)
+        # if an epoch was completed (and not just loaded, do saving and logging)
+        if run_batch_count > 0:
+            dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
+            # save a checkpoint every epoch
+            settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_epoch_step()),
+                              global_step=dataset.get_global_step())
+            dataset.epoch_index = dataset.epoch_index + 1
+            # timings.append(time.time() - start_time)
+        # reset phase
         dataset.reset_phase(defs.phase.train)
-        settings.logger.info("Time elapsed for epoch %d : %s ." % (1+epochIdx, elapsed_str(timings[epochIdx])))
 
-    settings.logger.info("Time elapsed for %d epochs : %s ." % (settings.epochs, elapsed_str(sum(timings))))
+
 
 # test the network on validation data
 def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
