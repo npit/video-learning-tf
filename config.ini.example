@@ -39,12 +39,15 @@ optimizer = defs.optim.sgd
 base_lr= 0.001
 lr_mult = 2
 lr_decay = ( defs.decay.exp, 1000, 0.96)
-dropout_keep_prob = 0.5
+clip_grads = None
+
 
 # validation settings
 do_validation = False
 validation_interval = 1
 batch_size_val = 88
+
+dropout_keep_prob = 0.5
 
 # logging
 logging_level = logging.DEBUG

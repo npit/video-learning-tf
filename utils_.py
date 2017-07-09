@@ -1,8 +1,6 @@
 import numpy as np
 import tensorflow as tf
-import time
-import configparser
-import os
+import time, configparser, os, logging
 
 # init from config file
 def init_config(init_file, tag_to_read):
@@ -68,9 +66,12 @@ def sublist(list, sublist_length):
     return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
 
 # shortcut for tensor printing
-def print_tensor(tensor, message):
+def print_tensor(tensor, message, log_level):
+    if not log_level == logging.DEBUG:
+        return tensor
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
     return tens
+
 
 def read_file_lines(filename):
     with open(filename, "r") as ff:

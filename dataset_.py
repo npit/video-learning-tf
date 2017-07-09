@@ -99,25 +99,27 @@ class Dataset:
         if self.do_training:
             with open(self.input_source_files[defs.train_idx], 'r') as f:
                 for path_label_str in f:
-                    item_path, item_label = path_label_str.split()
+                    path_labels = path_label_str.split()
+                    item_path = path_labels[0]
+                    item_labels = path_labels[1:]
                     if self.path_prepend_folder is not None:
                         item_path = os.path.join(self.path_prepend_folder, item_path)
                     self.frame_paths[defs.train_idx].append(item_path)
-                    self.frame_classes[defs.train_idx].append(item_label)
-            self.logger.info("Done reading image and label data %d frames for %s" % (
-                len(self.frame_paths[defs.train_idx]), defs.phase.train,
-            ))
+                    self.frame_classes[defs.train_idx].append(item_labels)
+            self.logger.info("Done reading %d frames image/label data for %s" %
+                             (len(self.frame_paths[defs.train_idx]), defs.phase.train))
 
         if self.do_validation:
             with open(self.input_source_files[defs.val_idx], 'r') as f:
                 for path_label_str in f:
-                    item_path, item_label = path_label_str.split()
+                    path_labels = path_label_str.split()
+                    item_path = path_labels[0]
+                    item_labels = path_labels[1:]
                     self.frame_paths[defs.val_idx].append(item_path)
-                    self.frame_classes[defs.val_idx].append(item_label)
+                    self.frame_classes[defs.val_idx].append(item_labels)
 
-            self.logger.info("Done reading image and label data %d frames for %s" % (
-                len(self.frame_paths[defs.val_idx]), defs.phase.val,
-            ))
+            self.logger.info("Done reading %d frames image/label data for %s" %
+                             (len(self.frame_paths[defs.val_idx]), defs.phase.val))
 
     # display image
     def display_image(self,image,label=None):
@@ -136,7 +138,7 @@ class Dataset:
         # images_per_iteration :
         images = []
         labels  = []
-        for _ in range(images_per_iteration):
+        for imidx in range(images_per_iteration):
             try:
                 string_record = next(iterator)
                 example = tf.train.Example()
@@ -166,25 +168,45 @@ class Dataset:
                 # it should be the shape of the stored image instead, for generic use
                 image = img_1d.reshape((self.raw_image_shape[0], self.raw_image_shape[1], self.raw_image_shape[2]))
 
-                image = self.process_image(image)
-                images.append(image)
-                labels.append(label)
+
+
 
             except StopIteration:
-                break
+                if imidx < images_per_iteration:
+                    self.logger.error('Tfrecord unexpected EOF, loading from scratch')
+                    image, label = self.manually_read_image(imidx)
+
+
             except Exception as ex:
                 self.logger.error('Exception at reading image, loading from scratch')
-                self.logger.error(ex)
-                error("Error reading tfrecord image.")
+                image,label = self.manually_read_image(imidx)
+
+            image = self.process_image(image)
+            images.append(image)
+            labels.append(label)
+
 
         return images, labels
 
+    # fallback when tfrecord image reads fail
+    def manually_read_image(self, idx_in_batch):
+        global_image_index = self.batch_index * self.batch_size + idx_in_batch
+        phase = defs.train_idx if self.phase == defs.phase.train else defs.val_idx
+        impath = self.frame_paths[phase][global_image_index]
+        self.logger.info("Attempting to manually read global image index %d : %s" % (global_image_index, impath))
+        image = self.read_image(impath)
+        image = imresize(image, self.raw_image_shape)
+        label = self.frame_classes[phase][global_image_index]
+        label = list(map(int,label))
+        return image,label
+
     # set dataset phase, but keep track of potential current
     def set_or_swap_phase(self, phase):
-        # if the network is switching phases, store the index
-        # to continue later
+        # if phase already set, done
         if self.phase == phase:
             return
+        # if the network is switching phases, store the index
+        # to continue later
         if self.phase is not None:
             self.logger.info("Suspending phase [%s] @ batch [%d]" % (self.phase, self.batch_index))
             if self.phase == defs.phase.train:
@@ -530,9 +552,16 @@ class Dataset:
 
             # initialize tfrecord, check file consistency
             if self.do_training:
-                self.input_source_files[defs.train_idx] = sett.input[defs.train_idx] + ".tfrecord"
+                self.input_source_files[defs.train_idx] = sett.input[defs.train_idx]
+                if not os.path.exists(self.input_source_files[defs.train_idx]):
+                    error("Input paths file does not exist: %s" % self.input_source_files[defs.train_idx])
+                # read frames and classes
+                self.read_frames_metadata()
+                # set tfrecord
+                self.input_source_files[defs.train_idx] =  self.input_source_files[defs.train_idx] + ".tfrecord"
                 if not os.path.exists(self.input_source_files[defs.train_idx]):
                     error("Input file does not exist: %s" % self.input_source_files[defs.train_idx])
+
                 self.reset_iterator(defs.phase.train)
                 # count or get number of items
                 self.get_input_data_count(defs.phase.train)

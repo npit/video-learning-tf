@@ -25,7 +25,7 @@ class lstm(Trainable):
             logger.debug("LSTM input : %s" % str(inputTensor.shape))
 
             # get LSTM rawoutput
-            output = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger)
+            output = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger,settings.logging_level)
             logger.debug("LSTM raw output : %s" % str(output.shape))
 
             if frame_pooling_type == defs.pooling.last:
@@ -148,7 +148,7 @@ class lstm(Trainable):
                 #
                 # data_io = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
                 # logger.debug("LSTM final output : %s" % str(data_io.shape))
-                # data_io = print_tensor(data_io, "lstm fc output")
+                # data_io = print_tensor(data_io, "lstm fc output",settings.logging_level)
                 data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, 0, logger, fc_out_w, fc_out_b, output, defs.caption_search.max)
                 image_vector = inputTensor[:,0:image_vector_dim]
 
@@ -248,14 +248,14 @@ class lstm(Trainable):
             #     inputTensor = output
 
             # get LSTM rawoutput
-            output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger, num_words_caption)
-            output = print_tensor(output, "lstm raw output:")
+            output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger,settings.logging_level, num_words_caption)
+            output = print_tensor(output, "lstm raw output:",settings.logging_level)
             logger.debug("LSTM raw output : %s" % str(output.shape))
 
             # reshape to num_batches * sequence_len x num_hidden
             output = tf.reshape(output, [-1, num_hidden])
             logger.debug("LSTM recombined output : %s" % str(output.shape))
-            output = print_tensor(output, "lstm recombined output")
+            output = print_tensor(output, "lstm recombined output",settings.logging_level)
 
             # add dropout
             output = tf.nn.dropout(output, keep_prob=dropout_keep_prob, name="lstm_dropout")
@@ -270,20 +270,21 @@ class lstm(Trainable):
             fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
             self.output = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
             logger.debug("LSTM final output : %s" % str(self.output.shape))
-            self.output = print_tensor(self.output, "lstm fc output")
+            self.output = print_tensor(self.output, "lstm fc output",settings.logging_level)
 
             fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
                        if f.name.startswith(namescope)]
             self.train_modified.extend(fc_vars)
 
     ## dynamic rnn case, where input is a single tensor
-    def rnn_dynamic(self,inputTensor, cell, sequence_len, num_hidden, logger, elements_per_sequence = None):
+    def rnn_dynamic(self,inputTensor, cell, sequence_len, num_hidden, logger, logging_level, elements_per_sequence = None):
         # data vector dimension
         input_dim = int(inputTensor.shape[-1])
 
         # reshape input tensor from shape [ num_videos * num_frames_per_vid , input_dim ] to
         # [ num_videos , num_frames_per_vid , input_dim ]
         inputTensor = tf.reshape(inputTensor, (-1, sequence_len, input_dim), name="lstm_input_reshape")
+        inputTensor = print_tensor(inputTensor, "input reshaped",logging_level)
         logger.debug("reshaped inputTensor %s" % str(inputTensor.shape))
 
         # get the batch size during run. Make zero state to 2 - tuple of [batch_size, num_hidden]
