@@ -143,14 +143,13 @@ class LRCN:
 
                         modified_lr = self.current_lr * settings.lr_mult
                         opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
-                        grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars, global_step=global_step)
+                        grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
                         clipped_grads_mod = [ (tf.clip_by_value(grad_mod, clipmin, clipmax) , var_mod) for grad_mod, var_mod in grads_mod]
-                        trainer_modified = opt.apply_gradients(clipped_grads_mod)
+                        trainer_modified = opt.apply_gradients(clipped_grads_mod, global_step=global_step)
                     else:
                         error("Undefined optimizer %s" % settings.optimizer)
                 self.optimizer  = tf.group(trainer_base, trainer_modified)
         else:
-
             # single lr for all
             self.logger.info("Setting up training with a global learning rate.")
             if settings.clip_grads is None:
@@ -165,9 +164,9 @@ class LRCN:
                 if settings.optimizer == defs.optim.sgd:
                     with tf.name_scope("optimizer"):
                         opt = tf.train.GradientDescentOptimizer(self.current_lr)
-                        grads = opt.compute_gradients(self.loss, global_step=global_step)
+                        grads = opt.compute_gradients(self.loss)
                         clipped_grads = [(tf.clip_by_value(grad,  clipmin, clipmax), var) for grad, var in grads]
-                        self.optimizer = opt.apply_gradients(clipped_grads)
+                        self.optimizer = opt.apply_gradients(clipped_grads, global_step=global_step)
                 else:
                     error("Undefined optimizer %s" % settings.optimizer)
 
@@ -260,7 +259,7 @@ class LRCN:
         # for two types of evaluating an lstm cell
         # https://stackoverflow.com/questions/37252977/whats-the-difference-between-two-implementations-of-rnn-in-tensorflow
 
-        self.logger.warning("ADD Grad clipping")
+
 
         # use the pretrained embedding like this
         # https://stackoverflow.com/questions/35687678/using-a-pre-trained-word-embedding-word2vec-or-glove-in-tensorflow?rq=1

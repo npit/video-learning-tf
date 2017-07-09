@@ -330,7 +330,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     start_time = time.time()
     timings = []
 
-    for epochIdx in range(dataset.epochs):
+    for epochIdx in range(dataset.epoch_index, dataset.epochs):
         dataset.set_or_swap_phase(defs.phase.train)
         while dataset.loop():
             # read  batch

@@ -284,6 +284,7 @@ class lstm(Trainable):
         # reshape input tensor from shape [ num_videos * num_frames_per_vid , input_dim ] to
         # [ num_videos , num_frames_per_vid , input_dim ]
         inputTensor = tf.reshape(inputTensor, (-1, sequence_len, input_dim), name="lstm_input_reshape")
+        inputTensor = print_tensor(inputTensor, "input reshaped")
         logger.debug("reshaped inputTensor %s" % str(inputTensor.shape))
 
         # get the batch size during run. Make zero state to 2 - tuple of [batch_size, num_hidden]
