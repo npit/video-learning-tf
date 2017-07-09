@@ -25,7 +25,7 @@ class lstm(Trainable):
             logger.debug("LSTM input : %s" % str(inputTensor.shape))
 
             # get LSTM rawoutput
-            output = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger)
+            output = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger,settings.logging_level)
             logger.debug("LSTM raw output : %s" % str(output.shape))
 
             if frame_pooling_type == defs.pooling.last:
@@ -248,7 +248,7 @@ class lstm(Trainable):
             #     inputTensor = output
 
             # get LSTM rawoutput
-            output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger, num_words_caption)
+            output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger,settings.logging_level, num_words_caption)
             output = print_tensor(output, "lstm raw output:",settings.logging_level)
             logger.debug("LSTM raw output : %s" % str(output.shape))
 
@@ -277,14 +277,14 @@ class lstm(Trainable):
             self.train_modified.extend(fc_vars)
 
     ## dynamic rnn case, where input is a single tensor
-    def rnn_dynamic(self,inputTensor, cell, sequence_len, num_hidden, logger, elements_per_sequence = None):
+    def rnn_dynamic(self,inputTensor, cell, sequence_len, num_hidden, logger, logging_level, elements_per_sequence = None):
         # data vector dimension
         input_dim = int(inputTensor.shape[-1])
 
         # reshape input tensor from shape [ num_videos * num_frames_per_vid , input_dim ] to
         # [ num_videos , num_frames_per_vid , input_dim ]
         inputTensor = tf.reshape(inputTensor, (-1, sequence_len, input_dim), name="lstm_input_reshape")
-        inputTensor = print_tensor(inputTensor, "input reshaped",settings.logging_level)
+        inputTensor = print_tensor(inputTensor, "input reshaped",logging_level)
         logger.debug("reshaped inputTensor %s" % str(inputTensor.shape))
 
         # get the batch size during run. Make zero state to 2 - tuple of [batch_size, num_hidden]

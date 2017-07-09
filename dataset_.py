@@ -193,7 +193,7 @@ class Dataset:
         global_image_index = self.batch_index * self.batch_size + idx_in_batch
         phase = defs.train_idx if self.phase == defs.phase.train else defs.val_idx
         impath = self.frame_paths[phase][global_image_index]
-        self.logger.info("Attempting to manually read global image index %d" % global_image_index)
+        self.logger.info("Attempting to manually read global image index %d : %s" % (global_image_index, impath))
         image = self.read_image(impath)
         image = imresize(image, self.raw_image_shape)
         label = self.frame_classes[phase][global_image_index]

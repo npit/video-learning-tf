@@ -357,7 +357,6 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_epoch_step()),
                               global_step=dataset.get_global_step())
             dataset.epoch_index = dataset.epoch_index + 1
-            # timings.append(time.time() - start_time)
         # reset phase
         dataset.reset_phase(defs.phase.train)
 
