@@ -126,7 +126,7 @@ class lstm(Trainable):
                 logger.debug("LSTM iteration #%d input tensor : %s" % (0, inputTensor.shape))
 
                 initial_state = tuple(tf.zeros([1,num_hidden], tf.float32) for _ in range(2))
-                output, state = cell(inputTensor, initial_state)
+                output, state = cell(inputTensor, initial_state, scope="rnn/basic_lstm_cell")
                 logger.debug("LSTM iteration #%d output : %s" % (0, output.shape))
                 logger.debug("LSTM iteration #%d state : %s" % (0, [str(x.shape) for x in state]))
 
@@ -152,7 +152,7 @@ class lstm(Trainable):
                 data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, 0, logger, fc_out_w, fc_out_b, output, defs.caption_search.max)
                 image_vector = inputTensor[:,0:image_vector_dim]
 
-                predicted_words = tf.Variable(  np.zeros([0], np.int64) ,tf.float32)
+                predicted_words = tf.Variable(  np.zeros([0], np.int64) ,tf.float32, name="predicted_words")
                 predicted_words = tf.concat([predicted_words, word_index],axis=0)
                 tf.get_variable_scope().reuse_variables()
                 # TODO : see if this step-by-step method produces equivalent results with this increasing cap input
@@ -163,7 +163,7 @@ class lstm(Trainable):
                     logger.debug("weights at step #%d  is : %s" % (step, fc_out_w))
                     logger.debug("Biases at step #%d  is : %s" % (step, fc_out_b))
                     tf.get_variable_scope().reuse_variables()
-                    data_io, state = cell(input_vec, initial_state)
+                    data_io, state = cell(input_vec, initial_state, scope="rnn/basic_lstm_cell")
                     initial_state = state
                     logger.debug("LSTM iteration #%d state : %s" % (step, [str(x.shape) for x in state]))
                     data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, step, logger, fc_out_w, fc_out_b, data_io, defs.caption_search.max)
@@ -210,71 +210,74 @@ class lstm(Trainable):
                 cell_vars = [v for v in tf.global_variables()
                              if v.name.startswith(varscope.name)]
                 self.train_modified.extend(cell_vars)
-            logger.debug("LSTM input : %s" % str(inputTensor.shape))
+                logger.debug("LSTM input : %s" % str(inputTensor.shape))
 
-            # check https://github.com/mosessoh/CNN-LSTM-Caption-Generator/blob/master/model.py
-            # link is a simple image+word -> ... ?
+                # check https://github.com/mosessoh/CNN-LSTM-Caption-Generator/blob/master/model.py
+                # link is a simple image+word -> ... ?
 
-            # neural talk trains like:
-            # RNN training. The RNN is trained to combine a word (xt),
-            # the previous context (ht−1) to predict the next word (yt).
-            # We condition the RNN’s predictions on the image information
-            # (bv) via bias interactions on the first step. The training
-            # proceeds as follows (refer to Figure 4): We set h0 = ~0, x1 to
-            # a special START vector, and the desired label y1 as the first
-            # word in the sequence. Analogously, we set x2 to the word
-            # vector of the first word and expect the network to predict
-            # the second word, etc. Finally, on the last step when xT represents
-            # the last word, the target label is set to a special END
-            # token. The cost function is to maximize the log probability
-            # assigned to the target labels (i.e. Softmax classifier).
+                # neural talk trains like:
+                # RNN training. The RNN is trained to combine a word (xt),
+                # the previous context (ht−1) to predict the next word (yt).
+                # We condition the RNN’s predictions on the image information
+                # (bv) via bias interactions on the first step. The training
+                # proceeds as follows (refer to Figure 4): We set h0 = ~0, x1 to
+                # a special START vector, and the desired label y1 as the first
+                # word in the sequence. Analogously, we set x2 to the word
+                # vector of the first word and expect the network to predict
+                # the second word, etc. Finally, on the last step when xT represents
+                # the last word, the target label is set to a special END
+                # token. The cost function is to maximize the log probability
+                # assigned to the target labels (i.e. Softmax classifier).
 
-            # so the input is the desired caption, shifted to the right once, and a BOS inserted at the start
-            # the desired response is the caption, followed by an EOS
+                # so the input is the desired caption, shifted to the right once, and a BOS inserted at the start
+                # the desired response is the caption, followed by an EOS
 
-            # neural talk plugs in the image just as a state BIAS.
-            # lrcn plugs in the image at the input, ADDED to the word embedding.
-            # all should be well now.
+                # neural talk plugs in the image just as a state BIAS.
+                # lrcn plugs in the image at the input, ADDED to the word embedding.
+                # all should be well now.
 
-            # so the implementation is as usual, I guess
+                # so the implementation is as usual, I guess
 
-            # initial state should be the BOS symbol
+                # initial state should be the BOS symbol
 
 
-            # initial_state = tuple(tf.zeros([1,num_hidden], tf.float32) for _ in range(2))
-            # for _ in range(sequence_len):
-            #     output, state = cell(inputTensor, initial_state)
-            #     initial_state = state
-            #     inputTensor = output
+                # initial_state = tuple(tf.zeros([1,num_hidden], tf.float32) for _ in range(2))
+                # for _ in range(sequence_len):
+                #     output, state = cell(inputTensor, initial_state)
+                #     initial_state = state
+                #     inputTensor = output
 
-            # get LSTM rawoutput
-            output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger,settings.logging_level, num_words_caption)
-            output = print_tensor(output, "lstm raw output:",settings.logging_level)
-            logger.debug("LSTM raw output : %s" % str(output.shape))
+                # get LSTM rawoutput
+                output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger,settings.logging_level, num_words_caption)
+                output = print_tensor(output, "lstm raw output:",settings.logging_level)
+                logger.debug("LSTM raw output : %s" % str(output.shape))
 
-            # reshape to num_batches * sequence_len x num_hidden
-            output = tf.reshape(output, [-1, num_hidden])
-            logger.debug("LSTM recombined output : %s" % str(output.shape))
-            output = print_tensor(output, "lstm recombined output",settings.logging_level)
+                # reshape to num_batches * sequence_len x num_hidden
+                output = tf.reshape(output, [-1, num_hidden])
+                logger.debug("LSTM recombined output : %s" % str(output.shape))
+                output = print_tensor(output, "lstm recombined output",settings.logging_level)
 
-            # add dropout
-            output = tf.nn.dropout(output, keep_prob=dropout_keep_prob, name="lstm_dropout")
+                # add dropout
+                output = tf.nn.dropout(output, keep_prob=dropout_keep_prob, name="lstm_dropout")
 
-            # add a final fc layer to convert from num_hidden to a num_classes output
-            # layer initializations
-            fc_out__init = tf.truncated_normal((num_hidden, num_classes), stddev=0.05, name="fc_out_w_init")
-            fc_out_b_init = tf.constant(0.1, shape=(num_classes,), name="fc_out_b_init")
+                # add a final fc layer to convert from num_hidden to a num_classes output
+                # layer initializations
+                fc_out__init = tf.truncated_normal((num_hidden, num_classes), stddev=0.05, name="fc_out_w_init")
+                fc_out_b_init = tf.constant(0.1, shape=(num_classes,), name="fc_out_b_init")
 
-            # create the layers
-            fc_out_w = tf.Variable(fc_out__init, name="fc_out_w")
-            fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
-            self.output = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
-            logger.debug("LSTM final output : %s" % str(self.output.shape))
-            self.output = print_tensor(self.output, "lstm fc output",settings.logging_level)
+                # create the layers
+                fc_out_w = tf.Variable(fc_out__init, name="fc_out_w")
+                fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
+                self.output = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
+                logger.debug("LSTM final output : %s" % str(self.output.shape))
+                self.output = print_tensor(self.output, "lstm fc output",settings.logging_level)
 
-            fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
-                       if f.name.startswith(namescope)]
-            self.train_modified.extend(fc_vars)
+                fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
+                           if f.name.startswith(namescope)]
+                self.train_modified.extend(fc_vars)
+
+                # include a dummy variable, used in the validation network to enable loading
+                predicted_words = tf.Variable(np.zeros([0], np.int64), tf.float32, name="predicted_words")
 
     ## dynamic rnn case, where input is a single tensor
     def rnn_dynamic(self,inputTensor, cell, sequence_len, num_hidden, logger, logging_level, elements_per_sequence = None):
