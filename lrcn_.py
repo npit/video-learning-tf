@@ -101,7 +101,7 @@ class LRCN:
         # configure learning rate
         base_lr = tf.constant(settings.base_lr, tf.float32)
         decay_params = settings.lr_decay
-        global_step = tf.Variable(0, dtype = tf.int32, trainable=False)
+        global_step = tf.Variable(0, dtype = tf.int32, trainable=False,name="global_step")
         if settings.lr_decay is not None:
             self.current_lr = self.get_current_lr(settings.base_lr, global_step, decay_params)
         else:
