@@ -354,7 +354,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         if run_batch_count > 0:
             dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
             # save a checkpoint every epoch
-            settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.get_epoch_step()),
+            settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.batch_index),
                               global_step=dataset.get_global_step())
             dataset.epoch_index = dataset.epoch_index + 1
         # reset phase

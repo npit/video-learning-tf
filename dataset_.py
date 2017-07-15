@@ -780,10 +780,6 @@ class Dataset:
     def get_global_step(self):
         return self.epoch_index * self.batch_size_train + self.batch_index_train
 
-    # get the global step
-    def get_epoch_step(self):
-        return self.batch_size_train + self.batch_index_train
-
     # print iteration information
     def print_iter_info(self, num_images, num_labels):
         if self.phase == defs.phase.train:
