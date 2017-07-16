@@ -5,82 +5,74 @@ import tensorflow as tf
 Script to modify checkpoint files. Based on the gist: https://gist.github.com/batzner/7c24802dd9c5e15870b4b56e22135c96
 '''
 
-usage_str = 'python tensorflow_rename_variables.py --checkpoint_dir=path/to/dir/ ' \
-            '--replace_from=substr --replace_to=substr --add_prefix=abc --dry_run'
+usage_str = 'python tensorflow_rename_variables.py path/to/checkpt/ ' \
+    'layername rename target_name addprefix prefix overwrite'
 
 
-def rename(checkpoint_dir, replace_from, replace_to, add_prefix, dry_run):
-    checkpoint = tf.train.get_checkpoint_state(checkpoint_dir)
+def rename(checkpoint, layername, newname, prefix, overwrite):
+
     with tf.Session() as sess:
-        for var_name, _ in tf.contrib.framework.list_variables(checkpoint_dir):
+        for var_name, _ in tf.contrib.framework.list_variables(checkpoint):
             # Load the variable
-            var = tf.contrib.framework.load_variable(checkpoint_dir, var_name)
+            var = tf.contrib.framework.load_variable(checkpoint, var_name)
+            currname = var_name
 
-            # Set the new name
-            new_name = var_name
-            if None not in [replace_from, replace_to]:
-                new_name = new_name.replace(replace_from, replace_to)
-            if add_prefix:
-                new_name = add_prefix + new_name
+            if var_name == layername:
+                # modify it
+                if newname is not None:
+                    currname = newname
 
-            # if new_name == var_name:
-            #     continue
+                if prefix is not None:
+                    currname = prefix + currname
 
-            if dry_run:
-                print('%s would be renamed to %s.' % (var_name, new_name))
-            else:
-                if not var_name == new_name:
-                    print('Renaming %s to %s.' % (var_name, new_name))
+                # if new_name == var_name:
+                #     continue
+
+                if not overwrite:
+
+                    print('Would modify %s  => %s ' % (layername, currname))
                 else:
-                    print('Will not modify variable ' , var_name)
-                # Declare the variable
-                var = tf.Variable(var, name=new_name)
+                    print('Modifying %s  => %s ' % (layername, currname))
 
-        if not dry_run:
+            # Declare the variable
+            var = tf.Variable(var, name=currname)
+
+        if overwrite:
             # Save the variables
             saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
-            print("Saving modified model to ", checkpoint.model_checkpoint_path)
-            saver.save(sess, checkpoint.model_checkpoint_path)
+            print("Saving modified model to ", checkpoint)
+            saver.save(sess, checkpoint)
 
 
 def main(argv):
-    checkpoint_dir = None
-    replace_from = None
-    replace_to = None
-    add_prefix = None
-    dry_run = False
+
+    checkpoint = argv[0]
+    layername = argv[1]
+    newname = None
+    prefix = None
+    overwrite = False
+
 
     try:
-        opts, args = getopt.getopt(argv, 'h', ['help=', 'checkpoint_dir=', 'replace_from=',
-                                               'replace_to=', 'add_prefix=', 'dry_run'])
-    except getopt.GetoptError:
+        if "rename" in argv:
+            i = (argv.index("rename"))
+            newname = (argv[i+1])
+        if "addprefix" in argv:
+            i = (argv.index("addprefix"))
+            prefix = argv[i+1]
+        if "overwrite" in argv:
+            overwrite = True
+    except Exception:
         print(usage_str)
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt in ('-h', '--help'):
-            print(usage_str)
-            sys.exit()
-        elif opt == '--checkpoint_dir':
-            checkpoint_dir = arg
-        elif opt == '--replace_from':
-            replace_from = arg
-        elif opt == '--replace_to':
-            replace_to = arg
-        elif opt == '--add_prefix':
-            add_prefix = arg
-        elif opt == '--dry_run':
-            dry_run = True
+        exit()
 
-    if not checkpoint_dir:
-        print('Please specify a checkpoint_dir. Usage:')
-        print(usage_str)
-        sys.exit(2)
+    if layername is None:
+        print("No layer name specified")
 
-    rename(checkpoint_dir, replace_from, replace_to, add_prefix, dry_run)
+    rename(checkpoint, layername, newname, prefix, overwrite)
 
 
 if __name__ == '__main__':
-    args = ' --checkpoint_dir=/home/nik/uoa/msc-thesis/implementation/examples/test_run/checkpoints/' \
-           ' --replace_from=dogger --replace_to=doggerultra '
-    main(args.split())
+
+    main(sys.argv[1:])
