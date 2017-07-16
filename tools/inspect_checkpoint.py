@@ -5,7 +5,7 @@ import sys
 from tensorflow.python import pywrap_tensorflow
 
 
-def print_tensors_in_checkpoint_file(file_name, tensor_name, all_tensors, print_values):
+def print_tensors_in_checkpoint_file(file_name, tensor_name, print_values):
   """Prints tensors in a checkpoint file.
 
   If no `tensor_name` is provided, prints the tensor names and shapes
@@ -18,6 +18,7 @@ def print_tensors_in_checkpoint_file(file_name, tensor_name, all_tensors, print_
     tensor_name: Name of the tensor in the checkpoint file to print.
     all_tensors: Boolean indicating whether to print all tensors.
   """
+  all_tensors = True if not tensor_name else False
   count = 0
   try:
     reader = pywrap_tensorflow.NewCheckpointReader(file_name)
@@ -32,7 +33,9 @@ def print_tensors_in_checkpoint_file(file_name, tensor_name, all_tensors, print_
       print(reader.debug_string().decode("utf-8"))
     else:
       print("tensor_name: ", tensor_name)
-      print(reader.get_tensor(tensor_name))
+      if print_values:
+        print(reader.get_tensor(tensor_name))
+      count = count + 1
   except Exception as e:  # pylint: disable=broad-except
     print(str(e))
     if "corrupted compressed block contents" in str(e):
@@ -73,4 +76,4 @@ for arg in args[1:]:
 
 
 print("Checkpoint file %s, printing values: %s" % (checkpoint_path, str(print_values)))
-print_tensors_in_checkpoint_file(file_name=checkpoint_path, tensor_name=filter_tensor,all_tensors=True, print_values = print_values)
+print_tensors_in_checkpoint_file(file_name=checkpoint_path, tensor_name=filter_tensor, print_values = print_values)
