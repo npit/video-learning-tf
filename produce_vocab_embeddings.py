@@ -38,7 +38,10 @@ if embeddings_file_type == "glove":
             mx, mn = max(vector), min(vector)
             embedding_minmax[0] = embedding_minmax[0] if embedding_minmax[0] <= mn else mn
             embedding_minmax[1] = embedding_minmax[1] if embedding_minmax[0] >= mx else mx
-    embedding_dim = len(list(embeddings.keys())[0])
+    keys = list(embeddings.keys())
+    key = keys[0]
+    embedding_dim = len(embeddings[key])
+    print("Embedding dimension read :", embedding_dim)
     print("done.")
     vocab_embeddings =  dict( (w, embeddings[w]) for w in [ w for w in vocab if w in embeddings])
     missing_vocab_word_embeddings = [ w for w in vocab if w not in vocab_embeddings]
@@ -48,9 +51,13 @@ if embeddings_file_type == "glove":
         error("Embedding keys error")
 
     else:
-        for w in missing_vocab_word_embeddings:
 
-            vocab_embeddings[w] = np.random.uniform(low=embedding_minmax[0], high=embedding_minmax[1], size=(embedding_dim,))
+        for w in missing_vocab_word_embeddings:
+            arr = np.random.uniform(low=embedding_minmax[0], high=embedding_minmax[1], size=(embedding_dim,))
+            print("Producing vector for missing token: ",w," ",arr.shape)
+            vocab_embeddings[w] = arr
+
+            
     # write out
     filename = vocabulary_file + ".embeddings"
     print("Writing embeddings for vocabulary at ",filename)

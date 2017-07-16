@@ -25,3 +25,4 @@ start.sh
 examples/test_run/checkpoints/
 examples/test_run/data*
 
+test/
