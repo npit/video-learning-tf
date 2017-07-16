@@ -41,7 +41,7 @@ def rename(checkpoint, layername, newname, prefix, newvars, overwrite):
         # add new variables, if needed
         if newvars is not None:
             varname, init_val, dtype = newvars
-            print('Creating new variable: %s, %s, %s' % (init_val, varname, dtype))
+            print('Creating new variable name, value, type: %s, %s, %s' % ( varname, init_val, dtype ) )
             init_val = eval(init_val)
             dtype = eval(dtype)
             var = tf.Variable(init_val, dtype,name=varname)
