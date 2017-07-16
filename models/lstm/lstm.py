@@ -152,7 +152,7 @@ class lstm(Trainable):
                 data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, 0, logger, fc_out_w, fc_out_b, output, defs.caption_search.max)
                 image_vector = inputTensor[:,0:image_vector_dim]
 
-                predicted_words = tf.Variable(  np.zeros([0], np.int32) ,tf.float32, name="predicted_words")
+                predicted_words = tf.Variable(  np.zeros([0], np.int64) ,tf.float32, name="predicted_words")
                 predicted_words = tf.concat([predicted_words, word_index],axis=0)
                 tf.get_variable_scope().reuse_variables()
                 # TODO : see if this step-by-step method produces equivalent results with this increasing cap input
@@ -277,7 +277,7 @@ class lstm(Trainable):
                 self.train_modified.extend(fc_vars)
 
                 # include a dummy variable, used in the validation network to enable loading
-                predicted_words = tf.Variable(np.zeros([0], np.int32), tf.float32, name="predicted_words")
+                predicted_words = tf.Variable(np.zeros([0], np.int64), tf.float32, name="predicted_words")
 
     ## dynamic rnn case, where input is a single tensor
     def rnn_dynamic(self,inputTensor, cell, sequence_len, num_hidden, logger, logging_level, elements_per_sequence = None):
