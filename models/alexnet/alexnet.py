@@ -39,6 +39,8 @@ class dcnn(Trainable):
         # specify the layers
     def create(self, xdim, weightsFile, num_classes, final_layer ="prob"):
         net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
+        if final_layer is None:
+            final_layer = "prob"
         #net_data = load("bvlc_alexnet.npy").item()
         self.input = tf.placeholder(tf.float32, (None,) + xdim, name='input_frames')
 

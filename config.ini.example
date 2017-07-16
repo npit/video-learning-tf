@@ -10,7 +10,7 @@ path_prepend_folder = ""
 word_embeddings_file = "path/to/word/embeddings"
 
 # architecture settings
-lstm_input_layer = "fc7"
+frame_encoding_layer = "fc7"
 lstm_num_hidden = 256
 frame_pooling_type = defs.pooling.avg
 clip_pooling_type = defs.pooling.avg

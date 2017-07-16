@@ -32,8 +32,9 @@ def get_datetime_str():
     return time.strftime("%d%m%y_%H%M%S")
 
 # error function
-def error(msg):
-
+def error(msg, logger = None):
+    if logger:
+        logger.error(msg)
     raise Exception(msg)
 
 # onehot vector generation

@@ -47,7 +47,7 @@ class Settings:
     path_prepend_folder = None
 
     # architecture settings
-    lstm_input_layer = "fc7"
+    frame_encoding_layer = "fc7"
     lstm_num_hidden = 256
     frame_pooling_type = defs.pooling.avg
     clip_pooling_type = defs.pooling.avg
@@ -119,7 +119,7 @@ class Settings:
     def configure_logging(self):
         #tf.logging.set_verbosity(tf.logging.INFO)
         logfile = os.path.join(self.run_folder ,"log_" +  self.run_id + "_" + get_datetime_str() + ".log")
-        print("Using logfile: %s" % logfile)
+        print("Initializing logging to logfile: %s" % logfile)
         sys.stdout.flush()
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(self.logging_level)
@@ -182,8 +182,7 @@ class Settings:
             init_file_suffix = self.init_file.split(".")
             self.run_id = self.run_id + "_" + init_file_suffix[-1]
         print("Initialized run [%s] from file %s" % ( self.run_id, self.init_file))
-
-
+        sys.stdout.flush()
 
     # initialize stuff
     def initialize(self, args):
@@ -197,7 +196,8 @@ class Settings:
             error("Neither training nor validation is enabled.")
         # configure the logs
         self.configure_logging()
-
+        sys.stdout.flush(), sys.stderr.flush()
+        self.logger.info("Starting [%s] workflow." % self.workflow)
         # if not resuming, set start folder according to now()
         if  self.should_resume():
             if self.do_training:
@@ -437,7 +437,6 @@ def main():
     settings = Settings()
     settings.initialize(sys.argv)
 
-    settings.logger.info('Running the activity recognition task in mode: [%s]' % settings.workflow)
     # init summaries for printage
     summaries=Summaries()
 

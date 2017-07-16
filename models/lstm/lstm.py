@@ -4,6 +4,49 @@ from utils_ import *
 class lstm(Trainable):
 
     output = None
+    def define_encoder(self,input_tensor, dataset, settings):
+        with tf.name_scope("LSTM_encoder") as namescope:
+            # num hidden neurons, the size of the hidden state vector
+            num_hidden = settings.lstm_num_hidden
+            num_classes = dataset.num_classes
+            logger = dataset.logger
+            sequence_len = dataset.num_frames_per_clip
+            frame_pooling_type = settings.frame_pooling_type
+            dropout_keep_prob = settings.dropout_keep_prob
+
+            # LSTM basic cell
+            with tf.variable_scope("LSTM_ac_vs") as varscope:
+                cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
+                cell_vars = [v for v in tf.all_variables()
+                             if v.name.startswith(varscope.name)]
+                self.train_modified.extend(cell_vars)
+            logger.debug("LSTM input : %s" % str(input_tensor.shape))
+            # get LSTM rawoutput
+            _, state = self.rnn_dynamic(input_tensor, cell, sequence_len, num_hidden, logger, settings.logging_level)
+            logger.debug("LSTM state output : %s" % str(state.shape))
+            self.output = state
+
+    def define_decoder(self, input_tensor, input_state, dataset, settings):
+        # num hidden neurons, the size of the hidden state vector
+        num_hidden = settings.lstm_num_hidden
+        num_classes = dataset.num_classes
+        logger = dataset.logger
+        sequence_len = dataset.num_frames_per_clip
+        frame_pooling_type = settings.frame_pooling_type
+        dropout_keep_prob = settings.dropout_keep_prob
+
+        # LSTM basic cell
+        with tf.variable_scope("LSTM_ac_vs") as varscope:
+            cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
+            cell_vars = [v for v in tf.all_variables()
+                         if v.name.startswith(varscope.name)]
+            self.train_modified.extend(cell_vars)
+        logger.debug("LSTM input : %s" % str(input_tensor.shape))
+        # get LSTM rawoutput
+        _, state = self.rnn_dynamic(input_tensor, cell, sequence_len, num_hidden, logger, settings.logging_level,)
+        logger.debug("LSTM state output : %s" % str(state.shape))
+        self.output = state
+
 
     def define_activity_recognition(self,inputTensor, dataset, settings):
         with tf.name_scope("LSTM_ac") as namescope:
@@ -25,7 +68,7 @@ class lstm(Trainable):
             logger.debug("LSTM input : %s" % str(inputTensor.shape))
 
             # get LSTM rawoutput
-            output = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger,settings.logging_level)
+            output, _ = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden, logger,settings.logging_level)
             logger.debug("LSTM raw output : %s" % str(output.shape))
 
             if frame_pooling_type == defs.pooling.last:
@@ -41,8 +84,7 @@ class lstm(Trainable):
                 output = tf.reduce_mean(output, axis=1)
                 logger.debug("LSTM time-averaged output : %s" % str(output.shape))
             else:
-                logger.error("Undefined frame pooling type : %d" % frame_pooling_type)
-                error("Undefined frame pooling type")
+                error("Undefined frame pooling type : %d" % frame_pooling_type, self.logger)
 
 
             # add dropout
@@ -248,7 +290,7 @@ class lstm(Trainable):
                 #     inputTensor = output
 
                 # get LSTM rawoutput
-                output = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger,settings.logging_level, num_words_caption)
+                output, _ = self.rnn_dynamic(inputTensor, cell, sequence_len, num_hidden, logger,settings.logging_level, num_words_caption)
                 output = print_tensor(output, "lstm raw output:",settings.logging_level)
                 logger.debug("LSTM raw output : %s" % str(output.shape))
 
@@ -305,7 +347,7 @@ class lstm(Trainable):
         # forward pass through the network
         output, state = tf.nn.dynamic_rnn(cell, inputTensor, sequence_length=_seq_len, dtype=tf.float32,
                                           initial_state=zero_state)
-        return output
+        return output, state
 
 
 

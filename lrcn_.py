@@ -57,8 +57,7 @@ class LRCN:
         # make sure dcnn weights are good2go
         self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
         if not os.path.exists(self.dcnn_weights_file):
-            self.logger.error("Weights file %s does not exist." % self.dcnn_weights_file);
-            exit("File not found");
+            error("Weights file %s does not exist." % self.dcnn_weights_file, self.logger)
 
         # create the workflow
         if self.workflow == defs.workflows.singleframe:
@@ -183,20 +182,19 @@ class LRCN:
 
 
     # workflows
+
+    # Activity recognition
     def create_singleframe(self, settings, dataset):
         # define label inputs
         batchLabelsShape = [None, dataset.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
 
+        settings.frame_encoding_layer = None
         # create the singleframe workflow
         with tf.name_scope("dcnn_workflow"):
             self.logger.info("Dcnn workflow")
             # single DCNN, classifying individual frames
-            self.dcnn_model = alexnet.dcnn()
-            self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes)
-            self.inputData, framesLogits = self.dcnn_model.get_io()
-            self.logger.debug("input : [%s]" % self.inputData.shape)
-            self.logger.debug("label : [%s]" % self.inputData.shape)
+            self.inputData, framesLogits = self.make_dcnn(dataset,settings)
             # do video level pooling only if necessary
         if dataset.input_mode == defs.input_mode.video:
             # average the logits on the frames dimension
@@ -221,8 +219,7 @@ class LRCN:
                     output = tf.squeeze(self.logits, axis=1, name="last_pooling_squeeze")
                     self.logger.debug("Last-sliced squeezed out : %s" % str(output.shape))
                 else:
-                    self.logger.error("Undefined pooling method: %d " % settings.frame_pooling_type)
-                    error("Undefined frame pooling method.")
+                    error("Undefined pooling method: %d " % settings.frame_pooling_type, self.logger)
         else:
             self.logits = framesLogits
             self.logger.info("logits out : [%s]" % self.logits.shape)
@@ -230,19 +227,16 @@ class LRCN:
     def create_lstm(self,settings, dataset):
         # define label inputs
         batchLabelsShape = [None, dataset.num_classes]
+        settings.frame_encoding_layer = None
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
         # create the lstm workflow
         with tf.name_scope("lstm_workflow"):
             if dataset.input_mode != defs.input_mode.video:
-                error("LSTM workflow only available for video input mode")
-            # DCNN for frame encoding
-            self.dcnn_model = alexnet.dcnn()
-            self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes, settings.lstm_input_layer)
-            self.inputData, encodedFrames = self.dcnn_model.get_io()
+                error("LSTM workflow only available for video input mode", self.logger)
 
-            self.logger.debug("input : [%s]" % self.inputData.shape)
-            self.logger.debug("label : [%s]" % self.inputLabels.shape)
-            self.logger.info("dcnn out : [%s]" % encodedFrames.shape)
+            # DCNN for frame encoding
+            self.inputData, encodedFrames = self.make_dcnn(settings, dataset)
+
 
             # LSTM for frame sequence classification for frame encoding
             self.lstm_model = lstm.lstm()
@@ -250,6 +244,7 @@ class LRCN:
             self.logits = self.lstm_model.get_output()
             self.logger.info("logits : [%s]" % self.logits.shape)
 
+    # Image description
     def create_imgdesc(self, settings, dataset):
 
         # implementation below separates train and validation. gotta fix
@@ -259,115 +254,132 @@ class LRCN:
         # for two types of evaluating an lstm cell
         # https://stackoverflow.com/questions/37252977/whats-the-difference-between-two-implementations-of-rnn-in-tensorflow
 
-
-
         # use the pretrained embedding like this
         # https://stackoverflow.com/questions/35687678/using-a-pre-trained-word-embedding-word2vec-or-glove-in-tensorflow?rq=1
         # create the image description workflow
         with tf.name_scope("imgdesc_workflow"):
             # make sure input mode is image
             if not dataset.input_mode == defs.input_mode.image:
-                self.logger.error("The image description workflow works only in image input mode.")
-                error("Invalid input mode for image description")
-            # set up placeholders
+                error("The image description workflow works only in image input mode.", self.logger)
 
-            self.words_per_image = tf.placeholder(tf.int32,shape=(None), name="words_per_image")
-            # self.words_per_image = print_tensor(self.words_per_image, "words per image tensor:",settings.logging_level)
+            self.make_imgdesc_placeholders(settings,dataset)
 
-            self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes ], name="input_labels")
-            labels = tf.identity(self.inputLabels)
-            labels = print_tensor(labels,"input labels",settings.logging_level)
-            self.word_embeddings = tf.placeholder(tf.float32,shape=(None,dataset.embedding_matrix.shape[1]), name="word_embeddings")
+            self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
+            self.make_imgdesc_prepro(settings,dataset,encodedFrames)
 
-            self.logger.debug("input labels : [%s]" % labels)
+    def make_imgdesc_placeholders(self, settings, dataset):
+        # set up placeholders
+        self.words_per_image = tf.placeholder(tf.int32, shape=(None), name="words_per_image")
+        self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_labels")
+        labels = tf.identity(self.inputLabels)
+        labels = print_tensor(labels, "input labels", settings.logging_level)
+        self.word_embeddings = tf.placeholder(tf.float32, shape=(None, dataset.embedding_matrix.shape[1]),
+                                              name="word_embeddings")
+        self.logger.debug("input labels : [%s]" % labels)
 
-            # DCNN for frame encoding
-            self.dcnn_model = alexnet.dcnn()
-            self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes,settings.lstm_input_layer)
-            self.inputData, encodedFrames = self.dcnn_model.get_io()
-            self.logger.debug("dcnn input : [%s]" % self.inputData.shape)
-            self.logger.debug("dcnn output encodings: [%s]" % encodedFrames.shape)
-            encodedFrames = print_tensor(encodedFrames, "encoded frames",settings.logging_level)
+    def make_imgdesc_prepro(self, settings, dataset, encodedFrames):
+        frame_encoding_dim = int(encodedFrames.shape[-1])
 
-            # if we feed the image into the state, we have to reshape the encoded vector to the state dim
-            # this follows the neuraltalk2 architecture
+        if settings.do_training:
+            # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
+            encodedFrames = tf.tile(encodedFrames, [1, dataset.num_frames_per_clip + 1])
+            encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames", settings.logging_level)
+            self.logger.debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
+            encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
+            encodedFrames = print_tensor(encodedFrames, "restored frames", settings.logging_level)
+            self.logger.debug("restored : [%s]" % encodedFrames.shape)
 
-            # if we feed the image into the lstm input, just concat the word embeddings to the images
+        # horizontal concat the images to the words
+        frames_words = tf.concat([encodedFrames, self.word_embeddings], axis=1)
+        self.logger.debug("frames concat words : [%s]" % frames_words.shape)
+        frames_words = print_tensor(frames_words, "frames concat words ", settings.logging_level)
 
-            frame_encoding_dim = int(encodedFrames.shape[-1])
+        # feed to lstm
+        self.lstm_model = lstm.lstm()
+        if settings.do_training:
+            self.lstm_model.define_image_description(frames_words, frame_encoding_dim, dataset.num_classes,
+                                                     self.words_per_image, dataset, settings)
+        else:
+            self.lstm_model.define_image_description_validation(frames_words, frame_encoding_dim,
+                                                                dataset.num_classes, self.words_per_image,
+                                                                dataset, settings)
+        self.logits = self.lstm_model.get_output()
 
-            if settings.do_training:
-                # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
-                encodedFrames = tf.tile(encodedFrames, [1, dataset.num_frames_per_clip + 1])
-                encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames",settings.logging_level)
-                self.logger.debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
-                encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
-                encodedFrames = print_tensor(encodedFrames, "restored frames",settings.logging_level)
-                self.logger.debug("restored : [%s]" % encodedFrames.shape)
+        # remove the tensor rows where no ground truth caption is present
+        self.logger.debug("logits : [%s]" % self.logits.shape)
+        self.logits = print_tensor(self.logits, "logits to process", settings.logging_level)
+        # split the logits to the chunks in the words_per_image. First append the number of rows left to complete
+        # the sequence length, so as to subsequently tf.split the tensor
 
+        if settings.do_training:
+            # get the number of useless logits per batch item
+            num_useless = dataset.num_frames_per_clip - self.words_per_image
+            num_useless = print_tensor(num_useless, "num useless", settings.logging_level)
+            wpi = tf.identity(self.words_per_image)
+            wpi = wpi + 1
+            wpi = print_tensor(wpi, "wpi plus EOS logits postproc", settings.logging_level)
+            # split the logits in [p1,u1,p2,u2,...], where ni,ui the number of predictions and useless output per item
+            chunks_sizes = tf.stack([wpi, num_useless])
+            chunks_sizes = print_tensor(chunks_sizes, "chunks sizes concatted", settings.logging_level)
 
-            # horizontal concat the images to the words
-            frames_words = tf.concat([encodedFrames, self.word_embeddings],axis=1)
-            self.logger.debug("frames concat words : [%s]" % frames_words.shape)
-            frames_words = print_tensor(frames_words,"frames concat words ",settings.logging_level)
+            chunks_sizes = tf.transpose(chunks_sizes)
+            chunks_sizes = print_tensor(chunks_sizes, "chunks sizes transposed", settings.logging_level)
 
-            # feed to lstm
-            self.lstm_model = lstm.lstm()
-            if settings.do_training:
-                self.lstm_model.define_image_description(frames_words, frame_encoding_dim, dataset.num_classes, self.words_per_image, dataset, settings)
-            else:
-                self.lstm_model.define_image_description_validation(frames_words, frame_encoding_dim,
-                                                                    dataset.num_classes, self.words_per_image,
-                                                                    dataset, settings)
-            self.logits = self.lstm_model.get_output()
+            chunks_sizes = tf.reshape(chunks_sizes, shape=[-1])
+            chunks_sizes = tf.cast(chunks_sizes, tf.int32)
+            chunks_sizes = print_tensor(chunks_sizes, "chunks sizes ", settings.logging_level)
 
-            # remove the tensor rows where no ground truth caption is present
-            self.logger.debug("logits : [%s]" % self.logits.shape)
-            self.logits = print_tensor(self.logits ,"logits to process",settings.logging_level)
-            # split the logits to the chunks in the words_per_image. First append the number of rows left to complete
-            # the sequence length, so as to subsequently tf.split the tensor
+            bwi = tf.identity(self.binary_word_idx)
+            bwi = print_tensor(bwi, "binary word index to keep", settings.logging_level)
+            self.logits = tf.gather(self.logits, bwi)
+            self.logits = print_tensor(self.logits, "filtered logits list", settings.logging_level)
+            # re-merge the tensor list into a tensor
+            self.logits = tf.concat(self.logits, axis=0)
+            self.logits = print_tensor(self.logits, "final filtered logits", settings.logging_level)
+            self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
+        else:
+            # for validation, just return the logits and we'll process them on the driver
+            pass
 
-            if settings.do_training:
-                # get the number of useless logits per batch item
-                num_useless = dataset.num_frames_per_clip - self.words_per_image
-                num_useless = print_tensor(num_useless, "num useless",settings.logging_level)
-                wpi = tf.identity(self.words_per_image)
-                wpi = wpi + 1
-                wpi = print_tensor(wpi , "wpi plus EOS logits postproc",settings.logging_level)
-                # split the logits in [p1,u1,p2,u2,...], where ni,ui the number of predictions and useless output per item
-                chunks_sizes = tf.stack([wpi, num_useless])
-                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes concatted",settings.logging_level)
+    def make_dcnn(self, dataset, settings):
+        # DCNN for frame encoding
+        self.dcnn_model = alexnet.dcnn()
+        self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes,
+                               settings.frame_encoding_layer)
+        inputData, outputData = self.dcnn_model.get_io()
+        self.logger.debug("dcnn input : [%s]" % inputData.shape)
+        self.logger.debug("dcnn output : [%s]" % outputData.shape)
+        outputData = print_tensor(outputData, "encoded frames", settings.logging_level)
+        return inputData, outputData
 
-                chunks_sizes = tf.transpose(chunks_sizes)
-                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes transposed",settings.logging_level)
+    # video description
+    def create_videodesc_pooling(self, settings, dataset):
+        # Venugopalan et al. 2015 : pool video frames, do img desc.
 
-                chunks_sizes = tf.reshape(chunks_sizes,shape=[-1])
-                chunks_sizes = tf.cast(chunks_sizes, tf.int32)
-                chunks_sizes = print_tensor(chunks_sizes , "chunks sizes ",settings.logging_level)
+        # get dcnn encodings for each frame
+        self.inputData, encoded_frames = self.make_dcnn(dataset, settings)
 
+        # pool video frames to a single vector
+        if settings.frame_pooling_type == defs.pooling.avg:
+            pooled_frames = tf.reduce_mean(encoded_frames, 0)
+        else:
+            error("Undefined pooling type %s" % settings.frame_pooling_type, self.logger)
 
+        # the rest of the workflow is identical to the image description workflow
+        self.make_imgdesc_prepro(settings,dataset,pooled_frames)
 
-                bwi = tf.identity(self.binary_word_idx)
-                bwi = print_tensor(bwi,"binary word index to keep",settings.logging_level)
-                self.logits= tf.gather(self.logits, bwi)
+    def create_videodesc_enc_dec(self, settings, dataset):
+        # Venugopalan et al. 2016 : lstm encoder - decoder
 
-                # static_batch_size = dataset.get_batch_size()
-                # logit_chunks = tf.split(self.logits, chunks_sizes, num = static_batch_size * 2,  axis=0, name="caption_split")
-                # logit_chunks = print_tensor(logit_chunks, "logits list",settings.logging_level)
-                # drop the useless ones; this pre-supposes the obvious that each item has at least one caption word
-                self.logits = print_tensor(self.logits, "filtered logits list",settings.logging_level)
-                # re-merge the tensor list into a tensor
-                self.logits = tf.concat(self.logits, axis=0)
-                self.logits = print_tensor(self.logits,"final filtered logits",settings.logging_level)
-                self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
-            else:
-                # for validation, just return the logits and we'll process them on the driver
-                pass
-
-    def create_videodesc(self, settings, dataset):
-        # http://www.cs.utexas.edu/users/ml/papers/venugopalan.naacl15.pdf does the obvious, simple impl: video to 1 vector by pooling, then lstm like image
-        # get video frames. pool frames to a single video vector, carry on as image description.
+        # get dcnn encodings for each frame
+        self.inputData, encoded_frames = self.make_dcnn(dataset, settings)
+        encoder = lstm.lstm()
+        encoder.define_encoder(encoded_frames, settings, dataset)
+        encoded_state = encoder.get_output()
+        decoder = lstm.lstm()
+        decoder = lstm.define_decoder()
         pass
+
 
     # validation accuracy computation
     def process_validation_logits(self, logits, dataset, labels):
@@ -432,8 +444,7 @@ class LRCN:
                     logits = logits[cpv:,:]
                     labels = labels[cpv:,:]
                 if not (len(logits) == 0 and len(labels) == 0):
-                    self.logger.error("Logits and/or labels non empty at the end of video item mode aggregation!")
-                    error("Video item mode aggregation error.")
+                    error("Logits and/or labels non empty at the end of video item mode aggregation!", self.logger)
                 self.logger.debug("Video logits and labels accumulation is now %d,%d video in video batch mode." %
                                   (len(self.item_logits), len(self.item_labels)))
             else:

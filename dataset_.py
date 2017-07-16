@@ -173,12 +173,12 @@ class Dataset:
 
             except StopIteration:
                 if imidx < images_per_iteration:
-                    self.logger.error('Tfrecord unexpected EOF, loading from scratch')
+                    self.logger.warning('Tfrecord unexpected EOF, loading from scratch')
                     image, label = self.manually_read_image(imidx)
 
 
             except Exception as ex:
-                self.logger.error('Exception at reading image, loading from scratch')
+                self.logger.warning('Exception at reading image, loading from scratch')
                 image,label = self.manually_read_image(imidx)
 
             image = self.process_image(image)
@@ -538,11 +538,9 @@ class Dataset:
             self.embedding_matrix = np.asarray(vectors, np.float32)
             self.logger.debug("Read embedding matrix of shape %s " % str(self.embedding_matrix.shape))
             if "BOS" not in self.vocabulary:
-                self.logger.error("BOS not found in vocabulary.")
-                error("Vocabulary error")
+                error("BOS not found in vocabulary.", self.logger)
             if "EOS" not in self.vocabulary:
-                self.logger.error("EOS not found in vocabulary.")
-                error("Vocabulary error")
+                error("EOS not found in vocabulary.", self.logger)
             self.num_classes = len(self.vocabulary) - 1
 
     # run data-related initialization pre-run
@@ -554,13 +552,13 @@ class Dataset:
             if self.do_training:
                 self.input_source_files[defs.train_idx] = sett.input[defs.train_idx]
                 if not os.path.exists(self.input_source_files[defs.train_idx]):
-                    error("Input paths file does not exist: %s" % self.input_source_files[defs.train_idx])
+                    error("Input paths file does not exist: %s" % self.input_source_files[defs.train_idx], self.logger)
                 # read frames and classes
                 self.read_frames_metadata()
                 # set tfrecord
                 self.input_source_files[defs.train_idx] =  self.input_source_files[defs.train_idx] + ".tfrecord"
                 if not os.path.exists(self.input_source_files[defs.train_idx]):
-                    error("Input file does not exist: %s" % self.input_source_files[defs.train_idx])
+                    error("Input file does not exist: %s" % self.input_source_files[defs.train_idx], self.logger)
 
                 self.reset_iterator(defs.phase.train)
                 # count or get number of items
@@ -585,7 +583,7 @@ class Dataset:
             if self.do_validation:
                 self.input_source_files[defs.val_idx] = sett.input[defs.val_idx] + ".tfrecord"
                 if not os.path.exists(self.input_source_files[defs.val_idx]):
-                    error("Input file does not exist: %s" % self.input_source_files[defs.val_idx])
+                    error("Input file does not exist: %s" % self.input_source_files[defs.val_idx], self.logger)
                 self.reset_iterator(defs.phase.val)
                 # count or get number of items
                 self.get_input_data_count(defs.phase.val)
@@ -632,8 +630,7 @@ class Dataset:
             self.num_items_train = len(self.frame_paths[defs.train_idx])
             self.num_items_val = len(self.frame_paths[defs.val_idx])
         else:
-            self.logger.error("Undefined data format [%s]" % self.data_format)
-            error("Data format error")
+            error("Undefined data format [%s]" % self.data_format, self.logger)
 
     # read or count how many data items are in training / validation
     def get_input_data_count(self,phase):
@@ -678,8 +675,7 @@ class Dataset:
         if len(contents) == 0 :
             # no number of frames per video, it's gotta be an image run, else error
             if not self.input_mode == defs.input_mode.image:
-                self.logger.error("Specified input mode %s but size file contains no data" %self.input_mode)
-                error("Input mode mismatch with data.")
+                logger.error("Specified input mode %s but size file contains no data" %self.input_mode, self.logger)
 
         # read number of items in the tfrecord
         num_items = int(contents[0])
@@ -696,17 +692,15 @@ class Dataset:
             # check if there's a clash with the run configuration specified
             if self.num_frames_per_clip is not None:
                 if not num_frames_per_clip == self.num_frames_per_clip:
-                    self.logger.error("Read %d sequence length but specified %d" %
-                                      (num_frames_per_clip,  self.num_frames_per_clip))
-                    error("Sequence length mismatch")
+                    error("Read %d sequence length but specified %d" %
+                                      (num_frames_per_clip,  self.num_frames_per_clip), self.logger)
             else:
                 self.logger.info("Read a sequence length of %d for %s from size file " %
                                   (num_frames_per_clip, phase))
             self.num_frames_per_clip = num_frames_per_clip
         else:
             if self.input_mode == defs.input_mode.video:
-                self.logger.error("Specified %s input mode but no sequence length information in input data." % self.input_mode)
-                error("Missing sequence length information in data")
+                error("Specified %s input mode but no sequence length information in input data." % self.input_mode, self.logger)
 
         # read number of clips per video
         if len(contents) > 2 :
@@ -720,14 +714,12 @@ class Dataset:
             self.clips_per_video = num_clips
             # check integrity
             if not len(self.clips_per_video) == num_items:
-                self.logger.error("Unequal number of clips vector %d to the number of videos %d" % (
-                len(self.clips_per_video), num_items))
-                error("Unequal number of clips vector to the input videos.")
+                error("Unequal number of clips vector %d to the number of videos %d" % (
+                len(self.clips_per_video), num_items), self.logger)
         else:
             # else, if unset, we gotta be in frame mode
             if not self.input_mode == defs.input_mode.image:
-                self.logger.warning("No number of clips in size file, but run is not in image mode.")
-                error("Missing cpv in size file")
+                error("No number of clips in size file, but run is not in image mode.", self.logger)
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
