@@ -10,7 +10,7 @@ usage_str = 'python tensorflow_rename_variables.py path/to/checkpt/ ' \
     ' rename source_name target_name addprefix source_name  prefix add varname varvalue vartype delete varname overwrite'
 
 
-def rename(checkpoint, renamevars, newvars, deletevar, overwrite):
+def rename(checkpoint, renamevar, newvars, deletevar, overwrite):
 
     with tf.Session() as sess:
         for var_name, _ in tf.contrib.framework.list_variables(checkpoint):
@@ -24,16 +24,11 @@ def rename(checkpoint, renamevars, newvars, deletevar, overwrite):
             var = tf.contrib.framework.load_variable(checkpoint, var_name)
             currname = var_name
 
-            if var_name == renamevars[0]:
-                # modify it
-                currname = renamevars[1]
-
-
-                if not overwrite:
-
-                    print('Would modify %s  => %s ' % (renamevars[0], currname))
-                else:
-                    print('Modifying %s  => %s ' % (renamevars[0], currname))
+            if renamevar is not None:
+                if var_name == renamevar[0]:
+                    # modify it
+                    currname = renamevar[1]
+                    print('Modify %s  => %s ' % (renamevar[0], currname))
             # else:
             #     print("Ignoring variable %s " % var_name)
             # Declare the variable
@@ -60,6 +55,8 @@ def rename(checkpoint, renamevars, newvars, deletevar, overwrite):
             sess.run(tf.global_variables_initializer())
             print("Saving modified model to ", checkpoint)
             saver.save(sess, checkpoint)
+        else:
+            print("Will not overwrite model - simulation run")
 
 
 def main(argv):
@@ -68,6 +65,7 @@ def main(argv):
     overwrite = False
     newvar = None
     deletevar = None
+    renamevar = None
 
     try:
         if "modify" in argv:
