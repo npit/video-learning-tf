@@ -95,6 +95,7 @@ def main(argv):
 
     # check consistency
     ops = [deletevar, renamevar[0] if renamevar is not None else None, newvar[0] if newvar is not None else None]
+    ops = [ o for o in ops if o is not None]
     if len(ops) != len(set(ops)):
         s = set()
         duplicates = set(x for x in ops if x in s or s.add(x))
