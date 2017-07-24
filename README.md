@@ -48,3 +48,9 @@ The image description workflow produces captions for a given input image.
 During training, an (image,caption) tuple is suppled to the workflow. The image is encoded into a feature vector using an Alexnet DCNN and each word in the caption is encoded to a vector using an embedding matrix and a vocabulary pre-computed on the training data. The image vector is then duplicated to the number of words in the caption and concatenated to the embedding of each word. The merged vectors are fed into an LSTM, the outputs of which are passed through a linear prediction layer. The latter produces logits vector on the vocabulary, from which we sample the most probable predicted caption, according to strategies defined in `defs.caption_search`.
 
 During validation, the input image is encoded and merged to a special Beginning-Of-Sequence (BOS) character. The output of each step is fed as input to the next, until an End-Of-Sequence character is generated, or we reach a maximum caption length.
+
+### Video description
+#### Video description/Pooling
+This approach pools video the dcnn-encoded frames into a single vector in an early fusion manner and then proceeds as the image description workflow.
+#### Video description/Encoder-decoder
+The encoder-decoder workflow proceeds to produce a fixed vector representation from the dcnn-encoded video frames using an LSTM encoder scheme. The encoder final state contains spatiotemporal information from the video input, and is passed as the input state to the decoder LSTM. The decoder is fed the encoded caption words, as per the image description workflow but excluding the visual information from the input.
