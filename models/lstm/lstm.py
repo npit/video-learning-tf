@@ -88,7 +88,8 @@ class lstm(Trainable):
 
 
             # add dropout
-            output = tf.nn.dropout(output, keep_prob=dropout_keep_prob,name="lstm_dropout")
+            if settings.do_training:
+                output = tf.nn.dropout(output, keep_prob=dropout_keep_prob,name="lstm_dropout")
 
             # add a final fc layer to convert from num_hidden to a num_classes output
             # layer initializations
@@ -120,8 +121,9 @@ class lstm(Trainable):
             num_hidden = settings.lstm_num_hidden
             logger = settings.logger
             sequence_len = dataset.num_frames_per_clip + 1 # plus one for the BOS
-
-            dropout_keep_prob = settings.dropout_keep_prob
+            # add dropout
+            if settings.do_training:
+                dropout_keep_prob = settings.dropout_keep_prob
 
             # LSTM basic cell
             with tf.variable_scope("LSTM_id_vs") as varscope:
@@ -174,7 +176,9 @@ class lstm(Trainable):
 
 
                 # add dropout
-                output = tf.nn.dropout(output, keep_prob=dropout_keep_prob,name="lstm_dropout")
+                # add dropout
+                if settings.do_training:
+                    output = tf.nn.dropout(output, keep_prob=dropout_keep_prob,name="lstm_dropout")
 
                 # add a final fc layer to convert from num_hidden to a num_classes output
                 # layer initializations
@@ -300,7 +304,9 @@ class lstm(Trainable):
                 output = print_tensor(output, "lstm recombined output",settings.logging_level)
 
                 # add dropout
-                output = tf.nn.dropout(output, keep_prob=dropout_keep_prob, name="lstm_dropout")
+                # add dropout
+                if settings.do_training:
+                    output = tf.nn.dropout(output, keep_prob=dropout_keep_prob, name="lstm_dropout")
 
                 # add a final fc layer to convert from num_hidden to a num_classes output
                 # layer initializations
