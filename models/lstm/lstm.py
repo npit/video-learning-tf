@@ -8,10 +8,8 @@ class lstm(Trainable):
         with tf.name_scope("LSTM_encoder") as namescope:
             # num hidden neurons, the size of the hidden state vector
             num_hidden = settings.lstm_num_hidden
-            num_classes = dataset.num_classes
             logger = dataset.logger
             sequence_len = dataset.num_frames_per_clip
-            frame_pooling_type = settings.frame_pooling_type
             dropout_keep_prob = settings.dropout_keep_prob
 
             # LSTM basic cell

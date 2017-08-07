@@ -460,7 +460,8 @@ def validate(written_data):
         if mode == defs.input_mode.image:
             paths = item_paths
             labels = item_labels
-        num_validate = 10000 if len(paths) >= 10000 else len(paths)
+        # validate
+        num_validate = len(paths) * 70 / 100 if len(paths) >= 10000 else len(paths)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)

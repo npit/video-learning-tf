@@ -373,6 +373,7 @@ class LRCN:
 
         # get dcnn encodings for each frame
         self.inputData, encoded_frames = self.make_dcnn(dataset, settings)
+        # frame sequence is mapped to a fixed-length vector
         encoder = lstm.lstm()
         encoder.define_encoder(encoded_frames, settings, dataset)
         encoded_state = encoder.get_output()

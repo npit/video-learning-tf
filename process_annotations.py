@@ -1,29 +1,6 @@
 import json, string, os, sys
 from utils_ import  init_config
 
-
-
-
-# todo: add this as another mode is serialize?
-# produce a frames list file out of all train, val images, as in act. rec. , associate each path with .. what? label to unique caption?
-# dunno. maybe:
-# associate all words with a onehot
-#       -- ALL words? what about common/stop words? => but such words are indeed in captions
-#       -- prolly all words
-# thus associate each img with label series, corresponding to the sequence of onehot vecs (words)
-# seqlen is 16, so i guess captions have to be 16 long
-# dont forget to add BOS and EOS symbols
-
-# what about labels like 'MT' that are in there...
-
-# preprocessing captions follows https://github.com/karpathy/neuraltalk2
-
-# karpathy et. al caption preprocessing and vocab building
-
-
-
-# study karpathy imgdesc papers
-
 init_file = "config.ini"
 if len(sys.argv) > 1:
     init_file = sys.argv[1]
@@ -37,8 +14,6 @@ caption_files =  ["/home/nik/uoa/msc-thesis/dataset/coco14/annotations/captions_
 caption_file_formats = ("coco", "flickr")
 # vocabulary file: if not None, it will produce caption encodings as per the vocabulary
 vocabulary_file = None
-# if true, it will first seek for already processed caption files before generating them
-can_load_processed = False
 # replacement file: a file containing w, [v1,v2,..]. Each occurence of w in a caption will be replaced by v1,v2,...]
 # this is so that weird slang and compositions are replaced by common words, for which pretrained embeddings exist
 vocab_replacement_file="/home/nik/uoa/msc-thesis/dataset/glove/missing_words.txt"
@@ -69,67 +44,59 @@ def replace_problematic_words(toklist, replacements):
 def read_file(filename, format):
     print("Reading file ",filename)
     img_captions = None
-    if not os.path.exists(filename + ".per_image.json") or ( not can_load_processed ):
-        # read Coco caption data
-        if format == "coco":
-            print("Reading %s file." % format)
-            with open(filename,'r') as f:
-                print("Loading caption file : %s" % filename)
-                data = json.load(f)
-            print("Reading data.")
-            img_captions = {}
-            img_filenames = {}
-            # read image ids and associate them with their captions
-            for annot_item in data['annotations']:
-                image_id = annot_item['image_id']
-                caption = annot_item['caption']
-                if not image_id in img_captions:
-                    img_captions[image_id] = []
-                img_captions[image_id].append(caption)
-            # also read the image file name
-            for image_dict in data['images']:
-                image_file = image_dict['file_name']
-                image_id = image_dict['id']
-                img_filenames[image_id] = image_file
+    print("File format is %s." % format)
 
-        # read flickr30 caption data
-        elif format == "flickr":
-            print("Reading %s file." % format)
-            lines = []
-            with open(filename,"r") as f:
-                for line in f:
-                    lines.append(line.strip())
-            print("Reading data.")
-            img_captions = {}
-            img_filenames = {}
-            for line in lines:
-                img,caption = line.split("\t")
-                name, numcaption = img.split("#")
-                if name not in img_captions:
-                    img_captions[name] = []
-                img_captions[name].append(caption)
-                img_filenames[name] = name
+    # read Coco caption data
+    if format == "coco":
+        with open(filename,'r') as f:
+            print("Loading json data.")
+            data = json.load(f)
+        print("Reading data.")
+        img_captions = {}
+        img_filenames = {}
+        # read image ids and associate them with their captions
+        for annot_item in data['annotations']:
+            image_id = annot_item['image_id']
+            caption = annot_item['caption']
+            if not image_id in img_captions:
+                img_captions[image_id] = []
+            img_captions[image_id].append(caption)
+        # also read the image file name
+        for image_dict in data['images']:
+            image_file = image_dict['file_name']
+            image_id = image_dict['id']
+            img_filenames[image_id] = image_file
 
-        # combine captions per image
-        print("Generating json object.")
-        image_jsons = []
-        for id in img_captions:
-            obj = {}
-            obj["id"] = id
-            obj["filename"] = img_filenames[id]
-            obj["raw_captions"] = []
-            for cap in img_captions[id]:
-                obj["raw_captions"].append(cap)
-            image_jsons.append(obj)
-        with open(filename + ".per_image.json", "w") as fp:
-            json.dump(image_jsons, fp)
+    # read flickr30 caption data
+    elif format == "flickr":
+        lines = []
+        with open(filename,"r") as f:
+            for line in f:
+                lines.append(line.strip())
+        print("Reading data.")
+        img_captions = {}
+        img_filenames = {}
+        for line in lines:
+            img,caption = line.split("\t")
+            name, numcaption = img.split("#")
+            if name not in img_captions:
+                img_captions[name] = []
+            img_captions[name].append(caption)
+            img_filenames[name] = name
 
-    # else, the file exists : load it
-    else:
-        print("Loading existing %s file." % format)
-        with open(filename + ".per_image.json","r") as fp:
-            image_jsons = json.load(fp)
-
+    # combine captions per image
+    print("Generating json object.")
+    image_jsons = []
+    for id in img_captions:
+        obj = {}
+        obj["id"] = id
+        obj["filename"] = img_filenames[id]
+        obj["raw_captions"] = []
+        for cap in img_captions[id]:
+            obj["raw_captions"].append(cap)
+        image_jsons.append(obj)
+    with open(filename + ".per_image.json", "w") as fp:
+        json.dump(image_jsons, fp)
     return image_jsons
 
 def prepro_captions(imgs_json):
@@ -158,7 +125,9 @@ def prepro_captions(imgs_json):
                 imgs_json[i]['processed_tokens'][t] = txt
 
 
-def build_vocab(imgs):
+def build_vocab(imgs, word_count_thresh):
+    if word_count_thresh is None:
+        word_count_thresh = -1
     count_thr = word_count_thresh
 
     # count up the number of words
@@ -180,34 +149,34 @@ def build_vocab(imgs):
     # print some stats
     total_words = len(counts.items())
     print('total words:', total_words)
+
     bad_words = [w for w, n in counts.items() if n <= count_thr]
     vocab = [w for w, n in counts.items() if n > count_thr]
     bad_count = sum(counts[w] for w in bad_words)
-    good_count = sum(counts[w] for w in vocab)
-    total_count = sum( counts[w] for w in counts)
+
     print('number of bad words: %d/%d = %.2f%%' % (
     len(bad_words), len(counts), len(bad_words) * 100.0 / len(counts)))
     print('number of words in vocab would be %d' % (len(vocab),))
     print('number of UNKs: %d/%d = %.2f%%' % (bad_count, total_words, bad_count * 100.0 / total_words))
 
     # lets look at the distribution of lengths as well
-    sent_lengths = {}
-    for img in imgs:
-        for txt in img['processed_tokens']:
-            nw = len(txt)
-            sent_lengths[nw] = sent_lengths.get(nw, 0) + 1
-    max_len = max(sent_lengths.keys())
-    print('max length sentence in raw data: ', max_len)
-    print('sentence length distribution (count, number of words):')
-    sum_len = sum(sent_lengths.values())
-    for i in range(max_len + 1):
-        print('%2d: %10d   %f%%' % (i, sent_lengths.get(i, 0), sent_lengths.get(i, 0) * 100.0 / sum_len))
+    # sent_lengths = {}
+    # for img in imgs:
+    #     for txt in img['processed_tokens']:
+    #         nw = len(txt)
+    #         sent_lengths[nw] = sent_lengths.get(nw, 0) + 1
+    # max_len = max(sent_lengths.keys())
+    # print('max length sentence in raw data: ', max_len)
+    # print('sentence length distribution (count, number of words):')
+    # sum_len = sum(sent_lengths.values())
+    # for i in range(max_len + 1):
+    #     print('%2d: %10d   %f%%' % (i, sent_lengths.get(i, 0), sent_lengths.get(i, 0) * 100.0 / sum_len))
 
     # lets now produce the final annotations
-    if bad_count > 0:
-        # additional special UNK token we will use below to map infrequent words to
-        print('inserting the special UNK token')
-        vocab.append('UNK')
+
+    # RARE token to map 1) either infrequent words or 2) unseen words during testing => always needed
+    print('inserting the special UNK token')
+    vocab.append('UNK')
 
     for img in imgs:
         img['final_captions'] = []
@@ -245,8 +214,6 @@ def read_vocabulary(vocab_file):
 
 def main():
 
-    print("Limit caption length?")
-
     image_jsons = []
     for i,c in enumerate(caption_files):
         image_jsons.append(read_file(c, caption_file_formats[i]))
@@ -264,12 +231,12 @@ def main():
         for obj in image_jsons:
             img_json.extend(obj)
 
-        vocab = build_vocab(img_json)
+        vocab = build_vocab(img_json, word_count_thresh)
         # add EOS, BOS
         vocab.extend(["EOS","BOS"])
         filename = "vocabulary_" + "_".join([ os.path.basename(capfile) for capfile in caption_files])
         print("Produced vocabulary of", len(vocab)," words, including the UNK, EOS, BOS symbols.")
-        print("Writing vocabulary to ",filename + ".vocab")
+        print("Writing vocabulary to",filename + ".vocab")
         with open(filename + ".vocab", "w") as f:
             for w in vocab:
                 f.write(w + "\n")
@@ -293,6 +260,9 @@ def main():
                     for cap in image_obj['final_captions']:
                         labels = []
                         for word in cap:
+                            if word not in vocab:
+                                print("Word",word,"not found in vocabulary.")
+                                exit(1)
                             labels.append(str(vocab[word]))
                         f.write("%s %s\n" % (imgname, " ".join(labels)))
             print("Wrote file ",filename + ".paths.txt")

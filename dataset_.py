@@ -281,6 +281,7 @@ class Dataset:
 
         self.advance_batch_indexes()
         return images, ground_truth
+
     # get captions from logit vectors
     def logits_to_captions(self, logits):
         return_data = []
@@ -324,9 +325,6 @@ class Dataset:
         for i in range(len(image_ids)):
             print(image_ids[i]," caption:",captions[i])
         return return_data
-
-
-
 
     # get word vectors from their indices
     def labels_to_words(self, labels):
