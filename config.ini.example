@@ -75,8 +75,9 @@ clipframe_mode = defs.clipframe_mode.iterative
 frame_format = "jpg"
 
 [captions]
-
-# caption processing
+# vocabulary to encode captions or produce embeddings.Set to None to generate.
+vocabulary_file = None
+# caption files to encode or to generate vocabulary
 caption_files =  ["/path/to/captionfile1","/path/to/captionfile2"]
 caption_file_formats = ("coco","flickr")
 vocab_replacement_file= None
@@ -84,9 +85,6 @@ word_count_thresh = 5
 caption_max_length = 50
 randomize_missing_embeddings = False
 
-# vocabulary to encode captions or produce embeddings. None to generate it
-vocabulary_file = None
-
-# embedding processing files
+# embedding generation files
 embeddings_file = "/path/to/embedding/matrix"
 embedding_format = "glove"

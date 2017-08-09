@@ -311,19 +311,17 @@ class Dataset:
                 # return it
                 return_data.append(image_ids)
         # read captions
-        print ("caption indices per image")
         for i,image_logits in enumerate(logits):
             image_caption = []
-            print(str(image_ids[i]),str(image_logits))
             for caption_index in image_logits:
                 image_caption.append(self.vocabulary[caption_index])
             if not image_caption:
                 image_caption = ' '
             captions.append(" ".join(image_caption))
         return_data.append(captions)
-
+        self.logger.debug("Generated ids:")
         for i in range(len(image_ids)):
-            print(image_ids[i]," caption:",captions[i])
+            self.logger.debug("image id: %s caption:%s" % (str(image_ids[i]),str(captions[i])))
         return return_data
 
     # get word vectors from their indices
@@ -539,6 +537,7 @@ class Dataset:
                 error("BOS not found in vocabulary.", self.logger)
             if "EOS" not in self.vocabulary:
                 error("EOS not found in vocabulary.", self.logger)
+            # classes are all tokens minus the BOS
             self.num_classes = len(self.vocabulary) - 1
 
     # run data-related initialization pre-run

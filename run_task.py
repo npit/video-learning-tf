@@ -406,16 +406,18 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
             json_data = [ { "image_id" : ids_captions[0][i] , "caption" : ids_captions[1][i] }
                           for i in range(len(ids_captions[0]))]
             # write results
+
             results_file = dataset.input_source_files[defs.val_idx] + ".coco.json"
+            dataset.logger.info("Writing captioning results to %s" % results_file)
             with open(results_file , "w") as fp:
                 json.dump(json_data, fp)
 
             # also, get captions from the read image paths - labels files
             # initialize with it the COCO object
             # ....
-            settings.logger.info("Evaluating captioning using ground truth file %s" % settings.caption_ground_truth)
+            settings.logger.info("Evaluating captioning using ground truth file %s" % str(settings.caption_ground_truth))
             command = '$(which python2) tools/python2_coco_eval/coco_eval.py %s %s' % (results_file, settings.caption_ground_truth)
-            print(command)
+            dataset.logger.debug("evaluation command is [%s]" % command)
             os.system(command)
 
 

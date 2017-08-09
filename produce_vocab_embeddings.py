@@ -29,7 +29,7 @@ vocab = read_vocabulary(vocabulary_file)
 # switch by type of embeddings read
 if embeddings_file_type == "glove":
     embeddings = {}
-    embedding_minmax = [10000, -10000]
+
     # read the whole contents and compute the min/max in which to produce random embeddings for not found words
     print("Reading embeddings file...",end="")
     with open(embeddings_file,"r") as fp:
@@ -38,42 +38,41 @@ if embeddings_file_type == "glove":
             token = contents[0]
             vector = list(map(float, contents[1:]))
             embeddings[token] = vector
-            mx, mn = max(vector), min(vector)
-            embedding_minmax[0] = embedding_minmax[0] if embedding_minmax[0] <= mn else mn
-            embedding_minmax[1] = embedding_minmax[1] if embedding_minmax[0] >= mx else mx
+
     keys = list(embeddings.keys())
     key = keys[0]
     embedding_dim = len(embeddings[key])
+
+    just_embeddings = [embeddings[w] for w in embeddings]
+    embedding_minmax = [np.amin(just_embeddings), np.amax(just_embeddings)]
     print("Embedding dimension read :", embedding_dim, "\nDone.")
+    print("Embedding min/max read :", str(embedding_minmax))
 
     vocab_embeddings =  dict( (w, embeddings[w]) for w in [ w for w in vocab if w in embeddings])
     missing_vocab_word_embeddings = [ w for w in vocab if w not in vocab_embeddings]
-    if len(missing_vocab_word_embeddings) > 2: # apart from EOS, BOS
-        print("%d items in the vocabulary were not found in the embedding matrix (other than EOS,BOS)!" % 2-len(missing_vocab_word_embeddings))
+    if len(missing_vocab_word_embeddings) > 3: # apart from EOS, BOS, UNK
+        print("%d items in the vocabulary were not found in the embedding matrix (other than EOS,BOS)!" %
+              (3-len(missing_vocab_word_embeddings)))
         print("\n".join(missing_vocab_word_embeddings))
-        if not randomize_missing_embeddings:
-            print("Randomizing missing embeddings is disabled, exiting.")
-            exit(1)
+    else:
+        print("No missing embeddings other than EOS, BOS and UNK.")
+    if not randomize_missing_embeddings:
+        print("Randomizing embeddings is disabled, exiting.")
+        exit(1)
 
     for w in missing_vocab_word_embeddings:
         arr = np.random.uniform(low=embedding_minmax[0], high=embedding_minmax[1], size=(embedding_dim,))
-        print("Producing vector for missing token: ",w," ",arr.shape)
+        print("Producing vector for missing token:",w)
         vocab_embeddings[w] = arr
 
             
     # write out
     filename = vocabulary_file + ".embeddings"
     print("Writing embeddings for vocabulary at ",filename)
-    mmx = [ 1000, -1000 ]
+
     with open(filename,"w") as fp:
         for token,vector in vocab_embeddings.items():
-            mx, mn = np.max(vector), np.min(vector)
-            if mx > mmx[1]: mmx[1] = mx
-            if mn < mmx[0]: mmx[0] = mn
             vec = " ".join([ "%5.5f" % v for v in vector])
             fp.write("%s\t%s\n" % (token ,vec))
-    print("Min / max embedding values for vocabulary: ",mmx)
-
-
 else:
     error("Unsupported embeddings file type: ", embeddings_file_type)

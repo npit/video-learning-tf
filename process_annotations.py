@@ -29,9 +29,8 @@ for key in keyvals:
     exec("%s=%s" % (key, keyvals[key]))
 print("Successfully initialized from file %s" % init_file)
 
-#caption_files, formats, vocabulary_file, can_load, vocab_replacement_file = \
-# make generic configuration reader
 
+# function that replaces tokens with replacements, so as to match tokens in embeddings
 def replace_problematic_words(toklist, replacements):
 
     for w in replacements:
@@ -40,7 +39,8 @@ def replace_problematic_words(toklist, replacements):
                 toklist = [*toklist[:i] , * replacements[w].split(), *toklist[i+1 :] ]
                 # print("Replaced %s with %s" % (w,toklist[i : i + len(replacements[w].split())]))
     return toklist
-# read data
+
+# read caption data from file
 def read_file(filename, format):
     print("Reading file ",filename)
     img_captions = None
@@ -99,8 +99,8 @@ def read_file(filename, format):
         json.dump(image_jsons, fp)
     return image_jsons
 
+# preprocess the captions, removing punctuation and applying token replacement if needed
 def prepro_captions(imgs_json):
-    # preprocess all the captions
 
     translator = str.maketrans('', '', string.punctuation)
 
@@ -124,16 +124,22 @@ def prepro_captions(imgs_json):
                 txt = replace_problematic_words(txt, replacements)
                 imgs_json[i]['processed_tokens'][t] = txt
 
-
+# construct the vocabulary from the input captions
 def build_vocab(imgs, word_count_thresh):
-    if word_count_thresh is None:
-        word_count_thresh = -1
-    count_thr = word_count_thresh
+    if word_count_thresh is not None:
+        vocab = apply_frequency_filtering(imgs, word_count_thresh)
+    else:
+        vocab = set()
+        for img in imgs:
+            for txt in img['processed_tokens']:
+                for w in txt:
+                    vocab.add(w)
+        vocab = list(vocab)
+    return vocab
 
-    # count up the number of words
-
-    print()
-
+# produce a frequenccy-filtered vocabulary
+def apply_frequency_filtering(imgs, count_threshold ):
+    print("Counting tokens...")
     counts = {}
     for img in imgs:
         for txt in img['processed_tokens']:
@@ -143,59 +149,39 @@ def build_vocab(imgs, word_count_thresh):
                 else:
                     counts[w] = counts[w] + 1
     cw = sorted([(count, w) for w, count in counts.items()], reverse=True)
-    print('\ntop words and their counts:')
-    print('\n'.join(map(str, cw[:20])))
+
+    # print top words
+    num_top = 10
+    print('\ntop %d words and their counts:' % num_top)
+    print('\n'.join(map(str, cw[:num_top])))
+    print()
+
+    vocab = [w for w, n in counts.items() if n > count_threshold]
 
     # print some stats
     total_words = len(counts.items())
+    bad_words = [w for w, n in counts.items() if n <= count_threshold]
+
     print('total words:', total_words)
-
-    bad_words = [w for w, n in counts.items() if n <= count_thr]
-    vocab = [w for w, n in counts.items() if n > count_thr]
-    bad_count = sum(counts[w] for w in bad_words)
-
-    print('number of bad words: %d/%d = %.2f%%' % (
-    len(bad_words), len(counts), len(bad_words) * 100.0 / len(counts)))
-    print('number of words in vocab would be %d' % (len(vocab),))
-    print('number of UNKs: %d/%d = %.2f%%' % (bad_count, total_words, bad_count * 100.0 / total_words))
-
-    # lets look at the distribution of lengths as well
-    # sent_lengths = {}
-    # for img in imgs:
-    #     for txt in img['processed_tokens']:
-    #         nw = len(txt)
-    #         sent_lengths[nw] = sent_lengths.get(nw, 0) + 1
-    # max_len = max(sent_lengths.keys())
-    # print('max length sentence in raw data: ', max_len)
-    # print('sentence length distribution (count, number of words):')
-    # sum_len = sum(sent_lengths.values())
-    # for i in range(max_len + 1):
-    #     print('%2d: %10d   %f%%' % (i, sent_lengths.get(i, 0), sent_lengths.get(i, 0) * 100.0 / sum_len))
-
-    # lets now produce the final annotations
-
-    # RARE token to map 1) either infrequent words or 2) unseen words during testing => always needed
-    print('inserting the special UNK token')
-    vocab.append('UNK')
-
-    for img in imgs:
-        img['final_captions'] = []
-        for txt in img['processed_tokens']:
-            caption = [w if counts.get(w, 0) > count_thr else 'UNK' for w in txt]
-            if caption_max_length is not None and len(caption) > caption_max_length:
-                print("Limiting caption of size %d " % len(caption),caption," to ",caption[0:caption_max_length])
-                caption = caption[0:caption_max_length]
-            img['final_captions'].append(caption)
-
+    print('number of non-frequent words to-be-mapped to UNK: %d/%d = %.2f%%' % (
+        len(bad_words), len(counts), len(bad_words) * 100.0 / len(counts)))
+    print('number of words in vocab: %d' % (len(vocab)))
     return vocab
 
-def finalize_captions(img_list, captions_field, vocab):
+# map captions to vocabulary tokens
+def finalize_captions(img_list, captions_field, vocab, caption_max_length):
     for img in img_list:
         img['final_captions'] = []
-        for txt in img[captions_field]:
-            caption = [w if w in vocab else 'UNK' for w in txt]
-            img['final_captions'].append(caption)
+        # map to vocabulary and potentially truncate
+        for raw_word_list in img[captions_field]:
+            vocab_words = [w if w in vocab else 'UNK' for w in raw_word_list]
+            if caption_max_length is not None and len(vocab_words) > caption_max_length:
+                trunc_vocab_words= vocab_words[0:caption_max_length]
+                print("Limiting caption of size %d :" % len(vocab_words), str(vocab_words), " to ", str(trunc_vocab_words))
+                vocab_words = trunc_vocab_words
+            img['final_captions'].append(vocab_words)
 
+# read the vocab
 def read_vocabulary(vocab_file):
     # read vocabulary
     print("Reading vocabulary from ",vocab_file)
@@ -210,10 +196,9 @@ def read_vocabulary(vocab_file):
     print("Read a %d-word vocabulary." % len(vocab))
     return vocab
 
-#some confusion as to where we call the vocab() method , how we process paths when the vocab has been created..
 
 def main():
-
+    # read caption files
     image_jsons = []
     for i,c in enumerate(caption_files):
         image_jsons.append(read_file(c, caption_file_formats[i]))
@@ -221,11 +206,7 @@ def main():
         print('Processing tokens of %s.' % (caption_files[i]))
         prepro_captions(c)
 
-
-
-
-
-    # if train, build vocabulary
+    # if no vocabulary specified, build it
     if vocabulary_file is None:
         img_json = []
         for obj in image_jsons:
@@ -233,7 +214,7 @@ def main():
 
         vocab = build_vocab(img_json, word_count_thresh)
         # add EOS, BOS
-        vocab.extend(["EOS","BOS"])
+        vocab.extend(["EOS","BOS","UNK"])
         filename = "vocabulary_" + "_".join([ os.path.basename(capfile) for capfile in caption_files])
         print("Produced vocabulary of", len(vocab)," words, including the UNK, EOS, BOS symbols.")
         print("Writing vocabulary to",filename + ".vocab")
@@ -241,19 +222,16 @@ def main():
             for w in vocab:
                 f.write(w + "\n")
     else:
-        # finalize captions
-
+        # encode captions to an existing vocabulary
         vocab = read_vocabulary(vocabulary_file)
-            # cycle through the images, create a seqlen x vocab-len one-hot vector out of their caption
-        # encode the seq of one hot to a seq of integers, write path - seq_of_ints
         for i in range(len(caption_files)):
             filename = caption_files[i]
             imgjson = image_jsons[i]
 
-            # finalize captions
             print("Mapping captions of ", filename, " to the vocabulary")
+            finalize_captions(imgjson,"processed_tokens",vocab, caption_max_length)
 
-            finalize_captions(imgjson,"processed_tokens",vocab)
+            # write
             with open(filename + ".paths.txt","w") as f:
                 for image_obj in imgjson:
                     imgname = image_obj["filename"]

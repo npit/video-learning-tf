@@ -27,13 +27,14 @@ def main(argv):
     	exit (1)
     resFile = argv[0]
     gtFile = argv[1]
+    print "\n\n"
     print 'Evaluating imageids - caption file :file %s' % resFile
     print 'Using ground truth file %s' % gtFile
 
     coco = COCO(gtFile)
     results = evaluateModel(resFile, coco)
     final_eval_file = resFile + '.eval.json'
-    print 'Writing scores to evaluation file %s' % gtFile
+    print 'Writing scores to file %s' % final_eval_file
 
     if not os.path.isfile(final_eval_file):
         all_results_json = {}
