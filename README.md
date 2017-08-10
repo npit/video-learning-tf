@@ -53,6 +53,8 @@ The state workflow feeds the visual input as a bias to the initial state of the 
 
 During validation, the input image is encoded and merged to a special Beginning-Of-Sequence (BOS) character. The output of each step is fed as input to the next, until an End-Of-Sequence character is generated, or we reach a maximum caption length.
 
+Image caption annotations, vocabulary generation and caption-vocabulary mapping processing is performed by `process_annotations.py`. Association with word embeddings is done by `produce_embeddings.py`.
+
 ### Video description
 The video description workflow produces captions for given input video frames. 
 #### Video description/Pooling
