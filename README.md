@@ -7,8 +7,8 @@ This is a python3 / tensorflow implementation of the architectures described in 
 ## Data preprocessing : `serialize.py`
 Tensorflow recommended serialization format is the [TFRecord ](https://www.tensorflow.org/programmers_guide/reading_data). You can serialize a list of images or videos by using the `serialize.py` script.
 
-To serialize a list of items (images or videos), provide a list with file paths to the `input_files` ini variable, followed by their label index(es). You can find examples in `examples/test_run` folder per data type. Use the `path_prepend_folder` variable to complete relative paths in the input files.
-Each file path should contain an image name or a folder containing video frames. The former's encoding should be specified at the `frame_format` ini variable. If the entries in the input files do not match the given `frame_format`, it is assumed they constitute video folders. Frames in each video folder should be named as `N.fmt, N={1,2,...}` and `fmt` the image encoding.
+To serialize a list of items (images or videos), provide a file to the `input_files` ini variable, containing file paths followed by their label index(es). You can find examples in `examples/test_run` folder per data and workflow type. Use the `path_prepend_folder` variable to complete relative paths in the input files, if necessary.
+Each file path should contain an image name or a folder containing video frames. The former's encoding should be specified at the `frame_format` ini variable. If the entries in the input files do not match the given `frame_format`, it is assumed they represent video folders. Frames in each video folder should be named as `N.fmt, N={1,2,...}` and `fmt` the image encoding. Miscellaneous variables are:
 
 Resources and workflow control:
 - `num_threads`: number of threads to use for serialization
@@ -45,11 +45,18 @@ The single-frame workflow uses an Alexnet DCNN to classify each video frame indi
 The lstm workflow uses an LSTM to classify a video taking into account the temporal dynamics across the video frames. Per-frame predictions are pooled similarly to the single-frame case.
 ### Image description
 The image description workflow produces captions for a given input image. 
-During training, an (image,caption) tuple is suppled to the workflow. The image is encoded into a feature vector using an Alexnet DCNN and each word in the caption is encoded to a vector using an embedding matrix and a vocabulary pre-computed on the training data. The image vector is then duplicated to the number of words in the caption and concatenated to the embedding of each word. The merged vectors are fed into an LSTM, the outputs of which are passed through a linear prediction layer. The latter produces logits vector on the vocabulary, from which we sample the most probable predicted caption, according to strategies defined in `defs.caption_search`.
+During training, an (image,caption) tuple is suppled to the workflow. The image is encoded into a feature vector using an DCNN and each word in the caption is encoded to a vector using an embedding matrix and a vocabulary pre-computed on the training data.
+#### Image description/Step
+In the the Step workflow, the image vector is then duplicated to the number of words in the caption and concatenated to the embedding of each word. The merged vectors are fed into an LSTM, the outputs of which are passed through a linear prediction layer. The latter produces logits vector on the vocabulary, from which we sample the most probable predicted caption, according to strategies defined in `defs.caption_search`.
+#### Image description/State
+The state workflow feeds the visual input as a bias to the initial state of the LSTM, instead of supplying a duplicate at each step in the input. The rest of the workflow is identical to the previous one.
 
 During validation, the input image is encoded and merged to a special Beginning-Of-Sequence (BOS) character. The output of each step is fed as input to the next, until an End-Of-Sequence character is generated, or we reach a maximum caption length.
 
+Image caption annotations, vocabulary generation and caption-vocabulary mapping processing is performed by `process_annotations.py`. Association with word embeddings is done by `produce_embeddings.py`.
+
 ### Video description
+The video description workflow produces captions for given input video frames. 
 #### Video description/Pooling
 This approach pools video the dcnn-encoded frames into a single vector in an early fusion manner and then proceeds as the image description workflow.
 #### Video description/Encoder-decoder
