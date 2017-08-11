@@ -202,6 +202,7 @@ def main():
     image_jsons = []
     for i,c in enumerate(caption_files):
         image_jsons.append(read_file(c, caption_file_formats[i]))
+
     for i,c in enumerate(image_jsons):
         print('Processing tokens of %s.' % (caption_files[i]))
         prepro_captions(c)
@@ -215,10 +216,13 @@ def main():
         vocab = build_vocab(img_json, word_count_thresh)
         # add EOS, BOS
         vocab.extend(["EOS","BOS","UNK"])
-        filename = "vocabulary_" + "_".join([ os.path.basename(capfile) for capfile in caption_files])
+        # write to the folder of the first caption file
+        filename =  os.path.join(os.path.dirname(caption_files[0]),
+                                 "_".join([ os.path.basename(capfile) for capfile in caption_files]))
+        filename = filename + ".vocab"
         print("Produced vocabulary of", len(vocab)," words, including the UNK, EOS, BOS symbols.")
-        print("Writing vocabulary to",filename + ".vocab")
-        with open(filename + ".vocab", "w") as f:
+        print("Writing vocabulary to",filename )
+        with open(filename, "w") as f:
             for w in vocab:
                 f.write(w + "\n")
     else:

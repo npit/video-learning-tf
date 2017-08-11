@@ -166,21 +166,30 @@ class Settings:
         for var in config:
             exec("self.%s=%s" % (var, config[var]))
         # set append the config.ini.xxx suffix to the run id
-        trainval = ""
+        trainval_str = ""
         if self.do_training:
-            trainval = "train"
+            trainval_str = "train"
         if self.do_validation:
-            trainval = trainval + "val"
+            trainval_str = trainval_str + "val"
         if self.should_resume():
-            trainval = trainval + "_resume"
+            trainval_str = trainval_str + "_resume"
         else:
-            trainval = trainval + "_scratch"
+            trainval_str = trainval_str + "_scratch"
+
+        # if run id specified, use it
+        run_identifiers= []
         if self.run_id:
-            self.run_id = "_" + self.run_id
-        self.run_id = self.workflow + self.run_id + "_" + trainval
-        if not self.init_file == "config.ini":
-            init_file_suffix = self.init_file.split(".")
-            self.run_id = self.run_id + "_" + init_file_suffix[-1]
+            run_identifiers = [self.workflow ,self.run_id , trainval_str]
+        else:
+            if self.init_file == "config.ini":
+                run_identifiers = [self.workflow, trainval_str]
+            else:
+                # use the configuration file suffix
+                file_suffix = self.init_file.split(".")[-1]
+                run_identifiers = [self.workflow, file_suffix, trainval_str]
+
+        self.run_id = "_".join(run_identifiers)
+
         print("Initialized run [%s] from file %s" % ( self.run_id, self.init_file))
         sys.stdout.flush()
 

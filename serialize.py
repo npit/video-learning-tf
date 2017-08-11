@@ -336,7 +336,7 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 
 def read_file(inp):
     mode = None
-    logger.info("Reading input file %s " % (inp))
+    logger.info("Reading input file [%s] " % (inp))
     max_num_labels = -1
     paths = []
     labels = []
@@ -532,7 +532,7 @@ def write_paths_file(data):
         logger.info("Documenting selected paths from file %s \n\tto %s" % (inp, outfile))
         with open(outfile, "w") as f:
             for path, label in zip(paths, labels):
-                f.write("%s %d\n" % (path, label))
+                f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))
 
 if len(sys.argv) > 1:
     init_file = sys.argv[-1]
