@@ -31,7 +31,7 @@ if embeddings_file_type == "glove":
     embeddings = {}
 
     # read the whole contents and compute the min/max in which to produce random embeddings for not found words
-    print("Reading embeddings file...",end="")
+    print("Reading embeddings file...")
     with open(embeddings_file,"r") as fp:
         for line in fp:
             contents = line.split()
@@ -51,13 +51,15 @@ if embeddings_file_type == "glove":
     vocab_embeddings =  dict( (w, embeddings[w]) for w in [ w for w in vocab if w in embeddings])
     missing_vocab_word_embeddings = [ w for w in vocab if w not in vocab_embeddings]
     if len(missing_vocab_word_embeddings) > 3: # apart from EOS, BOS, UNK
-        print("%d items in the vocabulary were not found in the embedding matrix (other than EOS,BOS)!" %
-              (3-len(missing_vocab_word_embeddings)))
-        print("\n".join(missing_vocab_word_embeddings))
+        print("%d items in the vocabulary were not found in the embedding matrix (other than EOS,BOS,UNK)!" %
+              (len(missing_vocab_word_embeddings) -3))
+
     else:
         print("No missing embeddings other than EOS, BOS and UNK.")
     if not randomize_missing_embeddings:
-        print("Randomizing embeddings is disabled, exiting.")
+        print("Randomizing embeddings is disabled, exiting. See missing_embeddings.txt")
+        with open("missing_embeddings.txt","w") as f:
+            f.write("\n".join(missing_vocab_word_embeddings))
         exit(1)
 
     for w in missing_vocab_word_embeddings:
@@ -68,7 +70,7 @@ if embeddings_file_type == "glove":
             
     # write out
     filename = vocabulary_file + ".embeddings"
-    print("Writing embeddings for vocabulary at ",filename)
+    print("Writing embeddings for vocabulary at",filename)
 
     with open(filename,"w") as fp:
         for token,vector in vocab_embeddings.items():

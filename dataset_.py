@@ -672,7 +672,7 @@ class Dataset:
         if len(contents) == 0 :
             # no number of frames per video, it's gotta be an image run, else error
             if not self.input_mode == defs.input_mode.image:
-                logger.error("Specified input mode %s but size file contains no data" %self.input_mode, self.logger)
+                self.logger.error("Specified input mode %s but size file contains no data" %self.input_mode, self.logger)
 
         # read number of items in the tfrecord
         num_items = int(contents[0])
@@ -711,7 +711,7 @@ class Dataset:
             self.clips_per_video = num_clips
             # check integrity
             if not len(self.clips_per_video) == num_items:
-                error("Unequal number of clips vector %d to the number of videos %d" % (
+                error("Read number of clips for %d items, but the number of items read was %d" % (
                 len(self.clips_per_video), num_items), self.logger)
         else:
             # else, if unset, we gotta be in frame mode

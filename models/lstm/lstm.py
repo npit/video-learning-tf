@@ -136,41 +136,14 @@ class lstm(Trainable):
                 embedding_matrix = tf.constant(dataset.embedding_matrix,tf.float32)
                 logger.debug("Loaded the graph embedding matrix : %s" % embedding_matrix.shape)
 
-                # check https://github.com/mosessoh/CNN-LSTM-Caption-Generator/blob/master/model.py
-                # link is a simple image+word -> ... ?
-
-                # neural talk trains like:
-                # RNN training. The RNN is trained to combine a word (xt),
-                # the previous context (ht−1) to predict the next word (yt).
-                # We condition the RNN’s predictions on the image information
-                # (bv) via bias interactions on the first step. The training
-                # proceeds as follows (refer to Figure 4): We set h0 = ~0, x1 to
-                # a special START vector, and the desired label y1 as the first
-                # word in the sequence. Analogously, we set x2 to the word
-                # vector of the first word and expect the network to predict
-                # the second word, etc. Finally, on the last step when xT represents
-                # the last word, the target label is set to a special END
-                # token. The cost function is to maximize the log probability
-                # assigned to the target labels (i.e. Softmax classifier).
-
-                # so the input is the desired caption, shifted to the right once, and a BOS inserted at the start
-                # the desired response is the caption, followed by an EOS
-
-                # neural talk plugs in the image just as a state BIAS.
-                # lrcn plugs in the image at the input, ADDED to the word embedding.
-                # all should be well now.
-
-                # so the implementation is as usual, I guess
-
-                # initial state should be the BOS symbol
 
                 # declare the chain for a single timestep
-                logger.debug("LSTM iteration #%d input tensor : %s" % (0, inputTensor.shape))
+                #logger.debug("LSTM iteration #%d input tensor : %s" % (0, inputTensor.shape))
 
                 initial_state = tuple(tf.zeros([1,num_hidden], tf.float32) for _ in range(2))
                 output, state = cell(inputTensor, initial_state, scope="rnn/basic_lstm_cell")
-                logger.debug("LSTM iteration #%d output : %s" % (0, output.shape))
-                logger.debug("LSTM iteration #%d state : %s" % (0, [str(x.shape) for x in state]))
+                #logger.debug("LSTM iteration #%d output : %s" % (0, output.shape))
+                #logger.debug("LSTM iteration #%d state : %s" % (0, [str(x.shape) for x in state]))
 
 
                 # add dropout
@@ -203,15 +176,15 @@ class lstm(Trainable):
                 # https://github.com/mosessoh/CNN-LSTM-Caption-Generator/blob/master/model.py#L162   func model.generate_caption
                 for step in range(1,sequence_len):
                     input_vec = tf.concat([image_vector, data_io],axis=1)
-                    logger.debug("Input vector at step #%d  is : %s" % (step, input_vec.shape))
-                    logger.debug("weights at step #%d  is : %s" % (step, fc_out_w))
-                    logger.debug("Biases at step #%d  is : %s" % (step, fc_out_b))
+                    # logger.debug("Input vector at step #%d  is : %s" % (step, input_vec.shape))
+                    # logger.debug("weights at step #%d  is : %s" % (step, fc_out_w))
+                    # logger.debug("Biases at step #%d  is : %s" % (step, fc_out_b))
                     tf.get_variable_scope().reuse_variables()
                     data_io, state = cell(input_vec, initial_state, scope="rnn/basic_lstm_cell")
                     initial_state = state
-                    logger.debug("LSTM iteration #%d state : %s" % (step, [str(x.shape) for x in state]))
+                    # logger.debug("LSTM iteration #%d state : %s" % (step, [str(x.shape) for x in state]))
                     data_io, word_index = self.logits_to_word_vectors_tf(embedding_matrix, step, logger, fc_out_w, fc_out_b, data_io, defs.caption_search.max)
-                    logger.debug("LSTM iteration #%d output : %s" % (step, data_io.shape))
+                    # logger.debug("LSTM iteration #%d output : %s" % (step, data_io.shape))
                     predicted_words = tf.concat([predicted_words, word_index], axis=0)
 
                 self.output = predicted_words
@@ -223,14 +196,14 @@ class lstm(Trainable):
         if strategy == defs.caption_search.max:
             # here we should select a word from the output
             data_io = tf.nn.xw_plus_b(logits, weights, biases)
-            logger.debug("LSTM iteration #%d output : %s" % (step, data_io.shape))
+            # logger.debug("LSTM iteration #%d output : %s" % (step, data_io.shape))
             # here we should extract the predicted label from the output tensor. There are a variety of selecting that
             # we ll try the argmax here => get the most likely caption. ASSUME batchsize of 1
             # get the max index of the output logit vector
             word_index = tf.argmax(data_io, 1)
             # get the word embedding of that index / word, which is now the new input
             data_io = tf.gather(embedding_matrix, word_index)
-            logger.debug("Vectors from logits ,iteration #%d  is : %s" % (step, data_io.shape))
+            # logger.debug("Vectors from logits ,iteration #%d  is : %s" % (step, data_io.shape))
 
             return data_io, word_index
 
