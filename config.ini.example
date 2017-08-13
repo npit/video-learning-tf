@@ -65,6 +65,7 @@ input_files = [ "/path/to/imgfile1", "/path/to/imgfile2"]
 do_shuffle = True
 do_serialize = True
 do_validate = True
+validate_pcnt = 10
 num_threads = 2
 num_items_per_thread = 20
 
