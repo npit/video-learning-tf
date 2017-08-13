@@ -5,7 +5,6 @@ from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os
 from utils_ import *
-import matplotlib.pyplot as plt
 import configparser
 import sys
 
@@ -276,15 +275,6 @@ def read_image(imagepath):
         error("Error reading image.")
         return None
     return image
-
-
-def display_image(image,label=None):
-    print(label)
-    plt.title(label)
-    plt.imshow(image)
-    plt.show()
-    # plt.waitforbuttonpress()
-
 
 # read from tfrecord
 def deserialize_from_tfrecord( iterator, images_per_iteration):
