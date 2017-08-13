@@ -115,9 +115,10 @@ def prepro_captions(imgs_json):
         replacements = {}
         with open(vocab_replacement_file, "r") as f:
             for line in f:
-                word, repl = line.strip().split("\t")
-                repl = repl.split()
-                replacements[word] = " ".join(repl)
+                tokens = line.strip().split("\t")
+                tokens = [ tok.strip() for tok in tokens if len(tok.strip()) > 0]
+                word = tokens[0]
+                replacements[word] = " ".join(tokens[1:])
 
         for i, img in enumerate(imgs_json):
             for t, txt in enumerate(img['processed_tokens']):
@@ -199,6 +200,7 @@ def read_vocabulary(vocab_file):
 
 def main():
     # read caption files
+    print (caption_file_formats)
     image_jsons = []
     for i,c in enumerate(caption_files):
         image_jsons.append(read_file(c, caption_file_formats[i]))

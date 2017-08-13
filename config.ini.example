@@ -79,7 +79,7 @@ frame_format = "jpg"
 vocabulary_file = None
 # caption files to encode or to generate vocabulary
 caption_files =  ["/path/to/captionfile1","/path/to/captionfile2"]
-caption_file_formats = ("coco","flickr")
+caption_file_formats = ["coco","flickr"]
 vocab_replacement_file= None
 word_count_thresh = 5
 caption_max_length = 50
