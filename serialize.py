@@ -444,7 +444,9 @@ def validate(written_data):
 
 
     for index in range(len(input_files)):
+
         inp = input_files[index]
+        print('Validating %s' % inp)
 
         item_paths, item_labels, paths, labels, mode,  = written_data[index]
         if mode == defs.input_mode.video and not do_serialize:
@@ -457,6 +459,7 @@ def validate(written_data):
 
         # validate
         num_validate = len(paths) * 70 / 100 if len(paths) >= 10000 else len(paths)
+        progress = ProgressBar(num_validate, fmt=ProgressBar.FULL)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
@@ -471,7 +474,7 @@ def validate(written_data):
             if not i == testidx:
                 next(iter)
                 continue
-
+            progress()
             frame = read_image(paths[i])
             label = labels[i]
 
@@ -491,10 +494,12 @@ def validate(written_data):
                 break
 
             testidx = idx_list[lidx]
+        progress.done()
         if not error_free:
             logger.error("errors exist.")
         else:
             logger.info("Validation for %s ok" % (inp + ".tfrecord"))
+
 
 
 def write_paths_file(data):
