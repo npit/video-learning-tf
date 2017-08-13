@@ -456,10 +456,11 @@ def validate(written_data):
             labels = item_labels
 
         # validate
-        num_validate = len(paths) * 70 / 100 if len(paths) >= 10000 else len(paths)
+        num_validate = round(len(paths) * 70 / 100) if len(paths) >= 10000 else len(paths)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
+        print("Will validate",num_validate,"items.")
         idx_list = idx_list[:num_validate]
         idx_list.sort()
         lidx = 0
