@@ -29,7 +29,7 @@ frame_format = "jpg"
 force_video_metadata = False
 do_shuffle = False
 do_serialize = False
-
+do_validate = True
 # internals
 max_num_labels = -1
 
@@ -442,13 +442,19 @@ def write():
 # verify the serialization validity
 def validate(written_data):
 
+
     for index in range(len(input_files)):
         inp = input_files[index]
 
         item_paths, item_labels, paths, labels, mode,  = written_data[index]
+        if mode == defs.input_mode.video and not do_serialize:
+            error("Cannot validate-only in video mode, as frame selection is not known.")
+        if do_shuffle and not do_serialize:
+            error("Cannot validate-only with shuffle enabled, as serialization shuffling is not known.")
         if mode == defs.input_mode.image:
             paths = item_paths
             labels = item_labels
+
         # validate
         num_validate = len(paths) * 70 / 100 if len(paths) >= 10000 else len(paths)
         error_free = True
@@ -459,6 +465,8 @@ def validate(written_data):
         lidx = 0
         testidx = idx_list[lidx]
         iter = tf.python_io.tf_record_iterator(inp + ".tfrecord")
+        if not os.path.isfile(inp + ".tfrecord"):
+            error("TFRecord file %s does not exist." % (inp + ".tfrecord"))
         for i in range(len(paths)):
             if not i == testidx:
                 next(iter)
@@ -535,7 +543,7 @@ print("Successfully initialized from file %s" % init_file)
 # outpaths is either the input frame paths in image mode, or the expanded frame paths in video mode
 written_data = write()
 write_paths_file(written_data)
-if do_serialize:
+if do_validate:
     validate(written_data)
 
 
