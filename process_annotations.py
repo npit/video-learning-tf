@@ -22,6 +22,7 @@ caption_max_length = 16
 word_count_thresh = 5
 ########################
 
+
 if __name__ == '__main__':
     keyvals = init_config(init_file, "captions")
 
@@ -218,7 +219,7 @@ def main():
 
         vocab = build_vocab(img_json, word_count_thresh)
         # add EOS, BOS
-        vocab.extend(["EOS","BOS","UNK"])
+        vocab.extend(["UNK","EOS","BOS"])
         # write to the folder of the first caption file
         filename =  os.path.join(os.path.dirname(caption_files[0]),
                                  "_".join([ os.path.basename(capfile) for capfile in caption_files]))

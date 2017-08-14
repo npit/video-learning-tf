@@ -324,33 +324,35 @@ class Dataset:
             self.logger.debug("image id: %s caption:%s" % (str(image_ids[i]),str(captions[i])))
         return return_data
 
-    # get word vectors from their indices
-    def labels_to_words(self, labels):
+    # get word embedding vectors from vocabulary encoded indices
+    def labels_to_words(self, batch_labels):
+        # initialize to empties
         batch_word_vectors = np.zeros([0, self.embedding_matrix.shape[1]], np.float32)
         batch_onehot_labels = np.zeros([0, self.num_classes], np.int32)
         embedding_dim = self.embedding_matrix.shape[1]
-        # first item is the BOS
+        # get special tokens indices
         bos_index = self.vocabulary.index("BOS")
         eos_index = self.vocabulary.index("EOS")
 
-        for label in labels:
-            if self.do_training:
-                image_word_vectors = np.vstack((self.embedding_matrix[bos_index, :], self.embedding_matrix[label, :]))
-                # pad to the max number of words with zeros
-                num_left_to_max = 1+self.num_frames_per_clip - image_word_vectors.shape[0]
-                image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
-                # append to the total
-                batch_word_vectors = np.vstack((batch_word_vectors, image_word_vectors))
+        for image_labels in batch_labels:
+            # get caption word embedding vector
+            # prepend image input caption with BOS token
+            image_word_vectors = np.vstack((self.embedding_matrix[bos_index, :], self.embedding_matrix[image_labels, :]))
+            # pad to the max number of words with zero vectors
+            num_left_to_max = 1+self.num_frames_per_clip - image_word_vectors.shape[0]
+            image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
+            # append word vectors to batch container
+            batch_word_vectors = np.vstack((batch_word_vectors, image_word_vectors))
 
-            # get input embeddings & labels. Prepend the input embeddings with BOS
-            image_onehot_labels = np.vstack((labels_to_one_hot(label, self.num_classes)))
+            # get labels
+            image_onehot_labels = np.vstack((labels_to_one_hot(image_labels, self.num_classes)))
             # append output labels with EOS
             image_onehot_labels =  np.vstack((image_onehot_labels, labels_to_one_hot([eos_index], self.num_classes)))
-            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
-        if self.do_validation:
-            batch_word_vectors =  np.vstack((batch_word_vectors, self.embedding_matrix[bos_index, :]))
 
-        return (batch_word_vectors, batch_onehot_labels, list(map(len,labels)) )
+            # append labels to batch container
+            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
+
+        return (batch_word_vectors, batch_onehot_labels, list(map(len, batch_labels)))
 
     def get_next_batch_video_tfr(self):
         if self.batch_item == defs.batch_item.default:
