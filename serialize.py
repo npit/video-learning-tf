@@ -30,6 +30,7 @@ force_video_metadata = False
 do_shuffle = False
 do_serialize = False
 do_validate = True
+validate_pcnt = 10
 # internals
 max_num_labels = -1
 
@@ -458,11 +459,13 @@ def validate(written_data):
             labels = item_labels
 
         # validate
-        num_validate = len(paths) * 70 / 100 if len(paths) >= 10000 else len(paths)
+
+        num_validate = round(len(paths) * validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
         progress = ProgressBar(num_validate, fmt=ProgressBar.FULL)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
+        print("Will validate",num_validate,"items.")
         idx_list = idx_list[:num_validate]
         idx_list.sort()
         lidx = 0

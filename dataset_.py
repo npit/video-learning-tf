@@ -9,7 +9,7 @@ from random import choice, randrange
 # image IO
 from scipy.misc import imread, imresize, imsave
 # displaying
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 # Dataset class
 class Dataset:
