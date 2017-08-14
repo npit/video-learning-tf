@@ -81,7 +81,7 @@ class LRCN:
             return base_lr
         if decay_params[0] == defs.decay.exp:
             staircase = False
-        elif decay_params == defs.decay.staircase:
+        elif decay_params[0] == defs.decay.staircase:
             staircase = True
         return tf.train.exponential_decay(base_lr, global_step, decay_params[1], decay_params[2],staircase,"lr_decay")
 
@@ -119,7 +119,7 @@ class LRCN:
                 if self.lstm_model is not None:
                     regular_vars.extend(self.lstm_model.train_regular)
                     modified_vars.extend(self.lstm_model.train_modified)
-                self.logger.info("Setting up two-tier lr training, with modified layers: %s" % str(modified_vars))
+                self.logger.info("Setting up two-tier training with a factor of %f for layers: %s" % ( settings.lr_mult, str(modified_vars)))
                 # setup the two optimizers
                 if settings.clip_grads is None:
                     if settings.optimizer == defs.optim.sgd:
