@@ -210,12 +210,12 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
 
 # read all frames for a video
 def get_video_frame_paths(path):
-    frames_indexes = []
 
     files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
     files = sorted(files)
     num_files = len(files)
 
+    clips = []
     # generate a number of frame paths from the video path
     if clipframe_mode == defs.clipframe_mode.rand_frames:
 
@@ -223,7 +223,7 @@ def get_video_frame_paths(path):
         avail_frames = list(range(num_files))
         shuffle(avail_frames)
         avail_frames = avail_frames[:num_frames_per_clip]
-        frames_indexes.extend(avail_frames)
+        clips.append(avail_frames)
 
     elif clipframe_mode == defs.clipframe_mode.rand_clips:
 
@@ -237,19 +237,24 @@ def get_video_frame_paths(path):
             start_index = possible_chunk_start[-1]
             possible_chunk_start = possible_chunk_start[:-1]
             clip_frames = list(range(start_index, start_index + num_frames_per_clip))
-            frames_indexes.extend(clip_frames)
+            clips.append(clip_frames)
+
 
     elif  clipframe_mode == defs.clipframe_mode.iterative:
         # get all possible video clips.
         start_indexes = list(range(0 , num_files - num_frames_per_clip + 1, num_frames_per_clip + clip_offset_or_num))
         for s in start_indexes :
-            frames_indexes.extend(list(range(s,s+num_frames_per_clip )))
+            clip_frames = list(range(s,s+num_frames_per_clip ))
+            clips.append(clip_frames)
 
-    frame_paths = []
-    for fridx in frames_indexes:
-        frame_path = os.path.join(path, files[fridx])
-        frame_paths.append(frame_path)
-    return frame_paths
+    clip_frame_paths = []
+    for clip in clips:
+        frame_paths=[]
+        for fridx in clip:
+            frame_path = os.path.join(path, files[fridx])
+            frame_paths.append(frame_path)
+        clip_frame_paths.append(frame_paths)
+    return clip_frame_paths
 
  # read image from disk
 
@@ -379,29 +384,21 @@ def shuffle_paths(item_paths, paths, labels, mode):
     item_paths, paths, labels = shuffle_pair(item_paths, paths,labels)
 
 
-    # inner shuffle, of frames
+    # inner shuffle of frames, if clip frame mode is random frames
     if  clipframe_mode == defs.clipframe_mode.rand_frames:
 
         for vid_idx in range(len(paths)):
-            p,l = zip(paths[vid_idx], labels[vid_idx])
-            paths[vid_idx] = p
-            labels[vid_idx] = l
-        logger.info("Done shuffling.")
+            for clip_idx in range(len(paths[vid_idx])):
+                shuffle(paths[vid_idx][clip_idx])
         return paths, labels
     else:
         # here we can only shuffle the clips themselves, not the frames within
-        new_paths = []
         for vid_idx in range(len(paths)):
-            # partition the paths to clips
-            p = sublist(paths[vid_idx], num_frames_per_clip)
-            # randomize the order of the clips
-            shuffle(p)
-            new_paths.append(p)
-        paths = tuple(new_paths)
-        logger.info("Done shuffling.")
+            shuffle(paths[vid_idx])
         return item_paths, paths, labels
 
 def write():
+    # store written data per input file, to print shuffled & validate, later
     framepaths_per_input = []
     for idx in range(len(input_files)):
         inp = input_files[idx]
@@ -418,6 +415,7 @@ def write():
         if mode == defs.input_mode.video:
             # generate paths per video
             paths = get_item_paths(item_paths, mode)
+
             if do_shuffle:
                 item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode)
             clips_per_video_or_item_paths = [ len(vid) for vid in paths ]
@@ -461,11 +459,12 @@ def validate(written_data):
         # validate
 
         num_validate = round(len(paths) * validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
+        print("Will validate",num_validate,"items.")
+        sys.stdout.flush()
         progress = ProgressBar(num_validate, fmt=ProgressBar.FULL)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
-        print("Will validate",num_validate,"items.")
         idx_list = idx_list[:num_validate]
         idx_list.sort()
         lidx = 0
