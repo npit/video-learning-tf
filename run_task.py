@@ -39,7 +39,7 @@ class Settings:
 
     # run mode and type
     run_id = ""
-    workflow = defs.workflows.singleframe
+    workflow = defs.workflows.acrec.singleframe
 
     # save / load configuration
     resume_file = None
@@ -246,7 +246,7 @@ class Settings:
 
             # set run options from loaded stuff
             self.train_index, self.epoch_index = params
-            self.logger.info("Restored epoch %d, train index %d" % (self.epoch_index, self.train_index))
+            self.logger.info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
 
     # restore graph variables
     def resume_graph(self, sess):
@@ -294,40 +294,54 @@ class Settings:
             error(ex)
 
 
-def get_feed_dict(lrcn, settings, images, ground_truth):
+def get_feed_dict(lrcn, dataset, images, ground_truth):
     fdict = {}
+    padding = 0
+    # supply the images
     fdict[lrcn.inputData] = images
 
-
-    if settings.workflow == defs.workflows.imgdesc:
+    # for description workflows, supply wordvectors and caption lengths
+    if defs.workflows.is_description(dataset.workflow):
         # get words per caption, onehot labels, embeddings
 
-        embeddings = ground_truth[0]
-        labels = ground_truth[1]
-        metadata = ground_truth[2]
-        fdict[lrcn.inputLabels] = labels
-        fdict[lrcn.words_per_image] = metadata
+        embeddings = ground_truth['word_embeddings']
+        onehot_labels = ground_truth['onehot_labels']
+        caption_lengths = ground_truth['caption_lengths']
+        fdict[lrcn.inputLabels] = onehot_labels
+        fdict[lrcn.caption_lengths] = caption_lengths
         fdict[lrcn.word_embeddings] = embeddings
-        # create base index list
-        idx_list = []
-        seq_len =  int(len(embeddings) / 2)
-        # for the batch item other than the first, add the offset of the sequence length
-        for idx, num_captions in enumerate(metadata):
-            offset = idx * seq_len
-            # generate, adding one more index for the EOS
-            idxs_of_seq = [i + offset for i in range(num_captions + 1)]
 
+        if dataset.phase == defs.phase.train:
+            # create indices of actual, non-padding captions, with which to calculate the loss
+            non_padding_word_idxs = []
+            # for the batch item other than the first, add the offset of the sequence length
+            for idx, num_captions in enumerate(caption_lengths):
+                offset = idx * dataset.max_caption_length
+                # generate, adding one more index for the EOS
+                caption_true_words = [i + offset for i in range(num_captions + 1)]
 
-            idx_list.extend(idxs_of_seq)
-        binary_word_idx = np.asarray(idx_list,np.int32)
-        fdict[lrcn.binary_word_idx] = binary_word_idx
+                non_padding_word_idxs.extend(caption_true_words)
+            # wrap up as nparray and put to feed dict
+            non_padding_word_idxs = np.asarray(non_padding_word_idxs,np.int32)
+            fdict[lrcn.non_padding_word_idxs] = non_padding_word_idxs
 
-        num_labels = len(labels)
+        num_labels = len(onehot_labels)
+
+        # in validation, batch entries must match exactly the batch size. pad with zeros if incomplete batck
+        if dataset.phase == defs.phase.val:
+            if len(images) != dataset.batch_size_val:
+                num_pad =  dataset.batch_size_val - len(images)
+                dataset.logger.warning("Padding last batch with %d zero items" % num_pad)
+                images.append(np.zeros(images[0].shape,np.float32))
+                embeddings = np.vstack((embeddings, np.zeros([num_pad, embeddings.shape[1]],np.float32)))
+                fdict[lrcn.inputData] = images
+                fdict[lrcn.word_embeddings] = embeddings
+                padding = num_pad
     else:
         fdict[lrcn.inputLabels] = ground_truth
         num_labels = len(ground_truth)
 
-    return fdict, num_labels
+    return fdict, num_labels, padding
 
 
 
@@ -343,7 +357,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         while dataset.loop():
             # read  batch
             images, ground_truth = dataset.read_next_batch()
-            fdict, num_labels = get_feed_dict(lrcn, settings, images, ground_truth)
+            fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
             dataset.print_iter_info( len(images) , num_labels)
             # count batch iterations
             run_batch_count = run_batch_count + 1
@@ -365,7 +379,9 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             # save a checkpoint every epoch
             settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.batch_index),
                               global_step=dataset.get_global_step())
-            dataset.epoch_index = dataset.epoch_index + 1
+        else:
+            settings.logger.info("Resumed epoch [%d] is already complete." % (1+epochIdx))
+        dataset.epoch_index = dataset.epoch_index + 1
         # reset phase
         dataset.reset_phase(defs.phase.train)
 
@@ -390,12 +406,12 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     while dataset.loop():
         # get images and labels
         images, ground_truth = dataset.read_next_batch()
-        fdict, num_labels = get_feed_dict(lrcn, settings, images, ground_truth)
+        fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
         dataset.print_iter_info(len(images), num_labels)
         logits = sess.run(lrcn.logits, feed_dict=fdict)
-        lrcn.process_validation_logits(logits, dataset, fdict[lrcn.inputLabels])
+        lrcn.process_validation_logits(logits, dataset, fdict, padding)
     # done, get accuracy
-    if settings.workflow == defs.workflows.imgdesc:
+    if defs.workflows.is_description(settings.workflow):
         # get description metric
         # do an ifthenelse on the evaluation type (eg coco)
 
@@ -408,7 +424,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
             # get captions from logits, write them in the needed format,
             # pass them to the evaluation function
             ids_captions = dataset.logits_to_captions(lrcn.item_logits)
-            if not len(ids_captions[0]) == len(ids_captions[1]):
+            if len(ids_captions[0]) != len(ids_captions[1]):
                 settings.logger.error("Unequal number of image ids and captions")
                 error("Image ids / captions mismatch")
 

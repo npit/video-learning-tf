@@ -73,17 +73,26 @@ def print_tensor(tensor, message, log_level):
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
     return tens
 
-
+# read lines from text file, cleaning whitespace
 def read_file_lines(filename):
     with open(filename, "r") as ff:
         contents = []
         for line in ff:
             contents.append(line.strip())
     return contents
-def get_vars_in_scope(starting, scope):
-    vars = [v for v in tf.global_variables()]
-    for i in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope):
-        print(i.name)
+
+# read dictionary-line lines from text file, in the format key\tvalue
+def read_file_dict(filename):
+    dictionary = {}
+    with open(filename,"r") as f:
+        for line in f:
+            key, value = line.strip().split("\t")
+            key, value = key.strip(),value.strip()
+            if key in dictionary:
+                logging.getLogger().warning("Duplicate key %s in file %s" % (key, filename))
+            dictionary[key] = value
+    return dictionary
+
 
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
@@ -95,6 +104,14 @@ class defs:
     # input mode is framewise dataset vs videowise, each video having n frames
     class input_mode:
         video, image = "video", "image"
+        def get_from_workflow(arg):
+            if defs.workflows.is_image(arg):
+                return defs.input_mode.image
+            elif defs.workflows.is_video(arg):
+                return defs.input_mode.video
+            else:
+                error("No input mode discernible from workflow %s" % arg)
+                return None
 
     # direct reading from disk or from packed tfrecord format
     class data_format:
@@ -102,7 +119,34 @@ class defs:
 
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
-        lstm, singleframe, imgdesc, videodesc = "lstm","singleframe", "imgdesc", "videodesc"
+        class acrec:
+            singleframe, lstm = "singleframe", "lstm"
+            def is_workflow(arg):
+                return arg == defs.workflows.acrec.singleframe or \
+                       arg == defs.workflows.acrec.lstm
+        class imgdesc:
+            statebias, inputstep = "statebias", "inputstep"
+            def is_workflow(arg):
+                return arg == defs.workflows.imgdesc.statebias or \
+                       arg == defs.workflows.imgdesc.inputstep
+        class videodesc:
+            pooled, encdec = "pooled", "encdec"
+            def is_workflow(arg):
+                return arg == defs.workflows.videodesc.pooled or \
+                       arg == defs.workflows.videodesc.encdec
+        def is_description(arg):
+            return defs.workflows.imgdesc.is_workflow(arg) or \
+                    defs.workflows.videodesc.is_workflow(arg)
+        def is_video(arg):
+            return defs.workflows.acrec.singleframe == arg or \
+                   defs.workflows.acrec.lstm== arg or \
+                   defs.workflows.videodesc.encdec == arg or \
+                   defs.workflows.videodesc.pooled == arg
+        def is_image(arg):
+            return defs.workflows.imgdesc.statebias == arg or \
+                   defs.workflows.imgdesc.inputstep == arg
+
+        #lstm, singleframe, imgdesc, videodesc = "lstm","singleframe", "imgdesc", "videodesc"
 
     # video pooling methods
     class pooling:

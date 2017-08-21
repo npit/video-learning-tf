@@ -95,23 +95,24 @@ def _int64_feature( value):
 def _bytes_feature( value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
+# write data metadata
+def write_size_file(item_paths, clips_per_item, outfile, mode, max_num_labels):
+    if mode == defs.input_mode.image:
+        num_frames_per_clip = None
+    with open(outfile + ".size", "w") as f:
+        # do the write
+        f.write("items\t%d\n" % len(item_paths))
+        f.write("type\t%s\n" % mode)
+        f.write("cpi\t%s\n" % str(clips_per_item))
+        f.write("fpc\t%s\n" % str(num_frames_per_clip))
+        f.write("labelcount\t%s\n" % str(max_num_labels))
 
-def serialize_multithread(clips_per_vid_or_item_paths, frame_paths, labels, outfile, mode, max_num_labels):
 
-    # first of all, write the number of items and the image size in the tfrecord
-    with open(outfile + ".size","w") as f:
-        f.write("%d\n" % len(clips_per_vid_or_item_paths))
-        if mode == defs.input_mode.video or force_video_metadata:
-            f.write("%d\n" % num_frames_per_clip)
-            if mode == defs.input_mode.video:
-                # write num clips per video, as it may vary
-                f.write("%s\n" % " ".join(list(map(str,clips_per_vid_or_item_paths))))
-        else:
-            # image mode
-            frame_paths = clips_per_vid_or_item_paths
-            # write the max. number of labels in multi-label settings
-            if max_num_labels > 0:
-                f.write("%d\n" % max_num_labels)
+
+
+def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfile, mode, max_num_labels):
+
+    write_size_file(item_paths, clips_per_item, outfile, mode, max_num_labels)
 
     # split up paths/labels list per thread run
     num_images_per_thread_run = num_items_per_thread * num_threads
@@ -408,17 +409,16 @@ def write():
             if do_shuffle:
                 item_paths, item_labels = shuffle_paths(item_paths, None, item_labels, mode)
             paths_to_serialize, labels_to_serialize = item_paths, item_labels
-            clips_per_video_or_item_paths = item_paths
+            clips_per_item = None
             framepaths_per_input.append([item_paths, item_labels, None, None, mode])
 
-
-        if mode == defs.input_mode.video:
+        elif mode == defs.input_mode.video:
             # generate paths per video
             paths = get_item_paths(item_paths, mode)
 
             if do_shuffle:
                 item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode)
-            clips_per_video_or_item_paths = [ len(vid) for vid in paths ]
+            clips_per_item = [ len(vid) for vid in paths ]
 
             # flatten: frame, for video in videos for frame in video
             labels_to_serialize = []
@@ -427,15 +427,18 @@ def write():
                 labels_to_serialize.extend(ll)
             paths_to_serialize = [ p for video in paths for clip in video for p in clip]
             framepaths_per_input.append([item_paths, item_labels, paths_to_serialize, labels_to_serialize, mode])
+        else:
+            error("Unknown data type: ",mode)
 
         if do_serialize:
             tic = time.time()
             output_file = inp + ".tfrecord"
             logger.info("Serializing %s " % (output_file))
-            serialize_multithread(clips_per_video_or_item_paths, paths_to_serialize, labels_to_serialize, output_file , mode, max_num_labels)
+            serialize_multithread(item_paths, clips_per_item, paths_to_serialize, labels_to_serialize, output_file , mode, max_num_labels)
             logger.info("Done serializing %s " % inp)
             logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
         logger.info("Done processing input file %s" % inp)
+
     return framepaths_per_input
 
 # verify the serialization validity

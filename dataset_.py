@@ -92,7 +92,6 @@ class Dataset:
     # read paths to images
     def read_frames_metadata(self):
         # store train and test in same variable
-        self.logger.info("Reading input frames in raw frame mode.");
         self.frame_paths.extend([[],[]])
         self.frame_classes.extend([[], []])
 
@@ -106,7 +105,7 @@ class Dataset:
                         item_path = os.path.join(self.path_prepend_folder, item_path)
                     self.frame_paths[defs.train_idx].append(item_path)
                     self.frame_classes[defs.train_idx].append(item_labels)
-            self.logger.info("Done reading %d frames image/label data for %s" %
+            self.logger.info("Read %d paths/labels data for %s" %
                              (len(self.frame_paths[defs.train_idx]), defs.phase.train))
 
         if self.do_validation:
@@ -118,7 +117,7 @@ class Dataset:
                     self.frame_paths[defs.val_idx].append(item_path)
                     self.frame_classes[defs.val_idx].append(item_labels)
 
-            self.logger.info("Done reading %d frames image/label data for %s" %
+            self.logger.info("Read %d paths/labels data for %s" %
                              (len(self.frame_paths[defs.val_idx]), defs.phase.val))
 
     # display image
@@ -274,7 +273,7 @@ class Dataset:
             else:
                 images, labels = self.get_next_batch_frame_tfr(currentBatch)
 
-        if self.workflow == defs.workflows.imgdesc:
+        if defs.workflows.is_description(self.workflow):
             ground_truth = self.labels_to_words(labels)
         else:
             ground_truth = labels_to_one_hot(labels, self.num_classes)
@@ -334,29 +333,36 @@ class Dataset:
         bos_index = self.vocabulary.index("BOS")
         eos_index = self.vocabulary.index("EOS")
 
-        for image_labels in batch_labels:
+        for item_labels in batch_labels:
             # get caption word embedding vector
             # set the BOS as the first input token
             image_word_vectors = self.embedding_matrix[bos_index, :]
 
-            # for training, put the caption words after the BOS in the input
+            # for training, put the caption word vectors after the BOS in the input
             if self.do_training:
                 image_word_vectors = np.vstack(
-                    (image_word_vectors, self.embedding_matrix[image_labels, :]))
+                    (image_word_vectors, self.embedding_matrix[item_labels, :]))
                 # pad to the max number of words with zero vectors
-                num_left_to_max = 1+self.num_frames_per_clip - image_word_vectors.shape[0]
+                num_left_to_max = 1+self.max_caption_length - image_word_vectors.shape[0]
                 image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
-                # get labels
-                image_onehot_labels = np.vstack((labels_to_one_hot(image_labels, self.num_classes)))
-                # append output labels with EOS
+
+            # get labels needed for training loss / validation accuracy
+            image_onehot_labels = np.vstack((labels_to_one_hot(item_labels, self.num_classes)))
+            # append output labels with EOS, if in training mode
+            if self.do_training:
                 image_onehot_labels = np.vstack((image_onehot_labels, labels_to_one_hot([eos_index], self.num_classes)))
-                # append labels to batch container
-                batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
+            # append labels to batch container
+            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
 
             # append word vectors to batch container
             batch_word_vectors = np.vstack((batch_word_vectors, image_word_vectors))
-
-        return (batch_word_vectors, batch_onehot_labels, list(map(len, batch_labels)))
+        # word vectors batch always contains max_caption_len x batch-size elements, due to padding.
+        # batch labels contain the exact labels for each word for each image caption
+        ground_truth = {}
+        ground_truth['word_embeddings'] = batch_word_vectors
+        ground_truth['onehot_labels'] = batch_onehot_labels
+        ground_truth['caption_lengths'] = list(map(len, batch_labels))
+        return ground_truth
 
     def get_next_batch_video_tfr(self):
         if self.batch_item == defs.batch_item.default:
@@ -480,7 +486,6 @@ class Dataset:
 
         self.data_format = sett.data_format
         self.frame_format = sett.frame_format
-        self.input_mode = sett.input_mode
         self.mean_image = sett.mean_image
         self.raw_image_shape = sett.raw_image_shape
         self.num_classes = sett.num_classes
@@ -492,6 +497,8 @@ class Dataset:
         self.batch_size_val = sett.batch_size_val
         self.batch_item = sett.batch_item
         self.batch_index_val = 0
+
+        self.input_mode = defs.input_mode.get_from_workflow(self.workflow)
 
         # transfer resumed snapshot settings
         self.epoch_index = sett.epoch_index
@@ -521,12 +528,11 @@ class Dataset:
             self.crop_h_avail = [i for i in range(0, self.raw_image_shape[0] - self.image_shape[0] - 1)]
             self.crop_w_avail = [i for i in range(0, self.raw_image_shape[1] - self.image_shape[1] - 1)]
 
-        self.logger.debug("Completed dataset initialization.")
         self.tell()
 
     # initialize run mode specific data
     def initialize_workflow(self, settings):
-        if self.workflow == defs.workflows.imgdesc:
+        if defs.workflows.is_description(self.workflow):
             # read embedding matrix
             self.logger.info("Reading embedding matrix from file [%s]" % settings.word_embeddings_file)
             self.vocabulary = []
@@ -534,9 +540,13 @@ class Dataset:
             with open(settings.word_embeddings_file,"r") as f:
                 for line in f:
                     token, vector = line.strip().split("\t")
+                    # add to vocabulary checking for duplicates
+                    if token in self.vocabulary:
+                        error("Duplicate token [%s] in vocabulary!", self.logger)
+                    self.vocabulary.append(token)
                     vector = [float(v) for v in vector.split()]
                     vectors.append(vector)
-                    self.vocabulary.append(token)
+
             self.embedding_matrix = np.asarray(vectors, np.float32)
             self.logger.debug("Read embedding matrix of shape %s " % str(self.embedding_matrix.shape))
             if "BOS" not in self.vocabulary:
@@ -545,6 +555,8 @@ class Dataset:
                 error("EOS not found in vocabulary.", self.logger)
             # classes are all tokens minus the BOS
             self.num_classes = len(self.vocabulary) - 1
+
+
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):
@@ -637,92 +649,51 @@ class Dataset:
 
     # read or count how many data items are in training / validation
     def get_input_data_count(self,phase):
-        # init reading
-        if phase == defs.phase.train:
-            input_file  = self.input_source_files[defs.train_idx]
-            iterator = self.train_iterator
-        else:
-            input_file = self.input_source_files[defs.val_idx]
-            iterator = self.val_iterator
 
+        idx = defs.train_idx if phase == defs.phase.train else defs.val_idx
+        input_file = self.input_source_files[idx]
         # check if a .size file exists
-        if not os.path.exists(input_file + ".size"):
-            # does not. Just count the entries :(
-            num = 0
-            num_print = 1000
-            self.logger.info("No size file for %s data. Counting..." % phase)
-            try:
-                for _ in iterator:
-                    num = num + 1
-                    if num > 0 and num % num_print == 0:
-                        self.logger.info("Counted %d instances so far." % num)
-            except StopIteration:
-                pass
-            self.logger.info("Counted tfrecord %s data: %d entries." % (phase, num))
-            self.reset_iterator(iterator)
-            if phase == defs.phase.train:
-                self.num_items_train = num
-            elif phase == defs.phase.val:
-                self.num_items_val = num
-            return
-
-
-        # .size file  exists. Read the count and optionally # frames per clip and # clips
-        # format expected is one value per line, in the order of num_items, num_frames_per_clip, clips_per_video
-        # read the data
         size_file = input_file + ".size"
+        if not os.path.exists(size_file):
+            # unsupported
+            error("Could not file data size file: ",size_file)
+
+        # read the data
         self.logger.info("Reading data meta-parameters file [%s]" % size_file)
-        contents = read_file_lines(size_file)
-
-        # check contents
-        if len(contents) == 0 :
-            # no number of frames per video, it's gotta be an image run, else error
-            if not self.input_mode == defs.input_mode.image:
-                self.logger.error("Specified input mode %s but size file contains no data" %self.input_mode, self.logger)
-
-        # read number of items in the tfrecord
-        num_items = int(contents[0])
+        datainfo = read_file_dict(size_file)
+        num_items = eval(datainfo['items'])
         if phase == defs.phase.train:
             self.num_items_train = num_items
         elif phase == defs.phase.val:
             self.num_items_val = num_items
-        self.logger.info("Read a count of %d [%s] items in the input data" % ( num_items, phase))
+        self.logger.info("Read a count of %d [%s] items in the input data" % ( num_items , phase))
+
+        if datainfo['type'] != self.input_mode:
+            error("Specified input mode %s but the size file contains %s" % (self.input_mode, datainfo['type']))
+
+        cpv = eval(datainfo['cpi'])
+        fpc = eval(datainfo['fpc'])
+
+        assert ( (cpv is not None) != (self.input_mode == defs.input_mode.image) ), \
+            "Read cpi: %s when input mode is %s" % (str(cpv), self.input_mode)
+
+        assert ((fpc is not None) != (self.input_mode == defs.input_mode.image)), \
+            "Read fpc of %d when input mode is %s" % (fpc, self.input_mode)
+
+        # check for clashes of existing values
+        if self.clips_per_video is not None:
+            if self.clips_per_video != cpv:
+                error("Specified cpv of %d but read a value of %d from the size file" % (self.clips_per_video, cpv))
+        if self.num_frames_per_clip is not None:
+            if self.num_frames_per_clip != fpc:
+                error("Specified fpc of %d but read a value of %d from the size file" % (self.num_frames_per_clip, fpc))
+        self.clips_per_video = cpv
+        self.num_frames_per_clip = fpc
+
+        self.max_caption_length = int(datainfo['labelcount'])
 
 
-        # read number of frames per clip
-        if len(contents) > 1:
-            num_frames_per_clip = int(contents[1])
-            # check if there's a clash with the run configuration specified
-            if self.num_frames_per_clip is not None:
-                if not num_frames_per_clip == self.num_frames_per_clip:
-                    error("Read %d sequence length but specified %d" %
-                                      (num_frames_per_clip,  self.num_frames_per_clip), self.logger)
-            else:
-                self.logger.info("Read a sequence length of %d for %s from size file " %
-                                  (num_frames_per_clip, phase))
-            self.num_frames_per_clip = num_frames_per_clip
-        else:
-            if self.input_mode == defs.input_mode.video:
-                error("Specified %s input mode but no sequence length information in input data." % self.input_mode, self.logger)
 
-        # read number of clips per video
-        if len(contents) > 2 :
-            # read a collection of numbers, each denoting the number of clips per video
-            vals = contents[2].split(" ")
-            num_clips = []
-            for val in vals:
-                val = val.strip()
-                num_clips.append(int(val))
-            self.logger.info("Read %d values of number of clips per video" % (len(num_clips)))
-            self.clips_per_video = num_clips
-            # check integrity
-            if not len(self.clips_per_video) == num_items:
-                error("Read number of clips for %d items, but the number of items read was %d" % (
-                len(self.clips_per_video), num_items), self.logger)
-        else:
-            # else, if unset, we gotta be in frame mode
-            if not self.input_mode == defs.input_mode.image:
-                error("No number of clips in size file, but run is not in image mode.", self.logger)
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
