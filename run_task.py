@@ -72,7 +72,7 @@ class Settings:
     optimizer = defs.optim.sgd
     base_lr = 0.001
     lr_mult = 2
-    lr_decay = (defs.decay.exp, 1000, 0.96)
+    lr_decay = (defs.decay.granularity.exp, defs.decay.scheme.interval, 1000, 0.96)
     dropout_keep_prob = 0.5
 
     # validation settings
@@ -283,7 +283,7 @@ class Settings:
             savefile_metapars = saved_instance_name + ".snap"
 
             self.logger.info("Saving params to [%s]" % savefile_metapars)
-            self.logger.info("Saving params epoch %d, train index %d" %
+            self.logger.info("Saving params for epoch index %d, train index %d" %
                 (dataset.epoch_index, dataset.batch_index_train))
 
             params2save = [dataset.batch_index_train , dataset.epoch_index]
@@ -364,7 +364,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             summaries_train, batch_loss, learning_rate, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.optimizer],feed_dict=fdict)
 
-            settings.logger.info("Learning rate %2.8f, batch loss : %2.5f " % (learning_rate, batch_loss))
+            settings.logger.info("Learning rate %2.8f  batch loss : %2.5f " % (learning_rate, batch_loss))
 
             tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_step())
             tboard_writer.flush()
@@ -432,7 +432,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
                           for i in range(len(ids_captions[0]))]
             # write results
 
-            results_file = dataset.input_source_files[defs.val_idx] + ".coco.json"
+            results_file = dataset.input_source_files[defs.val_idx] + ".coco.results.json"
             dataset.logger.info("Writing captioning results to %s" % results_file)
             with open(results_file , "w") as fp:
                 json.dump(json_data, fp)

@@ -120,17 +120,17 @@ class defs:
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
         class acrec:
-            singleframe, lstm = "singleframe", "lstm"
+            singleframe, lstm = "acrec_singleframe", "acrec_lstm"
             def is_workflow(arg):
                 return arg == defs.workflows.acrec.singleframe or \
                        arg == defs.workflows.acrec.lstm
         class imgdesc:
-            statebias, inputstep = "statebias", "inputstep"
+            statebias, inputstep = "imgdesc_statebias", "imgdesc_inputstep"
             def is_workflow(arg):
                 return arg == defs.workflows.imgdesc.statebias or \
                        arg == defs.workflows.imgdesc.inputstep
         class videodesc:
-            pooled, encdec = "pooled", "encdec"
+            pooled, encdec = "videodesc_pooled", "videodesc_encdec"
             def is_workflow(arg):
                 return arg == defs.workflows.videodesc.pooled or \
                        arg == defs.workflows.videodesc.encdec
@@ -162,8 +162,14 @@ class defs:
     class optim:
         sgd = "sgd"
 
+    # learning rate decay parameters
     class decay:
-        exp, staircase = "exp", "staircase"
+        # granularity level
+        class granularity:
+            exp, staircase = "exp", "staircase"
+        # drop at intervals or a total number of times
+        class scheme:
+            interval, total = "interval", "total"
 
     class label_type:
         single, multiple = "single", "multiple"

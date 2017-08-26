@@ -1,5 +1,5 @@
 import tensorflow as tf
-import os
+import  math
 # models
 from models.alexnet import alexnet
 from models.lstm import lstm
@@ -80,19 +80,63 @@ class LRCN:
 
         # create the training ops
         if settings.do_training:
-            self.create_training(settings,summaries)
+            self.create_training(settings, dataset, summaries)
 
-    def get_current_lr(self, base_lr, global_step, decay_params):
+    def precompute_learning_rates(self, settings, dataset):
+        self.logger.info("Precomputing learning rates per batch")
+
+        base_lr = settings.base_lr
+        decay_params = settings.lr_decay
+        num_batches = len(dataset.batches_train)
+        total_num_batches = num_batches * dataset.epochs
+        lr_per_batch = []
         if decay_params is None:
-            return base_lr
-        if decay_params[0] == defs.decay.exp:
+            return [base_lr for _ in range(total_num_batches)]
+
+        decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params)
+
+        if decay_strategy == defs.decay.granularity.exp:
             staircase = False
-        elif decay_params[0] == defs.decay.staircase:
+        elif decay_strategy == defs.decay.granularity.staircase:
             staircase = True
-        return tf.train.exponential_decay(base_lr, global_step, decay_params[1], decay_params[2],staircase,"lr_decay")
+        else:
+            error("Undefined decay strategy %s" % decay_strategy, settings.logger)
+
+        if decay_scheme == defs.decay.scheme.interval:
+            # reduce every decay_freq batches
+            decay_period = decay_freq
+        elif decay_scheme == defs.decay.scheme.total:
+            # reduce a total of decay_freq times
+            decay_period = math.ceil(total_num_batches / decay_freq)
+        else:
+            error("Undefined decay scheme %s" % decay_scheme, settings.logger)
+
+        idx = 0
+        while len(lr_per_batch) < total_num_batches:
+            if staircase:
+                fraction = idx // decay_freq
+            else:
+                fraction = idx / decay_freq
+            current_lr = base_lr * pow(decay_factor,fraction)
+            idx = idx + decay_freq
+            lr_per_batch.extend([current_lr for _ in range(decay_period)])
+
+        lr_per_batch = lr_per_batch[:total_num_batches]
+        lr_schedule_file = os.path.join(settings.run_folder,settings.run_id + "_lr_decay_schedule.txt")
+        with open(lr_schedule_file,"w") as f:
+            batches = [ x for _ in range(dataset.epochs) for x in range(num_batches)]
+            if len(batches) != total_num_batches:
+                error("Batch length precomputation mismatch",  settings.logger)
+            epochs = [ep for ep in range(dataset.epochs) for _ in dataset.batches_train]
+            batches_lr = list(zip(epochs, batches, lr_per_batch))
+
+            for b in batches_lr:
+                f.write("Epoch %d/%d, batch %d/%d, lr %2.8f\n" % (b[0]+1,dataset.epochs,b[1]+1, num_batches,b[2]))
+        return lr_per_batch
+
 
     # training ops
-    def create_training(self, settings, summaries):
+    def create_training(self, settings, dataset, summaries):
         # configure loss
         self.logits = print_tensor(self.logits, "training: logits : ", settings.logging_level)
         # self.inputLabels = print_tensor(self.inputLabels, "training: labels : ",settings.logging_level)
@@ -103,20 +147,14 @@ class LRCN:
 
             summaries.train.append(add_descriptive_summary(self.loss))
 
-        # configure learning rate
-        base_lr = tf.constant(settings.base_lr, tf.float32)
-        decay_params = settings.lr_decay
         global_step = tf.Variable(0, dtype = tf.int32, trainable=False,name="global_step")
-        if settings.lr_decay is not None:
-            self.current_lr = self.get_current_lr(settings.base_lr, global_step, decay_params)
-        else:
-            self.current_lr = base_lr
+        learning_rates = self.precompute_learning_rates(settings,dataset)
+        self.learning_rates = tf.constant(learning_rates,tf.float32)
+        self.current_lr = self.learning_rates[global_step]
 
         # lr per-layer variation
         if settings.lr_mult is not None:
             with tf.name_scope("two_tier_optimizer"):
-                # lr decay
-
                 # split tensors to slow and fast learning
                 regular_vars, modified_vars  = [], []
                 if self.dcnn_model  is not None:
@@ -132,6 +170,7 @@ class LRCN:
 
                         trainer_base = tf.train.GradientDescentOptimizer(self.current_lr,name="sgd_base")\
                             .minimize(self.loss,var_list=regular_vars)
+
                         modified_lr = self.current_lr * settings.lr_mult
                         trainer_modified = tf.train.GradientDescentOptimizer(modified_lr,name="sgd_mod")\
                             .minimize(self.loss,var_list=modified_vars, global_step=global_step)

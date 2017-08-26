@@ -728,7 +728,7 @@ class Dataset:
 
     # print active settings
     def tell(self):
-        self.logger.info("Dataset batch information per run mode:" )
+        self.logger.info("Dataset batch information per epoch:" )
         self.logger.info("%-6s %-8s %-10s %-6s %-6s %-6s" % ("Mode","bmode","total","b-size","num-b","b-index"))
         if self.do_training:
             self.logger.info("%-6s %-8s %-10d %-6d %-6d %-6d" % (defs.phase.train,self.batch_item, self.num_items_train, self.batch_size_train, len(self.batches_train), self.batch_index_train))
