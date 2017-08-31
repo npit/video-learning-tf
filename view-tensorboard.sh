@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
-
-tensorboard --logdir="/home/nik/uoa/msc-thesis/implementation/tensorboard_graphs/"
+[ $# -lt 1 ] && echo "Usage $(basename $0) <log-directory>" && exit 1
+logdir="$1"
+tensorboard --logdir="$logdir"
