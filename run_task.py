@@ -316,8 +316,8 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
             non_padding_word_idxs = []
             # for the batch item other than the first, add the offset of the sequence length
             for idx, num_captions in enumerate(caption_lengths):
-                offset = idx * dataset.max_caption_length
                 # generate, adding one more index for the EOS
+                offset = idx * (dataset.max_caption_length + 1)
                 caption_true_words = [i + offset for i in range(num_captions + 1)]
 
                 non_padding_word_idxs.extend(caption_true_words)
