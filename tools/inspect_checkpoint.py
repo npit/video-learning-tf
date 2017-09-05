@@ -54,7 +54,7 @@ inspect checkpoint --file_name = {}"""
 args = sys.argv[1:]
 
 def usage():
-    print("Usage: %s path/to/checkpoint  e|tensor=tensorname  e|True|False" % sys.argv[0])
+    print("Usage: %s path/to/checkpoint  e|tensor=tensorname  e|print=True|False" % sys.argv[0])
     exit()
 
 if not args:
@@ -68,9 +68,11 @@ for arg in args[1:]:
     try:
         if arg.startswith("tensor="):
             filter_tensor = arg.split("=")[1]
-        else:
+        elif arg.startswith("print="):
             # print values
-            print_values = eval(arg)
+            print_values = eval(arg.split("=")[1])
+        else:
+          raise Exception("Undefined arg [%s]" % arg)
     except Exception:
         usage()
 
