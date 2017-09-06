@@ -308,8 +308,8 @@ class lstm(Trainable):
 
                 logger.debug("LSTM input : %s" % str(wordsTensor.shape))
                 logger.debug("LSTM input state bias : %s" % str(biasTensor.shape))
-                wordsTensor = print_tensor(wordsTensor,"total words tensor",logging.DEBUG)
-                biasTensor = print_tensor(biasTensor,"total bias tensor",logging.DEBUG)
+                wordsTensor = print_tensor(wordsTensor,"total words tensor", settings.logging_level)
+                biasTensor = print_tensor(biasTensor,"total bias tensor", settings.logging_level)
 
                 for image_index in range(dataset.batch_size_train):
                     if image_index > 0:
@@ -318,8 +318,8 @@ class lstm(Trainable):
                     bias_vector = biasTensor[image_index]
                     words_vectors = wordsTensor[image_index * sequence_len : (1+image_index) * sequence_len,:]
 
-                    bias_vector = print_tensor(bias_vector, "bias vector", logging.DEBUG)
-                    words_vectors = print_tensor(words_vectors, "word vectors", logging.DEBUG)
+                    bias_vector = print_tensor(bias_vector, "bias vector", settings.logging_level)
+                    words_vectors = print_tensor(words_vectors, "word vectors", settings.logging_level)
                     num_words_in_caption = num_words_per_caption[image_index]
                     # get LSTM rawoutput
                     marginal_output, _ = self.rnn_dynamic(words_vectors, cell, sequence_len, num_hidden, logger,
@@ -414,7 +414,7 @@ class lstm(Trainable):
 
                 logger.debug("LSTM input state bias : %s" % str(biasTensor.shape))
 
-                biasTensor = print_tensor(biasTensor, "total bias tensor", logging.DEBUG)
+                biasTensor = print_tensor(biasTensor, "total bias tensor", settings.logging_level)
 
                 for image_index in range(dataset.batch_size_train):
                     if image_index > 0:
@@ -653,10 +653,10 @@ class lstm(Trainable):
 
         # reshape input tensor from shape [ num_videos * num_frames_per_vid , input_dim ] to
         # [ num_videos , num_frames_per_vid , input_dim ]
-        inputTensor = print_tensor(inputTensor ,"inputTensor  in rnn_dynamic",logging.DEBUG)
+        inputTensor = print_tensor(inputTensor ,"inputTensor  in rnn_dynamic",logging_level)
         inputTensor = tf.reshape(inputTensor, (-1, sequence_len, input_dim), name="lstm_input_reshape")
         inputTensor = print_tensor(inputTensor, "input reshaped",logging_level)
-        logger.info("reshaped inputTensor %s" % str(inputTensor.shape))
+        # logger.info("reshaped inputTensor %s" % str(inputTensor.shape))
 
         # get the batch size during run. Make zero state to 2 - tuple of [batch_size, num_hidden]
         # 2-tuple state due to the sate_is_tuple LSTM cell
