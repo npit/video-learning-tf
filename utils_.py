@@ -70,7 +70,11 @@ def sublist(list, sublist_length):
 def print_tensor(tensor, message, log_level):
     if not log_level == logging.DEBUG:
         return tensor
-    tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=10,message=message)
+    try:
+        tensor_cols = int(tensor.shape[-1]/3)
+    except Exception:
+        tensor_cols = 10
+    tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
     return tens
 
 # read lines from text file, cleaning whitespace
@@ -188,7 +192,9 @@ class defs:
 class Trainable:
     train_regular = []
     train_modified = []
-
+    def __init__(self):
+        self.train_regular = []
+        self.train_modified = []
 
 
 class ProgressBar(object):

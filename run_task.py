@@ -361,12 +361,14 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             dataset.print_iter_info( len(images) , num_labels)
             # count batch iterations
             run_batch_count = run_batch_count + 1
-            summaries_train, batch_loss, learning_rate, _ = sess.run(
-                [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.optimizer],feed_dict=fdict)
+            summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
+                [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.global_step, lrcn.optimizer],feed_dict=fdict)
 
-            settings.logger.info("Learning rate %2.8f  batch loss : %2.5f " % (learning_rate, batch_loss))
+            settings.logger.info("Learning rate %2.8f, global step: %d, batch loss : %2.5f " % (learning_rate, global_step, batch_loss))
+            settings.logger.info("Dataset global step %d, epoch index %d, batch size train %d, batch index train %d" %
+                                 (dataset.get_global_batch_step(), dataset.epoch_index, dataset.batch_size_train, dataset.batch_index_train))
 
-            tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_step())
+            tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_batch_step())
             tboard_writer.flush()
 
             if settings.do_validation:
@@ -378,7 +380,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
             # save a checkpoint every epoch
             settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.batch_index),
-                              global_step=dataset.get_global_step())
+                          global_step=dataset.get_global_batch_step())
         else:
             settings.logger.info("Resumed epoch [%d] is already complete." % (1+epochIdx))
         dataset.epoch_index = dataset.epoch_index + 1
@@ -451,7 +453,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
 
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
         dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
-        tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_step())
+        tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_batch_step())
     tboard_writer.flush()
     return True
 

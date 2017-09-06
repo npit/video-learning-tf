@@ -743,8 +743,8 @@ class Dataset:
             return self.batch_size_val
 
     # get the global step
-    def get_global_step(self):
-        return self.epoch_index * self.batch_size_train + self.batch_index_train
+    def get_global_batch_step(self):
+        return self.epoch_index * len(self.batches) + self.batch_index
 
     # print iteration information
     def print_iter_info(self, num_images, num_labels):

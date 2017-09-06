@@ -36,12 +36,12 @@ class LRCN:
     dcnn_weights_file = None
     # let there be network
     def create(self, settings, dataset, summaries):
+        # initializations
         if defs.workflows.is_description(settings.workflow):
             self.item_logits = []
             self.item_labels = []
             self.non_padding_word_idxs = tf.placeholder(tf.int32, (None))
         else:
-            # initializations
             # items refer to the primary unit we operate one, i.e. videos or frames
             self.item_logits = np.zeros([0, dataset.num_classes], np.float32)
             self.item_labels = np.zeros([0, dataset.num_classes], np.float32)
@@ -137,82 +137,30 @@ class LRCN:
 
     # training ops
     def create_training(self, settings, dataset, summaries):
-        # configure loss
+
         self.logits = print_tensor(self.logits, "training: logits : ", settings.logging_level)
         # self.inputLabels = print_tensor(self.inputLabels, "training: labels : ",settings.logging_level)
+
+        # configure loss
         with tf.name_scope("cross_entropy_loss"):
             loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
             with tf.name_scope('total'):
                 self.loss = tf.reduce_mean(loss_per_vid)
-
             summaries.train.append(add_descriptive_summary(self.loss))
 
-        global_step = tf.Variable(0, dtype = tf.int32, trainable=False,name="global_step")
+        # configure the learning rate
         learning_rates = self.precompute_learning_rates(settings,dataset)
-        self.learning_rates = tf.constant(learning_rates,tf.float32)
-        self.current_lr = self.learning_rates[global_step]
+        self.learning_rates = tf.constant(learning_rates,tf.float32,name="Learning_rates")
+        self.global_step = tf.Variable(0, dtype = tf.int32, trainable=False,name="global_step")
+        with tf.name_scope("lr"):
+            self.current_lr = self.learning_rates[self.global_step ]
+            summaries.train.append(add_descriptive_summary(self.current_lr))
 
-        # lr per-layer variation
+        # setup the training ops, with a potential lr per-layer variation
         if settings.lr_mult is not None:
-            with tf.name_scope("two_tier_optimizer"):
-                # split tensors to slow and fast learning
-                regular_vars, modified_vars  = [], []
-                if self.dcnn_model  is not None:
-                    regular_vars.extend(self.dcnn_model.train_regular)
-                    modified_vars.extend(self.dcnn_model.train_modified)
-                if self.lstm_model is not None:
-                    regular_vars.extend(self.lstm_model.train_regular)
-                    modified_vars.extend(self.lstm_model.train_modified)
-                self.logger.info("Setting up two-tier training with a factor of %f for layers: %s" % ( settings.lr_mult, str(modified_vars)))
-                # setup the two optimizers
-                if settings.clip_grads is None:
-                    if settings.optimizer == defs.optim.sgd:
-
-                        trainer_base = tf.train.GradientDescentOptimizer(self.current_lr,name="sgd_base")\
-                            .minimize(self.loss,var_list=regular_vars)
-
-                        modified_lr = self.current_lr * settings.lr_mult
-                        trainer_modified = tf.train.GradientDescentOptimizer(modified_lr,name="sgd_mod")\
-                            .minimize(self.loss,var_list=modified_vars, global_step=global_step)
-                    else:
-                        error("Undefined optimizer %s" % settings.optimizer)
-                else:
-                    # train with gradient clipping
-                    clipmin, clipmax = settings.clip_grads
-                    if settings.optimizer == defs.optim.sgd:
-                        opt = tf.train.GradientDescentOptimizer(self.current_lr,name="sgd_base")
-                        grads = opt.compute_gradients(self.loss, var_list=regular_vars)
-                        clipped_grads = [ (tf.clip_by_value(grad, clipmin, clipmax) , var) for grad, var in grads]
-                        trainer_base = opt.apply_gradients(clipped_grads)
-
-                        modified_lr = self.current_lr * settings.lr_mult
-                        opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
-                        grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
-                        clipped_grads_mod = [ (tf.clip_by_value(grad_mod, clipmin, clipmax) , var_mod) for grad_mod, var_mod in grads_mod]
-                        trainer_modified = opt.apply_gradients(clipped_grads_mod, global_step=global_step)
-                    else:
-                        error("Undefined optimizer %s" % settings.optimizer)
-                self.optimizer  = tf.group(trainer_base, trainer_modified)
+            self.create_multi_tier_learning(settings, dataset, summaries)
         else:
-            # single lr for all
-            self.logger.info("Setting up training with a global learning rate.")
-            if settings.clip_grads is None:
-
-                if settings.optimizer == defs.optim.sgd:
-                    with tf.name_scope("optimizer"):
-                        self.optimizer = tf.train.GradientDescentOptimizer(self.current_lr).minimize(self.loss, global_step=global_step)
-                else:
-                    error("Undefined optimizer %s" % settings.optimizer)
-            else:
-                clipmin, clipmax = settings.clip_grads
-                if settings.optimizer == defs.optim.sgd:
-                    with tf.name_scope("optimizer"):
-                        opt = tf.train.GradientDescentOptimizer(self.current_lr)
-                        grads = opt.compute_gradients(self.loss)
-                        clipped_grads = [(tf.clip_by_value(grad,  clipmin, clipmax), var) for grad, var in grads]
-                        self.optimizer = opt.apply_gradients(clipped_grads, global_step=global_step)
-                else:
-                    error("Undefined optimizer %s" % settings.optimizer)
+            self.create_single_tier_learning(settings, dataset, summaries)
 
         # accuracies
         with tf.name_scope('training_accuracy'):
@@ -224,7 +172,67 @@ class LRCN:
 
         summaries.train.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
 
+    # establish the training ops with slow and fast learning parameters
+    def create_multi_tier_learning(self, settings, dataset, summaries):
+        with tf.name_scope("two_tier_optimizer"):
+            # split tensors to slow and fast learning, as per their definition
+            regular_vars, modified_vars = [], []
+            if self.dcnn_model is not None:
+                regular_vars.extend(self.dcnn_model.train_regular)
+                modified_vars.extend(self.dcnn_model.train_modified)
+            if self.lstm_model is not None:
+                regular_vars.extend(self.lstm_model.train_regular)
+                modified_vars.extend(self.lstm_model.train_modified)
+            self.logger.info("Setting up two-tier training with a factor of %f for layers: %s" % (
+            settings.lr_mult, str(modified_vars)))
+            # setup the two optimizers
 
+            if settings.optimizer == defs.optim.sgd:
+                opt = tf.train.GradientDescentOptimizer(self.current_lr, name="sgd_base")
+                grads = opt.compute_gradients(self.loss, var_list=regular_vars)
+                if settings.clip_grads is not None:
+                    clipmin, clipmax = settings.clip_grads
+                    grads = [(tf.clip_by_norm(grad, clipmax), var) for grad, var in grads]
+                trainer_base = opt.apply_gradients(grads)
+
+                modified_lr = self.current_lr * settings.lr_mult
+                opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
+                grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
+                if settings.clip_grads is not None:
+                    clipmin, clipmax = settings.clip_grads
+                    grads_mod = [(tf.clip_by_norm(grad_mod, clipmax), var_mod) for grad_mod, var_mod in
+                                 grads_mod]
+                trainer_modified = opt.apply_gradients(grads_mod, global_step=self.global_step )
+
+
+            else:
+                error("Undefined optimizer %s" % settings.optimizer)
+
+            self.optimizer = tf.group(trainer_base, trainer_modified)
+        with tf.name_scope("grads_norm"):
+            grads_norm = tf.reduce_mean(list(map(tf.norm, grads)))
+            summaries.train.append(add_descriptive_summary(grads_norm))
+        with tf.name_scope("grads_mod_norm"):
+            grads_mod_norm = tf.reduce_mean(list(map(tf.norm, grads_mod)))
+            summaries.train.append(add_descriptive_summary(grads_mod_norm))
+
+    def create_single_tier_learning(self, settings, dataset, summaries):
+        # single lr for all
+        self.logger.info("Setting up training with a global learning rate.")
+        with tf.name_scope("single_tier_optimizer"):
+            if settings.optimizer == defs.optim.sgd:
+
+                opt = tf.train.GradientDescentOptimizer(self.current_lr)
+                grads = opt.compute_gradients(self.loss)
+                if settings.clip_grads is not None:
+                    clipmin, clipmax = settings.clip_grads
+                    grads = [(tf.clip_by_value(grad, clipmin, clipmax), var) for grad, var in grads]
+                self.optimizer = opt.apply_gradients(grads, global_step=self.global_step)
+            else:
+                error("Undefined optimizer %s" % settings.optimizer)
+        with tf.name_scope('grads_norm'):
+            grads_norm = tf.reduce_mean(list(map(tf.norm, grads)))
+            summaries.train.append(add_descriptive_summary(grads_norm))
 
     # workflows
 
@@ -310,6 +318,7 @@ class LRCN:
         with tf.name_scope("imgdesc_workflow"):
             self.make_imgdesc_placeholders(settings,dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
+            self.make_imgdesc_statebias(settings, dataset, encodedFrames)
 
     def make_imgdesc_placeholders(self, settings, dataset):
         # set up placeholders
@@ -321,9 +330,19 @@ class LRCN:
                                               name="word_embeddings")
         self.logger.debug("input labels : [%s]" % labels)
 
-
     def make_imgdesc_statebias(self, settings, dataset, encodedFrames):
-        pass
+
+        # make lstm
+        self.lstm_model = lstm.lstm()
+        if settings.do_training:
+            self.lstm_model.define_lstm_inputbias_loop(self.word_embeddings, encodedFrames, self.caption_lengths, dataset, settings)
+        else:
+            self.lstm_model.define_lstm_inputbias_loop_validation( encodedFrames, self.caption_lengths, dataset, settings)
+
+        self.logits = self.lstm_model.get_output()
+        # drop padding logits for training mode
+        if settings.do_training:
+            self.process_description_training_logits(settings)
 
     def make_imgdesc_early_fusion(self, settings, dataset, encodedFrames):
         frame_encoding_dim = int(encodedFrames.shape[-1])
@@ -345,10 +364,10 @@ class LRCN:
         # feed to lstm
         self.lstm_model = lstm.lstm()
         if settings.do_training:
-            self.lstm_model.define_image_description(frames_words, frame_encoding_dim,
+            self.lstm_model.define_imgdesc_inputstep(frames_words, frame_encoding_dim,
                                                      self.caption_lengths, dataset, settings)
         else:
-            self.lstm_model.define_image_description_validation(frames_words, frame_encoding_dim,
+            self.lstm_model.define_imgdesc_inputstep_validation(frames_words, frame_encoding_dim,
                                                                 self.caption_lengths,
                                                                 dataset, settings)
 
@@ -361,34 +380,18 @@ class LRCN:
         # the sequence length, so as to subsequently tf.split the tensor
 
         if settings.do_training:
-            # get the number of useless logits per batch item
-            # num_useless = dataset.max_caption_length - self.caption_lengths
-            # num_useless = print_tensor(num_useless, "num useless", settings.logging_level)
-            # wpi = tf.identity(self.caption_lengths)
-            # wpi = wpi + 1
-            # wpi = print_tensor(wpi, "wpi plus EOS logits postproc", settings.logging_level)
-            # # split the logits in [p1,u1,p2,u2,...], where ni,ui the number of predictions and useless output per item
-            # chunks_sizes = tf.stack([wpi, num_useless])
-            # chunks_sizes = print_tensor(chunks_sizes, "chunks sizes concatted", settings.logging_level)
-            #
-            # chunks_sizes = tf.transpose(chunks_sizes)
-            # chunks_sizes = print_tensor(chunks_sizes, "chunks sizes transposed", settings.logging_level)
-            #
-            # chunks_sizes = tf.reshape(chunks_sizes, shape=[-1])
-            # chunks_sizes = tf.cast(chunks_sizes, tf.int32)
-            # chunks_sizes = print_tensor(chunks_sizes, "chunks sizes ", settings.logging_level)
+            self.process_description_training_logits(settings)
 
-            non_padding_logits = tf.identity(self.non_padding_word_idxs)
-            non_padding_logits = print_tensor(non_padding_logits, "non-padding word idxs to keep", settings.logging_level)
-            self.logits = tf.gather(self.logits, non_padding_logits)
-            self.logits = print_tensor(self.logits, "filtered logits list", settings.logging_level)
-            # re-merge the tensor list into a tensor
-            self.logits = tf.concat(self.logits, axis=0)
-            self.logits = print_tensor(self.logits, "final filtered logits", settings.logging_level)
-            self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
-        else:
-            # for validation, just return the logits and we'll process them on the driver
-            pass
+    def process_description_training_logits(self, settings):
+        # remove the logits corresponding to padding
+        non_padding_logits = tf.identity(self.non_padding_word_idxs)
+        non_padding_logits = print_tensor(non_padding_logits, "non-padding word idxs to keep", settings.logging_level)
+        self.logits = tf.gather(self.logits, non_padding_logits)
+        self.logits = print_tensor(self.logits, "filtered logits list", settings.logging_level)
+        # re-merge the tensor list into a tensor
+        self.logits = tf.concat(self.logits, axis=0)
+        self.logits = print_tensor(self.logits, "final filtered logits", settings.logging_level)
+        self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
 
     def make_dcnn(self, dataset, settings):
         # DCNN for frame encoding
