@@ -332,11 +332,27 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
             if len(images) != dataset.batch_size_val:
                 num_pad =  dataset.batch_size_val - len(images)
                 dataset.logger.warning("Padding last batch with %d zero items" % num_pad)
-                images.append(np.zeros(images[0].shape,np.float32))
-                embeddings = np.vstack((embeddings, np.zeros([num_pad, embeddings.shape[1]],np.float32)))
+                for _ in range(num_pad):
+                    images.append(np.zeros(images[0].shape,np.float32))
+                embeddings = np.vstack((embeddings, np.zeros([num_pad* dataset.max_caption_length+1, embeddings.shape[1]],np.float32)))
                 fdict[lrcn.inputData] = images
                 fdict[lrcn.word_embeddings] = embeddings
                 padding = num_pad
+        if  dataset.phase == defs.phase.train and dataset.workflow == defs.workflows.imgdesc.statebias:
+            # also pad, hotfix :/
+            if len(images) != dataset.batch_size_train:
+                num_pad =  dataset.batch_size_train - len(images)
+                dataset.logger.warning("Padding last batch with %d zero items" % num_pad)
+                for _ in range(num_pad):
+                    images.append(np.zeros(images[0].shape,np.float32))
+                embeddings = np.vstack((embeddings, np.zeros([num_pad * (dataset.max_caption_length+1), embeddings.shape[1]],np.float32)))
+                caption_lengths.extend([0 for _ in range(num_pad)])
+                fdict[lrcn.inputData] = images
+                fdict[lrcn.word_embeddings] = embeddings
+                fdict[lrcn.caption_lengths] =caption_lengths
+                padding = num_pad
+
+
     else:
         fdict[lrcn.inputLabels] = ground_truth
         num_labels = len(ground_truth)
