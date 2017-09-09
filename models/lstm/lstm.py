@@ -416,11 +416,13 @@ class lstm(Trainable):
 
                 biasTensor = print_tensor(biasTensor, "total bias tensor", settings.logging_level)
 
-                for image_index in range(dataset.batch_size_train):
+                for image_index in range(dataset.batch_size_val):
                     if image_index > 0:
                         tf.get_variable_scope().reuse_variables()
 
                     bias_vector = tf.expand_dims(biasTensor[image_index,:],0)
+                    bias_vector = print_tensor(bias_vector , "bias vector", settings.logging_level)
+
                     # get the BOS embedding
                     bos_vector = tf.expand_dims(tf.constant(dataset.embedding_matrix[dataset.vocabulary.index('BOS'),:],tf.float32),0)
 
