@@ -61,9 +61,6 @@ class lstm(Trainable):
             with tf.variable_scope("LSTM_ac_vs") as varscope:
 
                 cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden,state_is_tuple=True)
-                cell_vars = [v for v in tf.all_variables()
-                             if v.name.startswith(varscope.name)]
-                self.train_modified.extend(cell_vars)
             logger.debug("LSTM input : %s" % str(inputTensor.shape))
 
             # get LSTM rawoutput
@@ -101,10 +98,13 @@ class lstm(Trainable):
             self.output = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
             logger.debug("LSTM final output : %s" % str(self.output.shape))
 
-
-            fc_vars = [ f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
-                        if f.name.startswith(namescope)]
+            # sort out trained vars
+            fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
+                       if namescope in f.name]
+            cell_vars = [v for v in tf.global_variables() if v.name.startswith(varscope.name)]
             self.train_modified.extend(fc_vars)
+            self.train_modified.extend(cell_vars)
+
 
 
     def get_output(self):
@@ -507,9 +507,7 @@ class lstm(Trainable):
             # LSTM basic cell
             with tf.variable_scope("LSTM_id_vs") as varscope:
                 cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
-                cell_vars = [v for v in tf.global_variables()
-                             if v.name.startswith(varscope.name)]
-                self.train_modified.extend(cell_vars)
+
                 logger.debug("LSTM input : %s" % str(wordsTensor.shape))
                 logger.debug("LSTM input state bias : %s" % str(biasTensor.shape))
 
@@ -532,9 +530,13 @@ class lstm(Trainable):
                 logger.debug("LSTM final output : %s" % str(self.output.shape))
                 self.output = print_tensor(self.output, "lstm fc output", settings.logging_level)
 
+
+                # sort out trained vars
                 fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope)
-                           if f.name.startswith(namescope)]
+                           if namescope in  f.name]
+                cell_vars = [v for v in tf.global_variables() if v.name.startswith(varscope.name)]
                 self.train_modified.extend(fc_vars)
+                self.train_modified.extend(cell_vars)
 
                 # include a dummy variables, used in the validation network to enable loading
                 predicted_words_for_batch = tf.Variable(np.zeros([0, sequence_len], np.int64), tf.int64,
