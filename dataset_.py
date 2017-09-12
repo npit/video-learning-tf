@@ -105,8 +105,6 @@ class Dataset:
                         item_path = os.path.join(self.path_prepend_folder, item_path)
                     self.frame_paths[defs.train_idx].append(item_path)
                     self.frame_classes[defs.train_idx].append(item_labels)
-            self.logger.info("Read %d paths/labels data for %s" %
-                             (len(self.frame_paths[defs.train_idx]), defs.phase.train))
 
         if self.do_validation:
             with open(self.input_source_files[defs.val_idx], 'r') as f:
@@ -116,9 +114,6 @@ class Dataset:
                     item_labels = path_labels[1:]
                     self.frame_paths[defs.val_idx].append(item_path)
                     self.frame_classes[defs.val_idx].append(item_labels)
-
-            self.logger.info("Read %d paths/labels data for %s" %
-                             (len(self.frame_paths[defs.val_idx]), defs.phase.val))
 
     # display image
     def display_image(self,image,label=None):
@@ -593,7 +588,7 @@ class Dataset:
                 self.batches_train = [self.batch_size_train for _ in range(num_whole_batches)]
                 if items_left:
                     self.batches_train.append(items_left)
-                self.logger.info("Calculated %d training batches." % len(self.batches_train))
+                self.logger.info("Calculated %d training batch(es)." % len(self.batches_train))
 
             if self.do_validation:
                 self.input_source_files[defs.val_idx] = sett.input[defs.val_idx] + ".tfrecord"
@@ -613,7 +608,7 @@ class Dataset:
 
                 if items_left:
                     self.batches_val.append(items_left)
-                self.logger.info("Calculated %d validation batches." % len(self.batches_val))
+                self.logger.info("Calculated %d validation batch(es)." % len(self.batches_val))
         elif self.data_format == defs.data_format.raw:
             # read input files
             self.input_source_files[defs.train_idx] = sett.input[defs.train_idx]
@@ -659,7 +654,6 @@ class Dataset:
             error("Could not file data size file: ",size_file)
 
         # read the data
-        self.logger.info("Reading data meta-parameters file [%s]" % size_file)
         datainfo = read_file_dict(size_file)
         num_items = eval(datainfo['items'])
         if phase == defs.phase.train:

@@ -477,6 +477,15 @@ class lstm(Trainable):
             dataset.logger.info("Bias tensor : %s" % str(biasTensor.shape))
             biasTensor = print_tensor(biasTensor,"bias tensor", settings.logging_level)
 
+            # add a final fc layer to convert from num_hidden to a num_classes output
+            # layer initializations
+            fc_out__init = tf.truncated_normal((num_hidden, num_classes), stddev=0.05, name="fc_out_w_init")
+            fc_out_b_init = tf.constant(0.1, shape=(num_classes,), name="fc_out_b_init")
+
+            # create the classification fc layer
+            fc_out_w = tf.Variable(fc_out__init, name="fc_out_w")
+            fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
+
             # need to map the image to the state dimension. If not equal, add an fc layer transformation
             bias_dimension = int(biasTensor.shape[1])
             if bias_dimension != num_hidden:
@@ -515,18 +524,10 @@ class lstm(Trainable):
                 logger.debug("LSTM recombined output : %s" % str(output.shape))
                 output = print_tensor(output, "lstm recombined output", settings.logging_level)
 
-                # add dropout
+                # add dropout to the raw output
                 if settings.do_training:
                     output = tf.nn.dropout(output, keep_prob=dropout_keep_prob, name="lstm_dropout")
 
-                # add a final fc layer to convert from num_hidden to a num_classes output
-                # layer initializations
-                fc_out__init = tf.truncated_normal((num_hidden, num_classes), stddev=0.05, name="fc_out_w_init")
-                fc_out_b_init = tf.constant(0.1, shape=(num_classes,), name="fc_out_b_init")
-
-                # create the layers
-                fc_out_w = tf.Variable(fc_out__init, name="fc_out_w")
-                fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
                 self.output = tf.nn.xw_plus_b(output, fc_out_w, fc_out_b, name="fc_out")
                 logger.debug("LSTM final output : %s" % str(self.output.shape))
                 self.output = print_tensor(self.output, "lstm fc output", settings.logging_level)

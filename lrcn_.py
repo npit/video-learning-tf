@@ -92,22 +92,28 @@ class LRCN:
         lr_per_batch = []
         if decay_params is None:
             return [base_lr for _ in range(total_num_batches)]
-
-        decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params)
+        log_message = "Dropping LR "
+        lr_drop_offset = 0 if len(tuple(decay_params)) == 4 else decay_params[-1]
+        decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params[:4])
 
         if decay_strategy == defs.decay.granularity.exp:
             staircase = False
+            log_message += "smoothly "
         elif decay_strategy == defs.decay.granularity.staircase:
             staircase = True
+            log_message += "jaggedly "
         else:
             error("Undefined decay strategy %s" % decay_strategy, settings.logger)
 
         if decay_scheme == defs.decay.scheme.interval:
             # reduce every decay_freq batches
             decay_period = decay_freq
+            log_message += "every %d step(s) " % decay_period
         elif decay_scheme == defs.decay.scheme.total:
             # reduce a total of decay_freq times
             decay_period = math.ceil(total_num_batches / decay_freq)
+            log_message += "every ceil[(%d batches x %d epochs) / %d total steps] = %d steps" % \
+                (num_batches, dataset.epochs, decay_freq, decay_period)
         else:
             error("Undefined decay scheme %s" % decay_scheme, settings.logger)
 
@@ -122,6 +128,10 @@ class LRCN:
             lr_per_batch.extend([current_lr for _ in range(decay_period)])
 
         lr_per_batch = lr_per_batch[:total_num_batches]
+        if lr_drop_offset:
+            lr_per_batch = [base_lr for _ in range(lr_drop_offset)] + lr_per_batch[0:lr_drop_offset]
+            log_message += " - with a %d-step offset " % lr_drop_offset
+
         lr_schedule_file = os.path.join(settings.run_folder,settings.run_id + "_lr_decay_schedule.txt")
         with open(lr_schedule_file,"w") as f:
             batches = [ x for _ in range(dataset.epochs) for x in range(num_batches)]
@@ -132,6 +142,7 @@ class LRCN:
 
             for b in batches_lr:
                 f.write("Epoch %d/%d, batch %d/%d, lr %2.8f\n" % (b[0]+1,dataset.epochs,b[1]+1, num_batches,b[2]))
+        self.logger.info(log_message)
         return lr_per_batch
 
 
@@ -183,8 +194,8 @@ class LRCN:
             if self.lstm_model is not None:
                 regular_vars.extend(self.lstm_model.train_regular)
                 modified_vars.extend(self.lstm_model.train_modified)
-            self.logger.info("Setting up two-tier training with a factor of %f for layers: %s" % (
-            settings.lr_mult, str(modified_vars)))
+            self.logger.info("Setting up two-tier training with a factor of %f for the %d layer(s): %s" % (
+            settings.lr_mult, len(modified_vars), [ m.name for m in modified_vars]))
             # setup the two optimizers
 
             if settings.optimizer == defs.optim.sgd:
@@ -335,7 +346,8 @@ class LRCN:
         # make lstm
         self.lstm_model = lstm.lstm()
         if settings.do_training:
-            self.lstm_model.define_lstm_inputbias_loop(self.word_embeddings, encodedFrames, self.caption_lengths, dataset, settings)
+            # self.lstm_model.define_lstm_inputbias_loop(self.word_embeddings, encodedFrames, self.caption_lengths, dataset, settings)
+            self.lstm_model.define_lstm_inputbias(self.word_embeddings, encodedFrames, self.caption_lengths, dataset, settings)
         else:
             self.lstm_model.define_lstm_inputbias_loop_validation( encodedFrames, self.caption_lengths, dataset, settings)
 
