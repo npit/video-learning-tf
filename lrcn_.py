@@ -129,7 +129,7 @@ class LRCN:
 
         lr_per_batch = lr_per_batch[:total_num_batches]
         if lr_drop_offset:
-            lr_per_batch = [base_lr for _ in range(lr_drop_offset)] + lr_per_batch[0:lr_drop_offset]
+            lr_per_batch = [base_lr for _ in range(lr_drop_offset)] + lr_per_batch[0:-lr_drop_offset]
             log_message += " - with a %d-step offset " % lr_drop_offset
 
         lr_schedule_file = os.path.join(settings.run_folder,settings.run_id + "_lr_decay_schedule.txt")

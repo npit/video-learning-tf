@@ -27,14 +27,14 @@ def print_tensors_in_checkpoint_file(file_name, tensor_name, print_values):
       for key in var_to_shape_map:
         print("tensor_name: ", key)
         if print_values:
-            print(reader.get_tensor(key))
+            print("tensor_value: ",reader.get_tensor(key))
         count = count  + 1
     elif not tensor_name:
       print(reader.debug_string().decode("utf-8"))
     else:
       print("tensor_name: ", tensor_name)
       if print_values:
-        print(reader.get_tensor(tensor_name))
+        print("tensor_value: ",reader.get_tensor(tensor_name))
       count = count + 1
   except Exception as e:  # pylint: disable=broad-except
     print(str(e))
@@ -70,7 +70,8 @@ for arg in args[1:]:
             filter_tensor = arg.split("=")[1]
         elif arg.startswith("print="):
             # print values
-            print_values = eval(arg.split("=")[1])
+            tensorname=arg.split("=")[1]
+            print_values = eval(tensorname)
         else:
           raise Exception("Undefined arg [%s]" % arg)
     except Exception:
