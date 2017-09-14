@@ -1,7 +1,7 @@
 
 # files and io
 
-import os, pickle
+import os, pickle, math
 
 # utils
 from utils_ import *
@@ -84,6 +84,7 @@ class Dataset:
     vocabulary = None
 
     logger = None
+    save_interval = None
 
     # mean subtraction
     def shoud_subtract_mean(self):
@@ -523,6 +524,11 @@ class Dataset:
             self.crop_h_avail = [i for i in range(0, self.raw_image_shape[0] - self.image_shape[0] - 1)]
             self.crop_w_avail = [i for i in range(0, self.raw_image_shape[1] - self.image_shape[1] - 1)]
 
+        # set save interval
+        if sett.save_freq_per_epoch is not None:
+            self.save_interval = math.ceil(len(self.batches_train) / sett.save_freq_per_epoch)
+            self.logger.info("Computed save interval (%f per %d-batched epoch) to %d batches" %
+                             (sett.save_freq_per_epoch, len(self.batches_train), self.save_interval))
         self.tell()
 
     # initialize run mode specific data
@@ -768,3 +774,9 @@ class Dataset:
         if type(self.clips_per_video) == int:
             return self.clips_per_video == 1
         return False
+
+    # check if we should save
+    def should_save_now(self, global_step):
+        if self.save_interval == None:
+            return False
+        return global_step % self.save_interval == 0

@@ -164,7 +164,7 @@ class defs:
         default, clip = "default", "clip"
 
     class optim:
-        sgd = "sgd"
+        sgd, adam = "sgd", "adam"
 
     # learning rate decay parameters
     class decay:

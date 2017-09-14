@@ -391,14 +391,18 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
                 test_ran = test(dataset, lrcn, settings, sess, tboard_writer, summaries)
                 if test_ran:
                     dataset.set_or_swap_phase(defs.phase.train)
+
+            # check if we need to save
+            if dataset.should_save_now(global_step):
+                # save a checkpoint if needed
+                settings.save(sess, dataset, progress="ep_%d_btch_%d_gs_%d" % (1 + epochIdx, dataset.batch_index, global_step),
+                              global_step=dataset.get_global_batch_step())
         # if an epoch was completed (and not just loaded, do saving and logging)
         if run_batch_count > 0:
             dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
-            # save a checkpoint every epoch
-            settings.save(sess, dataset, progress="ep_%d_btch_%d" % (1+epochIdx, dataset.batch_index),
-                          global_step=dataset.get_global_batch_step())
         else:
             settings.logger.info("Resumed epoch [%d] is already complete." % (1+epochIdx))
+
         dataset.epoch_index = dataset.epoch_index + 1
         # reset phase
         dataset.reset_phase(defs.phase.train)

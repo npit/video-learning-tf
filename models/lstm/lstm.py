@@ -539,9 +539,9 @@ class lstm(Trainable):
                 self.train_modified.extend(cell_vars)
 
                 # include a dummy variables, used in the validation network to enable loading
-                predicted_words_for_batch = tf.Variable(np.zeros([0, sequence_len], np.int64), tf.int64,
-                                                        name="predicted_words_for_batch")
-                empty_word_indexes = tf.Variable(np.zeros([0], np.int64), tf.int64, name="empty_word_indexes")
+                predicted_words_for_batch = tf.Variable(initial_value=np.zeros([0, sequence_len], np.int64), dtype=tf.int64,
+                                                        name="predicted_words_for_batch", trainable = False)
+                empty_word_indexes = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64, name="empty_word_indexes", trainable =False)
 
     def define_lstm_inputbias_validation(self, biasTensor, captions_per_item, dataset, settings):
 

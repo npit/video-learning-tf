@@ -196,28 +196,32 @@ class LRCN:
                 modified_vars.extend(self.lstm_model.train_modified)
             self.logger.info("Setting up two-tier training with a factor of %f for the %d layer(s): %s" % (
             settings.lr_mult, len(modified_vars), [ m.name for m in modified_vars]))
-            # setup the two optimizers
 
+            # setup the two optimizer
             if settings.optimizer == defs.optim.sgd:
                 opt = tf.train.GradientDescentOptimizer(self.current_lr, name="sgd_base")
-                grads = opt.compute_gradients(self.loss, var_list=regular_vars)
-                if settings.clip_grads is not None:
-                    clipmin, clipmax = settings.clip_grads
-                    grads = [(tf.clip_by_norm(grad, clipmax), var) for grad, var in grads]
-                trainer_base = opt.apply_gradients(grads)
-
-                modified_lr = self.current_lr * settings.lr_mult
-                opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
-                grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
-                if settings.clip_grads is not None:
-                    clipmin, clipmax = settings.clip_grads
-                    grads_mod = [(tf.clip_by_norm(grad_mod, clipmax), var_mod) for grad_mod, var_mod in
-                                 grads_mod]
-                trainer_modified = opt.apply_gradients(grads_mod, global_step=self.global_step )
-
-
+            elif settings.optimizer == defs.optim.adam:
+                opt = tf.train.AdamOptimizer(self.current_lr)
             else:
                 error("Undefined optimizer %s" % settings.optimizer)
+
+            # computer two-tier grads
+            grads = opt.compute_gradients(self.loss, var_list=regular_vars)
+            if settings.clip_grads is not None:
+                clipmin, clipmax = settings.clip_grads
+                grads = [(tf.clip_by_norm(grad, clipmax), var) for grad, var in grads]
+            trainer_base = opt.apply_gradients(grads)
+
+            modified_lr = self.current_lr * settings.lr_mult
+            opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
+            grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
+            if settings.clip_grads is not None:
+                clipmin, clipmax = settings.clip_grads
+                grads_mod = [(tf.clip_by_norm(grad_mod, clipmax), var_mod) for grad_mod, var_mod in
+                             grads_mod]
+            trainer_modified = opt.apply_gradients(grads_mod, global_step=self.global_step)
+
+
 
             self.optimizer = tf.group(trainer_base, trainer_modified)
         with tf.name_scope("grads_norm"):
@@ -232,15 +236,18 @@ class LRCN:
         self.logger.info("Setting up training with a global learning rate.")
         with tf.name_scope("single_tier_optimizer"):
             if settings.optimizer == defs.optim.sgd:
-
                 opt = tf.train.GradientDescentOptimizer(self.current_lr)
-                grads = opt.compute_gradients(self.loss)
-                if settings.clip_grads is not None:
-                    clipmin, clipmax = settings.clip_grads
-                    grads = [(tf.clip_by_value(grad, clipmin, clipmax), var) for grad, var in grads]
-                self.optimizer = opt.apply_gradients(grads, global_step=self.global_step)
+            elif settings.optimizer == defs.optim.adam:
+                opt = tf.train.AdamOptimizer(self.current_lr)
             else:
                 error("Undefined optimizer %s" % settings.optimizer)
+
+            grads = opt.compute_gradients(self.loss)
+            if settings.clip_grads is not None:
+                clipmin, clipmax = settings.clip_grads
+                grads = [(tf.clip_by_value(grad, clipmin, clipmax), var) for grad, var in grads]
+            self.optimizer = opt.apply_gradients(grads, global_step=self.global_step)
+
         with tf.name_scope('grads_norm'):
             grads_norm = tf.reduce_mean(list(map(tf.norm, grads)))
             summaries.train.append(add_descriptive_summary(grads_norm))
