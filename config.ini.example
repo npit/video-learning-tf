@@ -10,6 +10,7 @@ path_prepend_folder = ""
 
 # architecture settings
 frame_encoding_layer = "fc7"
+lstm_num_layers = 3
 lstm_num_hidden = 256
 frame_pooling_type = defs.pooling.avg
 clip_pooling_type = defs.pooling.avg

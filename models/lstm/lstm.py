@@ -369,7 +369,6 @@ class lstm(Trainable):
             num_hidden = settings.lstm_num_hidden
             logger = settings.logger
             sequence_len = dataset.max_caption_length + 1  # plus one for the BOS
-            dropout_keep_prob = settings.dropout_keep_prob
             settings.logger.info("Defining lstm with seqlen: %d" % (sequence_len))
 
             # add a final fc layer to convert from num_hidden to a num_classes output
@@ -380,7 +379,6 @@ class lstm(Trainable):
             # create the layers
             fc_out_w = tf.Variable(fc_out__init, name="fc_out_w")
             fc_out_b = tf.Variable(fc_out_b_init, name="fc_out_b")
-
 
             # need to map the image to the state dimension. If not equal, add an fc layer transformation
             bias_dimension = int(biasTensor.shape[1])
@@ -403,13 +401,13 @@ class lstm(Trainable):
 
             # LSTM basic cell
             with tf.variable_scope("LSTM_id_vs") as varscope:
-                cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
-                cell_vars = [v for v in tf.global_variables()
-                             if v.name.startswith(varscope.name)]
-                self.train_modified.extend(cell_vars)
+                cells = [tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
+                         for _ in range(settings.lstm_num_layers)]
+                cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
 
-                predicted_words_for_batch = tf.Variable(np.zeros([0, sequence_len], np.int64), tf.int64,
-                                                        name="predicted_words_for_batch")
+
+                predicted_words_for_batch = tf.Variable(np.zeros([0, sequence_len], np.int64), dtype=tf.int64,
+                                                        name="predicted_words_for_batch", trainable=False)
                 empty_word_indexes = tf.Variable(np.zeros([0], np.int64), tf.int64, name="empty_word_indexes")
 
                 logger.debug("LSTM input state bias : %s" % str(biasTensor.shape))
@@ -428,8 +426,8 @@ class lstm(Trainable):
 
                     # zero state vector for the initial state
 
-                    current_state = tf.contrib.rnn.LSTMStateTuple(bias_vector, bias_vector)
-                    output, current_state = cell(bos_vector, current_state,scope="rnn/basic_lstm_cell")
+                    current_state = [tf.contrib.rnn.LSTMStateTuple(bias_vector, bias_vector) for _ in range(settings.lstm_num_layers)]
+                    output, current_state = cell(bos_vector, current_state,scope="rnn/multi_rnn_cell")
 
                     word_embedding, word_index = self.logits_to_word_vectors_tf(dataset.embedding_matrix, logger, fc_out_w,
                                                                                 fc_out_b, output,
@@ -442,7 +440,7 @@ class lstm(Trainable):
 
                         tf.get_variable_scope().reuse_variables()
 
-                        logits, current_state = cell(word_embedding, current_state, scope="rnn/basic_lstm_cell")
+                        logits, current_state = cell(word_embedding, current_state, scope="rnn/multi_rnn_cell")
                         # logger.debug("LSTM iteration #%d state : %s" % (step, [str(x.shape) for x in state]))
                         word_embedding, word_index = self.logits_to_word_vectors_tf(dataset.embedding_matrix, logger,
                                                                                     fc_out_w, fc_out_b, logits,
@@ -506,7 +504,10 @@ class lstm(Trainable):
 
             # LSTM basic cell
             with tf.variable_scope("LSTM_id_vs") as varscope:
-                cell = tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
+
+                cells = [tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
+                         for _ in range(settings.lstm_num_layers)]
+                cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
 
                 logger.debug("LSTM input : %s" % str(wordsTensor.shape))
                 logger.debug("LSTM input state bias : %s" % str(biasTensor.shape))
@@ -667,12 +668,14 @@ class lstm(Trainable):
         # 2-tuple state due to the sate_is_tuple LSTM cell
         batch_size = tf.shape(inputTensor)[0]
         if init_state is None:
-            zero_state = tf.contrib.rnn.LSTMStateTuple(tf.zeros([batch_size, num_hidden]),tf.zeros([batch_size, num_hidden]))
+            zero_state = [tf.contrib.rnn.LSTMStateTuple(tf.zeros([batch_size, num_hidden]),tf.zeros([batch_size, num_hidden])) \
+                for _ in cell._cells]
         else:
             if len(init_state.shape) == 1:
                 init_state = tf.expand_dims(init_state,0)
-            zero_state = tf.contrib.rnn.LSTMStateTuple(init_state, init_state)
+            zero_state = [tf.contrib.rnn.LSTMStateTuple(init_state, init_state) for _ in cell._cells]
 
+        zero_state = tuple(zero_state)
         if elements_per_sequence is None:
             # all elements in the sequence are good2go
             # specify the sequence length for each batch item: [ numvideoframes for i in range(batchsize)]

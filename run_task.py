@@ -407,6 +407,12 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         # reset phase
         dataset.reset_phase(defs.phase.train)
 
+    # if we did not save already, do it now at the end of training
+    if not dataset.should_save_now(global_step):
+        settings.logger.info("Saving model checkpoint out of turn, since training's finished.")
+        settings.save(sess, dataset, progress="ep_%d_btch_%d_gs_%d" % (1 + epochIdx, len(dataset.batches), global_step),
+                      global_step=dataset.get_global_batch_step())
+
 
 
 # test the network on validation data
