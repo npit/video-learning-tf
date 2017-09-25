@@ -33,6 +33,8 @@ class serialization_settings:
     validate_pcnt = 10
     # internals
     max_num_labels = -1
+    logger = None
+    logging_level = logging.INFO
 
     # initialize from file
     def initialize_from_file(self,argv):
@@ -51,6 +53,10 @@ class serialization_settings:
         config = config[tag_to_read]
         for key in config:
             exec("self.%s=%s" % (key, config[key]))
+        # initialize logging
+        self.logger = CustomLogger()
+        logfile = "log_serialize_" + get_datetime_str() + ".log"
+        self.logger.configure_logging(logfile, self.logging_level)
         print("Successfully initialized from file %s" % self.init_file)
 
 
@@ -60,34 +66,7 @@ def get_datetime_str():
     #return time.strftime("[%d|%m|%y]_[%H:%M:%S]")
     return time.strftime("%d%m%y_%H%M%S")
 
-# configure logging settings
-def configure_logging():
-    logging_level = logging.INFO
 
-    logfile = "log_serialize_" + get_datetime_str() + ".log"
-    print("Using logfile: %s" % logfile)
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging_level)
-
-    formatter = logging.Formatter('%(asctime)s| %(levelname)7s - %(filename)15s - line %(lineno)4d - %(message)s')
-
-    # # file handler
-    handler = logging.FileHandler(logfile)
-    handler.setLevel(logging_level)
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-    # console handler
-    consoleHandler = logging.StreamHandler()
-    consoleHandler.setFormatter(formatter)
-
-    # add the handlers to the logger
-    logger.addHandler(consoleHandler)
-    return logger
-
-
-logger = configure_logging()
 # helper tfrecord function
 def _int64_feature( value):
     if not type(value) == list:
@@ -132,16 +111,16 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
         labels_in_run = labels_per_thread_run[run_index]
 
         tic = time.time()
-        logger.debug("Processing %d items for the run." % len(paths_in_run))
+        debug("Processing %d items for the run." % len(paths_in_run))
 
         paths_per_thread = sublist(paths_in_run, settings.num_items_per_thread )
         labels_per_thread = sublist(labels_in_run, settings.num_items_per_thread )
 
-        logger.debug("Items scheduled list len : %d." % (len(paths_per_thread)))
+        debug("Items scheduled list len : %d." % (len(paths_per_thread)))
 
         num_threads_in_run = len(paths_per_thread)
         for t in range(num_threads_in_run):
-            logger.debug("Frames scheduled for thread #%d : %d." % (t, len(paths_per_thread[t])))
+            debug("Frames scheduled for thread #%d : %d." % (t, len(paths_per_thread[t])))
         # start threads
         threads = [[] for _ in range(num_threads_in_run)]
         frames =  [[] for _ in range(num_threads_in_run)]
@@ -155,7 +134,7 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
             threads[t].join()
 
         for t in range(num_threads_in_run):
-            logger.debug("Frames produced  for thread #%d : %d." % (t, len(frames[t])))
+            debug("Frames produced  for thread #%d : %d." % (t, len(frames[t])))
 
 
         # write the read images to the tfrecord
@@ -164,31 +143,31 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
 
         for t in range(num_threads_in_run):
             if not frames[t]:
-                logger.error("Thread # %d encountered an error." % t)
+                error("Thread # %d encountered an error." % t)
                 exit(1)
             serialize_to_tfrecord(frames[t], labels_per_thread[t], outfile, writer)
             count += len(frames[t])
 
 
-        logger.info("Processed %d frames, latest %d-sized batch took %s." %
+        info("Processed %d frames, latest %d-sized batch took %s." %
                     (count, sum(list(map(len,paths_per_thread))), elapsed_str(time.time()-tic)))
 
     writer.close()
 
 
 def get_item_paths(paths_list, mode):
-    logger.info("Generating paths...")
+    info("Generating paths...")
     tic = time.time()
     paths_per_video = []
     if mode == defs.input_mode.image:
         return paths_list
     else:
         for vid_idx in range(len(paths_list)):
-            #logger.info("Processing path %d / %d" % (vid_idx+1, len(paths_list)))
+            #info("Processing path %d / %d" % (vid_idx+1, len(paths_list)))
             video_path = paths_list[vid_idx]
             video_frame_paths = get_video_frame_paths(video_path)
             paths_per_video.append(video_frame_paths)
-    logger.info("Total path generation time: %s " % elapsed_str(time.time() - tic))            
+    info("Total path generation time: %s " % elapsed_str(time.time() - tic))
     return paths_per_video
 
 
@@ -267,7 +246,7 @@ def get_video_frame_paths(path):
 def read_image(imagepath):
     try:
         image = imread(imagepath)
-        logger.debug("Reading image %s" % imagepath)
+        debug("Reading image %s" % imagepath)
         # for grayscale images, duplicate
         # intensity to color channels
         if len(image.shape) <= 2:
@@ -283,7 +262,7 @@ def read_image(imagepath):
         # => 4 x the space of a uint8 image
         # image = image - mean_image
     except Exception as ex:
-        logger.error("Error :" + str(ex))
+        error("Error :" + str(ex))
         error("Error reading image.")
         return None
     return image
@@ -327,8 +306,8 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
         except StopIteration:
             break
         except Exception as ex:
-            logger.error('Exception at reading image, loading from scratch')
-            logger.error(ex)
+            error('Exception at reading image, loading from scratch')
+            error(ex)
             error("Error reading tfrecord image.")
 
     return images, labels
@@ -337,7 +316,7 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 
 def read_file(inp):
     mode = None
-    logger.info("Reading input file [%s] " % (inp))
+    info("Reading input file [%s] " % (inp))
     max_num_labels = -1
     paths = []
     labels = []
@@ -356,13 +335,13 @@ def read_file(inp):
             if mode is None:
                 if path.lower().endswith("." + settings.frame_format.lower()):
                     mode = defs.input_mode.image
-                    logger.info("Set input mode to frames from paths-file items suffixes.")
+                    info("Set input mode to frames from paths-file items suffixes.")
                 else:
 
                     mode = defs.input_mode.video
                     strlen = min(len(path), len(settings.frame_format) + 1)
                     suffix = path[-strlen:]
-                    logger.info(
+                    info(
                         "Set input mode to videos since paths-file item suffix [%s] differs from image format [%s]." % (
                         suffix, settings.frame_format))
 
@@ -380,7 +359,7 @@ def shuffle_pair(*args):
     return args
 
 def shuffle_paths(item_paths, paths, labels, mode):
-    logger.info("Shuffling data...")
+    info("Shuffling data...")
 
     if mode == defs.input_mode.image:
         item_paths, labels = shuffle_pair(item_paths, labels)
@@ -438,12 +417,12 @@ def write(settings):
         if settings.do_serialize:
             tic = time.time()
             output_file = inp + ".tfrecord"
-            logger.info("Serializing %s " % (output_file))
+            info("Serializing %s " % (output_file))
             serialize_multithread(item_paths, clips_per_item, paths_to_serialize, labels_to_serialize,
                                   output_file , mode, max_num_labels, settings)
-            logger.info("Done serializing %s " % inp)
-            logger.info("Total serialization time: %s " % elapsed_str(time.time() - tic))
-        logger.info("Done processing input file %s" % inp)
+            info("Done serializing %s " % inp)
+            info("Total serialization time: %s " % elapsed_str(time.time() - tic))
+        info("Done processing input file %s" % inp)
 
     return framepaths_per_input
 
@@ -454,7 +433,7 @@ def validate(written_data, settings):
     for index in range(len(settings.input_files)):
 
         inp = settings.input_files[index]
-        print('Validating %s' % inp)
+        info('Validating %s' % inp)
 
         item_paths, item_labels, paths, labels, mode,  = written_data[index]
         if mode == defs.input_mode.video and not settings.do_serialize:
@@ -468,7 +447,7 @@ def validate(written_data, settings):
         # validate
 
         num_validate = round(len(paths) * settings.validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
-        print("Will validate",num_validate,"items.")
+        info("Will validate %d items." % num_validate)
         sys.stdout.flush()
         progress = ProgressBar(num_validate, fmt=ProgressBar.FULL)
         error_free = True
@@ -494,10 +473,10 @@ def validate(written_data, settings):
             labeltf = llabeltf[0]
 
             if not np.array_equal(frame , frametf):
-                logger.error("Unequal image @ %s" % paths[i])
+                error("Unequal image @ %s" % paths[i])
                 error_free = False
             if not label == labeltf:
-                logger.error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
+                error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
                 error_free = False
 
             lidx = lidx + 1
@@ -507,9 +486,9 @@ def validate(written_data, settings):
             testidx = idx_list[lidx]
         progress.done()
         if not error_free:
-            logger.error("errors exist.")
+            error("errors exist.")
         else:
-            logger.info("Validation for %s ok" % (inp + ".tfrecord"))
+            info("Validation for %s ok" % (inp + ".tfrecord"))
 
 
 
@@ -523,7 +502,7 @@ def write_paths_file(data, settings):
         if settings.do_shuffle:
             # write paths, if they got shuffled
             item_outfile = inp + ".shuffled"
-            logger.info("Documenting shuffled video order to %s" % (item_outfile))
+            info("Documenting shuffled video order to %s" % (item_outfile))
             with open(item_outfile,'w') as f:
                 for v in range(len(item_paths)):
                     item = item_paths[v]
@@ -543,7 +522,7 @@ def write_paths_file(data, settings):
 
         if not mode == defs.input_mode.video:
             continue
-        logger.info("Documenting selected paths from file %s \n\tto %s" % (inp, outfile))
+        info("Documenting selected paths from file %s \n\tto %s" % (inp, os.path.basename(outfile)))
         with open(outfile, "w") as f:
             for path, label in zip(paths, labels):
                 f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))

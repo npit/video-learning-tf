@@ -57,7 +57,7 @@ class LRCN:
         # make sure dcnn weights are good2go
         self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
         if not os.path.exists(self.dcnn_weights_file):
-            error("Weights file %s does not exist." % self.dcnn_weights_file, self.logger)
+            error("Weights file %s does not exist." % self.dcnn_weights_file)
 
         # create the workflow
         if self.workflow == defs.workflows.acrec.singleframe:
@@ -83,7 +83,7 @@ class LRCN:
             self.create_training(settings, dataset, summaries)
 
     def precompute_learning_rates(self, settings, dataset):
-        self.logger.info("Precomputing learning rates per batch")
+        info("Precomputing learning rates per batch")
 
         base_lr = settings.base_lr
         decay_params = settings.lr_decay
@@ -142,15 +142,14 @@ class LRCN:
 
             for b in batches_lr:
                 f.write("Epoch %d/%d, batch %d/%d, lr %2.8f\n" % (b[0]+1,dataset.epochs,b[1]+1, num_batches,b[2]))
-        self.logger.info(log_message)
+        info(log_message)
         return lr_per_batch
 
 
     # training ops
     def create_training(self, settings, dataset, summaries):
 
-        self.logits = print_tensor(self.logits, "training: logits : ", settings.logging_level)
-        # self.inputLabels = print_tensor(self.inputLabels, "training: labels : ",settings.logging_level)
+        self.logits = print_tensor(self.logits, "training: logits : ")
 
         # configure loss
         with tf.name_scope("cross_entropy_loss"):
@@ -194,7 +193,7 @@ class LRCN:
             if self.lstm_model is not None:
                 regular_vars.extend(self.lstm_model.train_regular)
                 modified_vars.extend(self.lstm_model.train_modified)
-            self.logger.info("Setting up two-tier training with a factor of %f for the %d layer(s): %s" % (
+            info("Setting up two-tier training with a factor of %f for the %d layer(s): %s" % (
             settings.lr_mult, len(modified_vars), [ m.name for m in modified_vars]))
 
             # setup the two optimizer
@@ -209,7 +208,7 @@ class LRCN:
             grads = opt.compute_gradients(self.loss, var_list=regular_vars)
             if settings.clip_grads is not None:
                 clipmin, clipmax = settings.clip_grads
-                grads = [(tf.clip_by_norm(grad, clipmax), var) for grad, var in grads]
+                grads = [(tf.clip_by_global_norm(grad, clipmax), var) for grad, var in grads]
             trainer_base = opt.apply_gradients(grads)
 
             modified_lr = self.current_lr * settings.lr_mult
@@ -217,7 +216,7 @@ class LRCN:
             grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
             if settings.clip_grads is not None:
                 clipmin, clipmax = settings.clip_grads
-                grads_mod = [(tf.clip_by_norm(grad_mod, clipmax), var_mod) for grad_mod, var_mod in
+                grads_mod = [(tf.clip_by_global_norm(grad_mod, clipmax), var_mod) for grad_mod, var_mod in
                              grads_mod]
             trainer_modified = opt.apply_gradients(grads_mod, global_step=self.global_step)
 
@@ -233,7 +232,7 @@ class LRCN:
 
     def create_single_tier_learning(self, settings, dataset, summaries):
         # single lr for all
-        self.logger.info("Setting up training with a global learning rate.")
+        info("Setting up training with a global learning rate.")
         with tf.name_scope("single_tier_optimizer"):
             if settings.optimizer == defs.optim.sgd:
                 opt = tf.train.GradientDescentOptimizer(self.current_lr)
@@ -245,7 +244,7 @@ class LRCN:
             grads = opt.compute_gradients(self.loss)
             if settings.clip_grads is not None:
                 clipmin, clipmax = settings.clip_grads
-                grads = [(tf.clip_by_value(grad, clipmin, clipmax), var) for grad, var in grads]
+                grads = [(tf.clip_by_global_norm(grad, clipmin, clipmax), var) for grad, var in grads]
             self.optimizer = opt.apply_gradients(grads, global_step=self.global_step)
 
         with tf.name_scope('grads_norm'):
@@ -263,7 +262,7 @@ class LRCN:
         settings.frame_encoding_layer = None
         # create the singleframe workflow
         with tf.name_scope("dcnn_workflow"):
-            self.logger.info("Dcnn workflow")
+            info("Dcnn workflow")
             # single DCNN, classifying individual frames
             self.inputData, framesLogits = self.make_dcnn(dataset,settings)
             # do video level pooling only if necessary
@@ -272,28 +271,28 @@ class LRCN:
             with tf.name_scope("video_level_pooling"):
                 if settings.frame_pooling_type == defs.pooling.avg:
                     # -1 on the number of videos (batchsize) to deal with varying values for test and train
-                    self.logger.info("Raw logits : [%s]" % framesLogits.shape)
+                    info("Raw logits : [%s]" % framesLogits.shape)
                     frames_per_item = dataset.num_frames_per_clip if dataset.input_mode == defs.input_mode.video else 1
 
                     frameLogits = tf.reshape(framesLogits, (-1, frames_per_item, dataset.num_classes),
                                              name="reshape_framelogits_pervideo")
                     self.logits = tf.reduce_mean(frameLogits, axis=1)
 
-                    self.logger.info("Averaged logits out : [%s]" % self.logits.shape)
+                    info("Averaged logits out : [%s]" % self.logits.shape)
                 elif settings.frame_pooling_type == defs.pooling.last:
                     # keep only the response at the last time step
                     self.logits = tf.slice(framesLogits, [0, dataset.num_frames_per_clip - 1, 0],
                                            [-1, 1, dataset.num_classes],
                                            name="last_pooling")
-                    self.logger.debug("Last-liced logits: %s" % str(self.logits.shape))
+                    debug("Last-liced logits: %s" % str(self.logits.shape))
                     # squeeze empty dimension to get vector
                     output = tf.squeeze(self.logits, axis=1, name="last_pooling_squeeze")
-                    self.logger.debug("Last-sliced squeezed out : %s" % str(output.shape))
+                    debug("Last-sliced squeezed out : %s" % str(output.shape))
                 else:
-                    error("Undefined pooling method: %d " % settings.frame_pooling_type, self.logger)
+                    error("Undefined pooling method: %d " % settings.frame_pooling_type)
         else:
             self.logits = framesLogits
-            self.logger.info("logits out : [%s]" % self.logits.shape)
+            info("logits out : [%s]" % self.logits.shape)
 
     def create_actrec_lstm(self, settings, dataset):
         # define label inputs
@@ -303,7 +302,7 @@ class LRCN:
         # create the lstm workflow
         with tf.name_scope("lstm_workflow"):
             if dataset.input_mode != defs.input_mode.video:
-                error("LSTM workflow only available for video input mode", self.logger)
+                error("LSTM workflow only available for video input mode")
 
             # DCNN for frame encoding
             self.inputData, encodedFrames = self.make_dcnn(settings, dataset)
@@ -313,7 +312,7 @@ class LRCN:
             self.lstm_model = lstm.lstm()
             self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
             self.logits = self.lstm_model.get_output()
-            self.logger.info("logits : [%s]" % self.logits.shape)
+            info("logits : [%s]" % self.logits.shape)
 
     # Image description
     def create_imgdesc_visualinput(self, settings, dataset):
@@ -321,7 +320,7 @@ class LRCN:
         with tf.name_scope("imgdesc_workflow"):
             # make sure input mode is image
             if dataset.input_mode != defs.input_mode.image:
-                error("The image description workflow works only in image input mode.", self.logger)
+                error("The image description workflow works only in image input mode.")
 
             self.make_imgdesc_placeholders(settings,dataset)
 
@@ -332,7 +331,7 @@ class LRCN:
         # the implementation here implements the "show and tell model"
         # make sure input mode is image
         if dataset.input_mode != defs.input_mode.image:
-            error("The image description workflow works only in image input mode.", self.logger)
+            error("The image description workflow works only in image input mode.")
         with tf.name_scope("imgdesc_workflow"):
             self.make_imgdesc_placeholders(settings,dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
@@ -343,10 +342,10 @@ class LRCN:
         self.caption_lengths = tf.placeholder(tf.int32, shape=(None), name="words_per_item")
         self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_labels")
         labels = tf.identity(self.inputLabels)
-        labels = print_tensor(labels, "input labels", settings.logging_level)
+        labels = print_tensor(labels, "input labels")
         self.word_embeddings = tf.placeholder(tf.float32, shape=(None, dataset.embedding_matrix.shape[1]),
                                               name="word_embeddings")
-        self.logger.debug("input labels : [%s]" % labels)
+        debug("input labels : [%s]" % labels)
 
     def make_imgdesc_statebias(self, settings, dataset, encodedFrames):
 
@@ -369,16 +368,16 @@ class LRCN:
         if settings.do_training:
             # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
             encodedFrames = tf.tile(encodedFrames, [1, dataset.max_caption_length + 1])
-            encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames", settings.logging_level)
-            self.logger.debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
+            encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames")
+            debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
             encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
-            encodedFrames = print_tensor(encodedFrames, "restored frames", settings.logging_level)
-            self.logger.debug("restored : [%s]" % encodedFrames.shape)
+            encodedFrames = print_tensor(encodedFrames, "restored frames")
+            debug("restored : [%s]" % encodedFrames.shape)
 
         # horizontal concat the images to the words
         frames_words = tf.concat([encodedFrames, self.word_embeddings], axis=1)
-        self.logger.debug("frames concat words : [%s]" % frames_words.shape)
-        frames_words = print_tensor(frames_words, "frames concat words ", settings.logging_level)
+        debug("frames concat words : [%s]" % frames_words.shape)
+        frames_words = print_tensor(frames_words, "frames concat words ")
 
         # feed to lstm
         self.lstm_model = lstm.lstm()
@@ -393,8 +392,8 @@ class LRCN:
         self.logits = self.lstm_model.get_output()
 
         # remove the tensor rows where no ground truth caption is present
-        self.logger.debug("logits : [%s]" % self.logits.shape)
-        self.logits = print_tensor(self.logits, "logits to process", settings.logging_level)
+        debug("logits : [%s]" % self.logits.shape)
+        self.logits = print_tensor(self.logits, "logits to process")
         # split the logits to the chunks in the caption_lengths. First append the number of rows left to complete
         # the sequence length, so as to subsequently tf.split the tensor
 
@@ -404,13 +403,13 @@ class LRCN:
     def process_description_training_logits(self, settings):
         # remove the logits corresponding to padding
         non_padding_logits = tf.identity(self.non_padding_word_idxs)
-        non_padding_logits = print_tensor(non_padding_logits, "non-padding word idxs to keep", settings.logging_level)
+        non_padding_logits = print_tensor(non_padding_logits, "non-padding word idxs to keep")
         self.logits = tf.gather(self.logits, non_padding_logits)
-        self.logits = print_tensor(self.logits, "filtered logits list", settings.logging_level)
+        self.logits = print_tensor(self.logits, "filtered logits list")
         # re-merge the tensor list into a tensor
         self.logits = tf.concat(self.logits, axis=0)
-        self.logits = print_tensor(self.logits, "final filtered logits", settings.logging_level)
-        self.logger.debug("final filtered logits : [%s]" % self.logits.shape)
+        self.logits = print_tensor(self.logits, "final filtered logits")
+        debug("final filtered logits : [%s]" % self.logits.shape)
 
     def make_dcnn(self, dataset, settings):
         # DCNN for frame encoding
@@ -418,9 +417,9 @@ class LRCN:
         self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes,
                                settings.frame_encoding_layer)
         inputData, outputData = self.dcnn_model.get_io()
-        self.logger.debug("dcnn input : [%s]" % inputData.shape)
-        self.logger.debug("dcnn output : [%s]" % outputData.shape)
-        outputData = print_tensor(outputData, "encoded frames", settings.logging_level)
+        debug("dcnn input : [%s]" % inputData.shape)
+        debug("dcnn output : [%s]" % outputData.shape)
+        outputData = print_tensor(outputData, "encoded frames")
         return inputData, outputData
 
     # video description
@@ -434,7 +433,7 @@ class LRCN:
         if settings.frame_pooling_type == defs.pooling.avg:
             pooled_frame = tf.reduce_mean(encoded_frames, 0)
         else:
-            error("Undefined pooling type %s" % settings.frame_pooling_type, self.logger)
+            error("Undefined pooling type %s" % settings.frame_pooling_type)
         # the rest of the workflow is identical to the image description statebias workflow
         self.make_imgdesc_placeholders(settings, dataset)
         self.make_imgdesc_prepro(settings,dataset,pooled_frame)
@@ -491,7 +490,7 @@ class LRCN:
             # per-clip logits in input : append to clip logits accumulator
             self.clip_logits = np.vstack((self.clip_logits, logits))
             self.clip_labels = np.vstack((self.clip_labels, labels))
-            self.logger.debug("Adding %d,%d clip logits and labels to a total of %d,%d." % (
+            debug("Adding %d,%d clip logits and labels to a total of %d,%d." % (
                 logits.shape[0], labels.shape[0], self.clip_logits.shape[0], self.clip_labels.shape[0]))
 
             cpv = dataset.clips_per_video[dataset.video_index]
@@ -504,7 +503,7 @@ class LRCN:
                 self.clip_logits = self.clip_logits[cpv:,:]
                 self.clip_labels = self.clip_labels[cpv:,:]
 
-                self.logger.debug("Aggregated %d clips to the %d-th video. Video accumulation is now %d,%d - clip accumulation is %d, %d." %
+                debug("Aggregated %d clips to the %d-th video. Video accumulation is now %d,%d - clip accumulation is %d, %d." %
                                   (dataset.clips_per_video[dataset.video_index], 1 + dataset.video_index, len(self.item_logits),
                                    len(self.item_labels), len(self.clip_logits), len(self.clip_labels)))
                 # advance video index
@@ -523,13 +522,13 @@ class LRCN:
                     if vidx >= dataset.get_num_items():
                         break
                     cpv = dataset.clips_per_video[vidx]
-                    self.logger.debug("Aggregating %d clips for video %d in video batch mode" % (cpv, vidx + 1))
+                    debug("Aggregating %d clips for video %d in video batch mode" % (cpv, vidx + 1))
                     self.apply_clip_pooling(logits,cpv,labels)
                     logits = logits[cpv:,:]
                     labels = labels[cpv:,:]
                 if not (len(logits) == 0 and len(labels) == 0):
-                    error("Logits and/or labels non empty at the end of video item mode aggregation!", self.logger)
-                self.logger.debug("Video logits and labels accumulation is now %d,%d video in video batch mode." %
+                    error("Logits and/or labels non empty at the end of video item mode aggregation!")
+                debug("Video logits and labels accumulation is now %d,%d video in video batch mode." %
                                   (len(self.item_logits), len(self.item_labels)))
             else:
                 # frames, simply append
@@ -552,7 +551,7 @@ class LRCN:
 
     def get_accuracy(self):
         # compute accuracy
-        self.logger.info("Computing accuracy out of %d items" % len(self.item_logits))
+        info("Computing accuracy out of %d items" % len(self.item_logits))
         predicted_classes = np.argmax(self.item_logits, axis=1)
         correct_classes = np.argmax(self.item_labels, axis=1)
         accuracy = np.mean(np.equal(predicted_classes, correct_classes))

@@ -115,28 +115,7 @@ class Settings:
     def should_resume(self):
         return self.resume_file is not None and self.resume_file
 
-    # configure logging settings
-    def configure_logging(self):
-        #tf.logging.set_verbosity(tf.logging.INFO)
-        logfile = os.path.join(self.run_folder ,"log_" +  self.run_id + "_" + get_datetime_str() + ".log")
-        print("Initializing logging to logfile: %s" % logfile)
-        sys.stdout.flush()
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(self.logging_level)
 
-        formatter = logging.Formatter('%(asctime)s| %(levelname)7s - %(filename)15s - line %(lineno)4d - %(message)s')
-
-        # file handler
-        handler = logging.FileHandler(logfile)
-        handler.setLevel(self.logging_level)
-        handler.setFormatter(formatter)
-        # console handler
-        consoleHandler = logging.StreamHandler()
-        consoleHandler.setFormatter(formatter)
-
-        # add the handlers to the logger
-        self.logger.addHandler(handler)
-        self.logger.addHandler(consoleHandler)
 
     # set the input files
     def set_input_files(self):
@@ -204,21 +183,24 @@ class Settings:
         if not self.do_validation and not self.do_training:
             error("Neither training nor validation is enabled.")
         # configure the logs
-        self.configure_logging()
+        logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + get_datetime_str() + ".log")
+        self.logger = CustomLogger()
+        self.logger.configure_logging(logfile, self.logging_level)
+
         sys.stdout.flush(), sys.stderr.flush()
-        self.logger.info("Starting [%s] workflow." % self.workflow)
+        info("Starting [%s] workflow." % self.workflow)
         # if not resuming, set start folder according to now()
         if  self.should_resume():
             if self.do_training:
                 # load batch and epoch where training left off
-                self.logger.info("Resuming training.")
+                info("Resuming training.")
                 # resume training metadata only in training
                 self.resume_metadata()
         else:
             if self.do_training:
-                self.logger.info("Starting training from scratch.")
+                info("Starting training from scratch.")
             if not self.do_training and self.do_validation:
-                self.logger.warning("Starting validation-only run with an untrained network.")
+                warning("Starting validation-only run with an untrained network.")
         self.set_input_files()
         if not self.good():
             error("Wacky configuration, exiting.")
@@ -226,8 +208,6 @@ class Settings:
     # check if settings are ok
     def good(self):
         if not self.epochs: error("Non positive number of epochs.")
-        if self.batch_item == defs.batch_item.clip and self.input_mode == defs.input_mode.image:
-            error("Clip batches set with image input mode")
         return True
 
     # restore dataset meta parameters
@@ -235,7 +215,7 @@ class Settings:
         if self.should_resume():
             savefile_metapars = os.path.join(self.run_folder,"checkpoints", self.resume_file + ".snap")
 
-            self.logger.info("Resuming metadata from file:" + savefile_metapars)
+            info("Resuming metadata from file:" + savefile_metapars)
 
             try:
                 # load saved parameters pickle
@@ -246,7 +226,7 @@ class Settings:
 
             # set run options from loaded stuff
             self.train_index, self.epoch_index = params
-            self.logger.info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
+            info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
 
     # restore graph variables
     def resume_graph(self, sess):
@@ -254,7 +234,7 @@ class Settings:
             if self.saver is None:
                 self.saver = tf.train.Saver()
             savefile_graph = os.path.join(self.run_folder,"checkpoints", self.resume_file)
-            self.logger.info("Resuming tf graph from file:" + savefile_graph)
+            info("Resuming tf graph from file:" + savefile_graph)
 
             try:
                 # load saved graph file
@@ -276,14 +256,14 @@ class Settings:
             basename = os.path.join(checkpoints_folder, get_datetime_str() + "_" + self.workflow + "_" + progress)
             savefile_graph = basename + ".graph"
 
-            self.logger.info("Saving graph  to [%s]" % savefile_graph)
+            info("Saving graph  to [%s]" % savefile_graph)
             saved_instance_name = self.saver.save(sess, savefile_graph, global_step=global_step)
 
             # save dataset metaparams
             savefile_metapars = saved_instance_name + ".snap"
 
-            self.logger.info("Saving params to [%s]" % savefile_metapars)
-            self.logger.info("Saving params for epoch index %d, train index %d" %
+            info("Saving params to [%s]" % savefile_metapars)
+            info("Saving params for epoch index %d, train index %d" %
                 (dataset.epoch_index, dataset.batch_index_train))
 
             params2save = [dataset.batch_index_train , dataset.epoch_index]
@@ -331,7 +311,7 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
         if dataset.phase == defs.phase.val:
             if len(images) != dataset.batch_size_val:
                 num_pad =  dataset.batch_size_val - len(images)
-                dataset.logger.warning("Padding last batch with %d zero items" % num_pad)
+                warning("Padding last batch with %d zero items" % num_pad)
                 for _ in range(num_pad):
                     images.append(np.zeros(images[0].shape,np.float32))
                 embeddings = np.vstack((embeddings, np.zeros([num_pad* dataset.max_caption_length+1, embeddings.shape[1]],np.float32)))
@@ -342,7 +322,7 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
             # also pad, hotfix :/
             if len(images) != dataset.batch_size_train:
                 num_pad =  dataset.batch_size_train - len(images)
-                dataset.logger.warning("Padding last batch with %d zero items" % num_pad)
+                warning("Padding last batch with %d zero items" % num_pad)
                 for _ in range(num_pad):
                     images.append(np.zeros(images[0].shape,np.float32))
                 embeddings = np.vstack((embeddings, np.zeros([num_pad * (dataset.max_caption_length+1), embeddings.shape[1]],np.float32)))
@@ -365,7 +345,7 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
 
 # train the network
 def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
-    settings.logger.info("Starting train/test")
+    info("Starting train/test")
     run_batch_count = 0
 
     for epochIdx in range(dataset.epoch_index, dataset.epochs):
@@ -380,8 +360,8 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.global_step, lrcn.optimizer],feed_dict=fdict)
 
-            settings.logger.info("Learning rate %2.8f, global step: %d, batch loss : %2.5f " % (learning_rate, global_step, batch_loss))
-            settings.logger.info("Dataset global step %d, epoch index %d, batch size train %d, batch index train %d" %
+            info("Learning rate %2.8f, global step: %d, batch loss : %2.5f " % (learning_rate, global_step, batch_loss))
+            info("Dataset global step %d, epoch index %d, batch size train %d, batch index train %d" %
                                  (dataset.get_global_batch_step(), dataset.epoch_index, dataset.batch_size_train, dataset.batch_index_train))
 
             tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_batch_step())
@@ -399,9 +379,9 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
                               global_step=dataset.get_global_batch_step())
         # if an epoch was completed (and not just loaded, do saving and logging)
         if run_batch_count > 0:
-            dataset.logger.info("Epoch [%d] training run complete." % (1+epochIdx))
+            info("Epoch [%d] training run complete." % (1+epochIdx))
         else:
-            settings.logger.info("Resumed epoch [%d] is already complete." % (1+epochIdx))
+            info("Resumed epoch [%d] is already complete." % (1+epochIdx))
 
         dataset.epoch_index = dataset.epoch_index + 1
         # reset phase
@@ -409,7 +389,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
 
     # if we did not save already, do it now at the end of training
     if not dataset.should_save_now(global_step):
-        settings.logger.info("Saving model checkpoint out of turn, since training's finished.")
+        info("Saving model checkpoint out of turn, since training's finished.")
         settings.save(sess, dataset, progress="ep_%d_btch_%d_gs_%d" % (1 + epochIdx, len(dataset.batches), global_step),
                       global_step=dataset.get_global_batch_step())
 
@@ -453,7 +433,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
             # pass them to the evaluation function
             ids_captions = dataset.logits_to_captions(lrcn.item_logits)
             if len(ids_captions[0]) != len(ids_captions[1]):
-                settings.logger.error("Unequal number of image ids and captions")
+                error("Unequal number of image ids and captions")
                 error("Image ids / captions mismatch")
 
             json_data = [ { "image_id" : ids_captions[0][i] , "caption" : ids_captions[1][i] }
@@ -461,16 +441,16 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
             # write results
 
             results_file = dataset.input_source_files[defs.val_idx] + ".coco.results.json"
-            dataset.logger.info("Writing captioning results to %s" % results_file)
+            info("Writing captioning results to %s" % results_file)
             with open(results_file , "w") as fp:
                 json.dump(json_data, fp)
 
             # also, get captions from the read image paths - labels files
             # initialize with it the COCO object
             # ....
-            settings.logger.info("Evaluating captioning using ground truth file %s" % str(settings.caption_ground_truth))
+            info("Evaluating captioning using ground truth file %s" % str(settings.caption_ground_truth))
             command = '$(which python2) tools/python2_coco_eval/coco_eval.py %s %s' % (results_file, settings.caption_ground_truth)
-            dataset.logger.debug("evaluation command is [%s]" % command)
+            debug("evaluation command is [%s]" % command)
             os.system(command)
 
 
@@ -478,7 +458,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         accuracy = lrcn.get_accuracy()
 
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
-        dataset.logger.info("Validation run complete, accuracy: %2.5f" % accuracy)
+        info("Validation run complete, accuracy: %2.5f" % accuracy)
         tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_batch_step())
     tboard_writer.flush()
     return True
@@ -526,7 +506,7 @@ def main():
     # mop up
     tboard_writer.close()
     sess.close()
-    settings.logger.info("Run [%s] complete." % settings.run_id)
+    info("Run [%s] complete." % settings.run_id)
 
 if __name__ == "__main__":
     main()

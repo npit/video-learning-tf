@@ -31,11 +31,44 @@ def get_datetime_str():
     #return time.strftime("[%d|%m|%y]_[%H:%M:%S]")
     return time.strftime("%d%m%y_%H%M%S")
 
-# error function
-def error(msg, logger = None):
-    if logger:
-        logger.error(msg)
+# logging setup
+class CustomLogger:
+    loggername='default'
+    logging_level = logging.INFO
+    # configure logging settings
+    def configure_logging(self, logfile, logging_level):
+        print("Initializing logging to logfile: %s" % logfile)
+        sys.stdout.flush()
+
+        self.logging_level = logging_level
+        self.logger = logging.getLogger('default')
+        self.logger.setLevel(self.logging_level)
+
+        formatter = logging.Formatter('%(asctime)s| %(levelname)7s - %(filename)15s - line %(lineno)4d - %(message)s')
+
+        # file handler
+        handler = logging.FileHandler(logfile)
+        handler.setLevel(self.logging_level)
+        handler.setFormatter(formatter)
+        # console handler
+        consoleHandler = logging.StreamHandler()
+        consoleHandler.setFormatter(formatter)
+
+        # add the handlers to the logger
+        self.logger.addHandler(handler)
+        self.logger.addHandler(consoleHandler)
+
+def error(msg):
+    error_(msg)
     raise Exception(msg)
+def info(message):
+    logging.getLogger(CustomLogger.loggername).info(message)
+def warning(message):
+    logging.getLogger(CustomLogger.loggername).warning(message)
+def error_( message):
+    logging.getLogger(CustomLogger.loggername).error(message)
+def debug(message):
+    logging.getLogger(CustomLogger.loggername).debug(message)
 
 # onehot vector generation
 def labels_to_one_hot(labels,num_classes):
@@ -67,8 +100,8 @@ def sublist(list, sublist_length):
     return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
 
 # shortcut for tensor printing
-def print_tensor(tensor, message, log_level):
-    if not log_level == logging.DEBUG:
+def print_tensor(tensor, message):
+    if not CustomLogger.logging_level == logging.DEBUG:
         return tensor
     try:
         tensor_cols = int(tensor.shape[-1]/3)
@@ -187,7 +220,6 @@ class defs:
     train_idx, val_idx = 0, 1
     image, label = 0, 1
 
-
 # trainable object class
 class Trainable:
     train_regular = []
@@ -196,7 +228,7 @@ class Trainable:
         self.train_regular = []
         self.train_modified = []
 
-
+# eye candy
 class ProgressBar(object):
     DEFAULT = 'Progress: %(bar)s %(percent)3d%%'
     FULL = '%(bar)s %(current)d/%(total)d (%(percent)3d%%) %(remaining)d to go'

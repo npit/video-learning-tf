@@ -24,7 +24,6 @@ data_format = defs.data_format.tfrecord
 frame_format = "jpg"
 
 # batch settings
-num_frames_per_clip = 16
 batch_item = defs.batch_item.default
 
 
