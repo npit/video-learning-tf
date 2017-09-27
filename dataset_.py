@@ -242,7 +242,7 @@ class Dataset:
             self.set_current_phase(phase, is_new_phase=False)
 
     # read next batch
-    def read_next_batch(self):
+    def get_next_batch(self):
         images = []
         labels = []
         currentBatch = self.batches[self.batch_index]
@@ -382,6 +382,9 @@ class Dataset:
         elif self.batch_item == defs.batch_item.clip:
             # batch size refers to number of clips.
             num_frames_in_batch = self.batch_size * self.num_frames_per_clip
+            # handle potentially incomplete batches
+            clips_left = len(self.batches) - self.batch_index
+            num_frames_in_batch = math.min(clips_left * self.num_frames_per_clip, num_frames_in_batch)
             images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
             # limit to 1 label per clip
             labels = labels_per_frame[0:: self.num_frames_per_clip]

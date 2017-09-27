@@ -5,6 +5,7 @@ from models.alexnet import alexnet
 from models.lstm import lstm
 # util
 from utils_ import *
+from tf_util import apply_temporal_pooling
 
 
 class LRCN:
@@ -264,35 +265,18 @@ class LRCN:
         with tf.name_scope("dcnn_workflow"):
             info("Dcnn workflow")
             # single DCNN, classifying individual frames
-            self.inputData, framesLogits = self.make_dcnn(dataset,settings)
-            # do video level pooling only if necessary
-        if dataset.input_mode == defs.input_mode.video:
-            # average the logits on the frames dimension
-            with tf.name_scope("video_level_pooling"):
-                if settings.frame_pooling_type == defs.pooling.avg:
-                    # -1 on the number of videos (batchsize) to deal with varying values for test and train
-                    info("Raw logits : [%s]" % framesLogits.shape)
-                    frames_per_item = dataset.num_frames_per_clip if dataset.input_mode == defs.input_mode.video else 1
+            self.inputData, self.logits = self.make_dcnn(dataset,settings)
+        # reshape to num_items x num_frames_per_item x dimension
+        self.logits = tf.reshape(self.logits, (-1, dataset.num_frames_per_clip, dataset.num_classes),
+                                 name="reshape_framelogits_pervideo")
 
-                    frameLogits = tf.reshape(framesLogits, (-1, frames_per_item, dataset.num_classes),
-                                             name="reshape_framelogits_pervideo")
-                    self.logits = tf.reduce_mean(frameLogits, axis=1)
+        if dataset.input_mode == defs.input_mode.image or dataset.num_frames_per_clip == 1:
+            return
 
-                    info("Averaged logits out : [%s]" % self.logits.shape)
-                elif settings.frame_pooling_type == defs.pooling.last:
-                    # keep only the response at the last time step
-                    self.logits = tf.slice(framesLogits, [0, dataset.num_frames_per_clip - 1, 0],
-                                           [-1, 1, dataset.num_classes],
-                                           name="last_pooling")
-                    debug("Last-liced logits: %s" % str(self.logits.shape))
-                    # squeeze empty dimension to get vector
-                    output = tf.squeeze(self.logits, axis=1, name="last_pooling_squeeze")
-                    debug("Last-sliced squeezed out : %s" % str(output.shape))
-                else:
-                    error("Undefined pooling method: %d " % settings.frame_pooling_type)
-        else:
-            self.logits = framesLogits
-            info("logits out : [%s]" % self.logits.shape)
+        # pool the logits on the temporal dimension
+        self.logits = apply_temporal_pooling(self.logits, dataset.num_classes, dataset.num_frames_per_clip, settings.frame_pooling_type)
+
+        info("logits out : [%s]" % self.logits.shape)
 
     def create_actrec_lstm(self, settings, dataset):
         # define label inputs

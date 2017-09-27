@@ -353,7 +353,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         dataset.set_or_swap_phase(defs.phase.train)
         while dataset.loop():
             # read  batch
-            images, ground_truth = dataset.read_next_batch()
+            images, ground_truth = dataset.get_next_batch()
             fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
             dataset.print_iter_info( len(images) , num_labels)
             # count batch iterations
@@ -414,7 +414,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     # validation
     while dataset.loop():
         # get images and labels
-        images, ground_truth = dataset.read_next_batch()
+        images, ground_truth = dataset.get_next_batch()
         fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
         dataset.print_iter_info(len(images), num_labels)
         logits = sess.run(lrcn.logits, feed_dict=fdict)

@@ -1,5 +1,6 @@
 import tensorflow as tf
 from utils_ import *
+from tf_util import *
 
 class lstm(Trainable):
 
@@ -18,20 +19,7 @@ class lstm(Trainable):
             cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
         return cell, varscope
 
-    def make_fc(self, input_tensor, input_dim, output_dim, name="fc_out" ):
-        '''
-        Make a fully-connected layer
-        '''
-        # layer initializations
-        fc_out__init = tf.truncated_normal((input_dim, output_dim), stddev=0.05, name=name + "_w_init")
-        fc_out_b_init = tf.constant(0.1, shape=(output_dim,), name=name + "_b_init")
 
-        # create the layers
-        fc_out_w = tf.Variable(fc_out__init, name=name + "_w")
-        fc_out_b = tf.Variable(fc_out_b_init, name=name + "_b")
-        output = tf.nn.xw_plus_b(input_tensor, fc_out_w, fc_out_b, name=name)
-
-        return output
 
     def manage_trainables(self, namescope_name, varscope):
         fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope_name)
@@ -39,22 +27,7 @@ class lstm(Trainable):
         cell_vars = [v for v in tf.trainable_variables() if v.name.startswith('rnn')]
         self.train_modified.extend(fc_vars + cell_vars)
 
-    def apply_pooling(self, input_tensor, dimension, sequence_length, pooling_type):
-        if pooling_type == defs.pooling.last:
-            # keep only the response at the last time step
-            output = tf.slice(input_tensor, [0, sequence_length - 1, 0], [-1, 1, dimension], name="lstm_output_reshape")
-            debug("LSTM last timestep output : %s" % str(output.shape))
-            # squeeze empty dimension to get vector
-            output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
-            debug("LSTM squeezed output : %s" % str(output.shape))
 
-        elif pooling_type == defs.pooling.avg:
-            # average per-timestep results
-            output = tf.reduce_mean(input_tensor, axis=1)
-            debug("LSTM time-averaged output : %s" % str(output.shape))
-        else:
-            error("Undefined frame pooling type : %d" % pooling_type)
-        return output
 
     def apply_dropout(self, input_tensor, dropout_keep_prob):
         # add dropout
@@ -66,7 +39,7 @@ class lstm(Trainable):
     def forward_pass_sequence(self, input_tensor, input_dim, num_layers, num_hidden, output_dim, sequence_length, pooling_type, dropout_prob=0.0):
         '''
         Pass an input sequence through the lstm.
-        :return:
+        :return: output and state
         '''
 
         with tf.name_scope("lstm_forward") as namescope:
@@ -77,13 +50,13 @@ class lstm(Trainable):
             output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length)
 
             # pool output batch to a vector
-            output = self.apply_pooling(output, num_hidden, sequence_length, pooling_type)
+            output = apply_temporal_pooling(output, num_hidden, sequence_length, pooling_type)
 
             # add dropout
             output = self.apply_dropout(output, dropout_prob)
 
             # map to match the output dimension
-            output = self.make_fc(output, num_hidden, output_dim)
+            output = make_fc(output, num_hidden, output_dim)
 
             # get trainable layers
             self.manage_trainables(namescope, cell_vscope)
@@ -91,12 +64,9 @@ class lstm(Trainable):
             return output, state
 
 
-
-            ## dynamic rnn case, where input is a single tensor
-
     def evaluate_sequence(self, inputTensor, input_dim, cells, num_hidden, sequence_len, nonzero_per_sequence=None, init_state=None):
         '''
-
+        Evaluate a sequence through the lstm
         :param inputTensor: the tensor to be evaluated
         :param input_dim: the data vector length in the tensor
         :param cells: MultiRNNCell list
