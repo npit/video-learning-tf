@@ -795,6 +795,6 @@ class Dataset:
 
     # check if we should save
     def should_save_now(self, global_step):
-        if self.save_interval == None:
+        if self.save_interval == None or self.phase != defs.phase.train:
             return False
         return global_step % self.save_interval == 0

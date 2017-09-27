@@ -185,6 +185,7 @@ class Settings:
         # configure the logs
         logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + get_datetime_str() + ".log")
         self.logger = CustomLogger()
+        CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
 
         sys.stdout.flush(), sys.stderr.flush()

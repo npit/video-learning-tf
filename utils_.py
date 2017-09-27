@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-import time, configparser, os, logging, sys, re
+import time, configparser, os, logging, sys, re, math
 
 # init from config file
 def init_config(init_file, tag_to_read):
@@ -35,6 +35,7 @@ def get_datetime_str():
 class CustomLogger:
     loggername='default'
     logging_level = logging.INFO
+    instance = None
     # configure logging settings
     def configure_logging(self, logfile, logging_level):
         print("Initializing logging to logfile: %s" % logfile)
@@ -57,6 +58,9 @@ class CustomLogger:
         # add the handlers to the logger
         self.logger.addHandler(handler)
         self.logger.addHandler(consoleHandler)
+    def get_logging_level():
+        return CustomLogger.instance.logger.level
+
 
 def error(msg):
     error_(msg)
@@ -101,12 +105,9 @@ def sublist(list, sublist_length):
 
 # shortcut for tensor printing
 def print_tensor(tensor, message):
-    if not CustomLogger.logging_level == logging.DEBUG:
+    if not CustomLogger.get_logging_level() == logging.DEBUG:
         return tensor
-    try:
-        tensor_cols = int(tensor.shape[-1]/3)
-    except Exception:
-        tensor_cols = 10
+    tensor_cols = 10
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
     return tens
 

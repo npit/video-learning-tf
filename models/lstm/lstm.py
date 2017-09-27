@@ -4,6 +4,141 @@ from utils_ import *
 class lstm(Trainable):
 
 
+    # make an lstm cell
+    def make_cell(self, num_hidden, num_layers):
+        '''
+        Make the cell(s) object
+        :param num_hidden:
+        :param num_layers:
+        :return:
+        '''
+        with tf.variable_scope("lstm_forward_varscope") as varscope:
+            cells = [tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
+                     for _ in range(num_layers)]
+            cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+        return cell, varscope
+
+    def make_fc(self, input_tensor, input_dim, output_dim, name="fc_out" ):
+        '''
+        Make a fully-connected layer
+        '''
+        # layer initializations
+        fc_out__init = tf.truncated_normal((input_dim, output_dim), stddev=0.05, name=name + "_w_init")
+        fc_out_b_init = tf.constant(0.1, shape=(output_dim,), name=name + "_b_init")
+
+        # create the layers
+        fc_out_w = tf.Variable(fc_out__init, name=name + "_w")
+        fc_out_b = tf.Variable(fc_out_b_init, name=name + "_b")
+        output = tf.nn.xw_plus_b(input_tensor, fc_out_w, fc_out_b, name=name)
+
+        return output
+
+    def manage_trainables(self, namescope_name, varscope):
+        fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope_name)
+                   if namescope_name in f.name]
+        cell_vars = [v for v in tf.trainable_variables() if v.name.startswith('rnn')]
+        self.train_modified.extend(fc_vars + cell_vars)
+
+    def apply_pooling(self, input_tensor, dimension, sequence_length, pooling_type):
+        if pooling_type == defs.pooling.last:
+            # keep only the response at the last time step
+            output = tf.slice(input_tensor, [0, sequence_length - 1, 0], [-1, 1, dimension], name="lstm_output_reshape")
+            debug("LSTM last timestep output : %s" % str(output.shape))
+            # squeeze empty dimension to get vector
+            output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
+            debug("LSTM squeezed output : %s" % str(output.shape))
+
+        elif pooling_type == defs.pooling.avg:
+            # average per-timestep results
+            output = tf.reduce_mean(input_tensor, axis=1)
+            debug("LSTM time-averaged output : %s" % str(output.shape))
+        else:
+            error("Undefined frame pooling type : %d" % pooling_type)
+        return output
+
+    def apply_dropout(self, input_tensor, dropout_keep_prob):
+        # add dropout
+        if dropout_keep_prob > 0:
+            output = tf.nn.dropout(input_tensor, keep_prob=dropout_keep_prob, name="lstm_dropout")
+        return output
+
+    # basic, abstract lstm functions
+    def forward_pass_sequence(self, input_tensor, input_dim, num_layers, num_hidden, output_dim, sequence_length, pooling_type, dropout_prob=0.0):
+        '''
+        Pass an input sequence through the lstm.
+        :return:
+        '''
+
+        with tf.name_scope("lstm_forward") as namescope:
+            # define the cell(s)
+            cells, cell_vscope = self.make_cell(num_hidden, num_layers)
+
+            # evaluate it via dynamic_rnn
+            output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length)
+
+            # pool output batch to a vector
+            output = self.apply_pooling(output, num_hidden, sequence_length, pooling_type)
+
+            # add dropout
+            output = self.apply_dropout(output, dropout_prob)
+
+            # map to match the output dimension
+            output = self.make_fc(output, num_hidden, output_dim)
+
+            # get trainable layers
+            self.manage_trainables(namescope, cell_vscope)
+
+            return output, state
+
+
+
+            ## dynamic rnn case, where input is a single tensor
+
+    def evaluate_sequence(self, inputTensor, input_dim, cells, num_hidden, sequence_len, nonzero_per_sequence=None, init_state=None):
+        '''
+
+        :param inputTensor: the tensor to be evaluated
+        :param input_dim: the data vector length in the tensor
+        :param cells: MultiRNNCell list
+        :param sequence_len: The max sequence evaluat-able in the input tensor. Integer or list of integers
+        :param num_hidden: The lstm state length
+        :param nonzero_per_sequence: The non-zero (non-pad) elements per sequence in the batch, <= sequence_len
+        :param init_state: The initial state vector
+        :return: Output tensor and state vector
+        '''
+
+        # reshape input tensor from shape [ num_items * num_frames_per_item , input_dim ] to
+        # [ num_items , num_frames_per_item , input_dim ]
+        inputTensor = print_tensor(inputTensor, "inputTensor  in rnn_dynamic")
+        inputTensor = tf.reshape(inputTensor, [-1, sequence_len, input_dim], name="lstm_input_reshape")
+        inputTensor = print_tensor(inputTensor, "input reshaped")
+
+        # get the batch size during run.
+        batch_size = tf.shape(inputTensor)[0]
+
+        # get initial state
+        if init_state is None:
+            zeros = tf.zeros([batch_size, num_hidden])
+            zero_state = tuple([tf.contrib.rnn.LSTMStateTuple(zeros,zeros) for _ in cells._cells])
+        else:
+            if len(init_state.shape) == 1:
+                init_state = tf.expand_dims(init_state, 0)
+            zero_state = tuple([tf.contrib.rnn.LSTMStateTuple(init_state, init_state) for _ in cells._cells])
+
+        if nonzero_per_sequence is None:
+            # all elements in the sequence are good2go
+            # specify the sequence length for each batch item: [ numitemframes for i in range(batchsize)]
+            _seq_len = tf.fill(tf.expand_dims(batch_size, 0), tf.constant(sequence_len, dtype=tf.int64))
+        else:
+            _seq_len = nonzero_per_sequence
+
+        # forward pass through the network
+        output, state = tf.nn.dynamic_rnn(cells, inputTensor, sequence_length=_seq_len, dtype=tf.float32,
+                                          initial_state=zero_state)
+        return output, state
+
+
+
     output = None
 
     def define_encoder(self,input_tensor, dataset, settings):

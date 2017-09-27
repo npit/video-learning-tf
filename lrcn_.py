@@ -310,8 +310,12 @@ class LRCN:
 
             # LSTM for frame sequence classification for frame encoding
             self.lstm_model = lstm.lstm()
-            self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
-            self.logits = self.lstm_model.get_output()
+            input_dim = int(encodedFrames.shape[1])
+            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, input_dim, settings.lstm_num_layers,
+                                        settings.lstm_num_hidden, dataset.num_classes, dataset.num_frames_per_clip,
+                                                             settings.frame_pooling_type, settings.dropout_keep_prob)
+            # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
+            # self.logits = self.lstm_model.get_output()
             info("logits : [%s]" % self.logits.shape)
 
     # Image description

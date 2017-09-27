@@ -447,7 +447,7 @@ def validate(written_data, settings):
         # validate
 
         num_validate = round(len(paths) * settings.validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
-        info("Will validate %d items." % num_validate)
+        info("Will validate %d%% of a total of %d items (but at least 10K), i.e. %d items." % (settings.validate_pcnt, len(paths), num_validate))
         sys.stdout.flush()
         progress = ProgressBar(num_validate, fmt=ProgressBar.FULL)
         error_free = True

@@ -1,6 +1,6 @@
 [run]
 # run type and an identifier for it
-workflow = defs.workflows.acrec.singleframe
+workflow = defs.workflows.imgdesc.statebias
 
 
 # save / load configuration
