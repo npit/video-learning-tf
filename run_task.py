@@ -291,47 +291,48 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
         fdict[lrcn.inputLabels] = onehot_labels
         fdict[lrcn.caption_lengths] = caption_lengths
         fdict[lrcn.word_embeddings] = embeddings
-
-        if dataset.phase == defs.phase.train:
-            # create indices of actual, non-padding captions, with which to calculate the loss
-            non_padding_word_idxs = []
-            # for the batch item other than the first, add the offset of the sequence length
-            for idx, num_captions in enumerate(caption_lengths):
-                # generate, adding one more index for the EOS
-                offset = idx * (dataset.max_caption_length + 1)
-                caption_true_words = [i + offset for i in range(num_captions + 1)]
-
-                non_padding_word_idxs.extend(caption_true_words)
-            # wrap up as nparray and put to feed dict
-            non_padding_word_idxs = np.asarray(non_padding_word_idxs,np.int32)
-            fdict[lrcn.non_padding_word_idxs] = non_padding_word_idxs
-
+        fdict[lrcn.non_padding_word_idxs] = ground_truth['non_padding_index']
         num_labels = len(onehot_labels)
-
-        # in validation, batch entries must match exactly the batch size. pad with zeros if incomplete batck
-        if dataset.phase == defs.phase.val:
-            if len(images) != dataset.batch_size_val:
-                num_pad =  dataset.batch_size_val - len(images)
-                warning("Padding last batch with %d zero items" % num_pad)
-                for _ in range(num_pad):
-                    images.append(np.zeros(images[0].shape,np.float32))
-                embeddings = np.vstack((embeddings, np.zeros([num_pad* dataset.max_caption_length+1, embeddings.shape[1]],np.float32)))
-                fdict[lrcn.inputData] = images
-                fdict[lrcn.word_embeddings] = embeddings
-                padding = num_pad
-        if  dataset.phase == defs.phase.train and dataset.workflow == defs.workflows.imgdesc.statebias:
-            # also pad, hotfix :/
-            if len(images) != dataset.batch_size_train:
-                num_pad =  dataset.batch_size_train - len(images)
-                warning("Padding last batch with %d zero items" % num_pad)
-                for _ in range(num_pad):
-                    images.append(np.zeros(images[0].shape,np.float32))
-                embeddings = np.vstack((embeddings, np.zeros([num_pad * (dataset.max_caption_length+1), embeddings.shape[1]],np.float32)))
-                caption_lengths.extend([0 for _ in range(num_pad)])
-                fdict[lrcn.inputData] = images
-                fdict[lrcn.word_embeddings] = embeddings
-                fdict[lrcn.caption_lengths] =caption_lengths
-                padding = num_pad
+        # if dataset.phase == defs.phase.train:
+        #     # create indices of actual, non-padding captions, with which to calculate the loss
+        #     non_padding_word_idxs = []
+        #     # for the batch item other than the first, add the offset of the sequence length
+        #     for idx, num_captions in enumerate(caption_lengths):
+        #         # generate, adding one more index for the EOS
+        #         offset = idx * (dataset.max_caption_length + 1)
+        #         caption_true_words = [i + offset for i in range(num_captions + 1)]
+        #
+        #         non_padding_word_idxs.extend(caption_true_words)
+        #     # wrap up as nparray and put to feed dict
+        #     non_padding_word_idxs = np.asarray(non_padding_word_idxs,np.int32)
+        #     fdict[lrcn.non_padding_word_idxs] = non_padding_word_idxs
+        #
+        # num_labels = len(onehot_labels)
+        #
+        # # in validation, batch entries must match exactly the batch size. pad with zeros if incomplete batck
+        # if dataset.phase == defs.phase.val:
+        #     if len(images) != dataset.batch_size_val:
+        #         num_pad =  dataset.batch_size_val - len(images)
+        #         warning("Padding last batch with %d zero items" % num_pad)
+        #         for _ in range(num_pad):
+        #             images.append(np.zeros(images[0].shape,np.float32))
+        #         embeddings = np.vstack((embeddings, np.zeros([num_pad* dataset.max_caption_length+1, embeddings.shape[1]],np.float32)))
+        #         fdict[lrcn.inputData] = images
+        #         fdict[lrcn.word_embeddings] = embeddings
+        #         padding = num_pad
+        # if  dataset.phase == defs.phase.train and dataset.workflow == defs.workflows.imgdesc.statebias:
+        #     # also pad, hotfix :/
+        #     if len(images) != dataset.batch_size_train:
+        #         num_pad =  dataset.batch_size_train - len(images)
+        #         warning("Padding last batch with %d zero items" % num_pad)
+        #         for _ in range(num_pad):
+        #             images.append(np.zeros(images[0].shape,np.float32))
+        #         embeddings = np.vstack((embeddings, np.zeros([num_pad * (dataset.max_caption_length+1), embeddings.shape[1]],np.float32)))
+        #         caption_lengths.extend([0 for _ in range(num_pad)])
+        #         fdict[lrcn.inputData] = images
+        #         fdict[lrcn.word_embeddings] = embeddings
+        #         fdict[lrcn.caption_lengths] =caption_lengths
+        #         padding = num_pad
 
 
     else:
@@ -389,7 +390,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
         dataset.reset_phase(defs.phase.train)
 
     # if we did not save already, do it now at the end of training
-    if not dataset.should_save_now(global_step):
+    if run_batch_count and not dataset.should_save_now(global_step):
         info("Saving model checkpoint out of turn, since training's finished.")
         settings.save(sess, dataset, progress="ep_%d_btch_%d_gs_%d" % (1 + epochIdx, len(dataset.batches), global_step),
                       global_step=dataset.get_global_batch_step())

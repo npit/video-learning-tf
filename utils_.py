@@ -107,7 +107,7 @@ def sublist(list, sublist_length):
 def print_tensor(tensor, message):
     if not CustomLogger.get_logging_level() == logging.DEBUG:
         return tensor
-    tensor_cols = 10
+    tensor_cols = 20
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
     return tens
 
@@ -154,7 +154,8 @@ class defs:
     # direct reading from disk or from packed tfrecord format
     class data_format:
         raw, tfrecord = "raw", "tfrecord"
-
+    class rnn_visual_mode:
+        state_bias, input_bias, input_concat = "state_bias", "input_bias", "input_concat"
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
         class acrec:
@@ -188,7 +189,7 @@ class defs:
 
     # video pooling methods
     class pooling:
-        avg, last = "avg", "last"
+        avg, last, reshape = "avg", "last", "reshape"
 
     # how the video's frames are structured        
     class clipframe_mode:

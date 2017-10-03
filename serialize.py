@@ -518,7 +518,9 @@ def write_paths_file(data, settings):
 
         clip_info = "" if settings.clipframe_mode == defs.clipframe_mode.rand_frames or \
                           mode == defs.input_mode.image else ".%d.cpv" % settings.clip_offset_or_num
-        outfile = "%s%s.%dfpc.%s" % (inp, clip_info, settings.num_frames_per_clip, settings.clipframe_mode)
+        frame_info = "" if mode == defs.input_mode.image else ".%d.fpc" % settings.num_frames_per_clip
+        clipframe_mode_info = "" if mode == defs.input_mode.image else ".%s.cfm" % settings.clipframe_mode
+        outfile = "%s%s%s%s" % (inp, clip_info, frame_info, clipframe_mode_info)
 
         if not mode == defs.input_mode.video:
             continue

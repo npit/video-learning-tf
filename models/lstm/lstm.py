@@ -4,8 +4,7 @@ from tf_util import *
 
 class lstm(Trainable):
 
-
-    # make an lstm cell
+    cell_varscope = "lstm_net_varscope"
     def make_cell(self, num_hidden, num_layers):
         '''
         Make the cell(s) object
@@ -13,41 +12,68 @@ class lstm(Trainable):
         :param num_layers:
         :return:
         '''
-        with tf.variable_scope("lstm_forward_varscope") as varscope:
+        with tf.variable_scope(self.cell_varscope):
             cells = [tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden, state_is_tuple=True)
                      for _ in range(num_layers)]
             cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
-        return cell, varscope
+        return cell
 
 
+    def get_zero_state(self, batch_size, num_hidden, cells):
+        """
+        Creates and returs a zero state vector wrt to input cells
+        :param num_hidden:
+        :param batch_size:
+        :param cells:
+        :return:
+        """
+        zeros = tf.zeros([batch_size, num_hidden])
+        zero_state = self.get_state_tuple(zeros, cells)
+        return zero_state
 
-    def manage_trainables(self, namescope_name, varscope):
+
+    def get_state_tuple(self, state_vector, cells):
+        """
+        Get tuple state from a state vector
+        :param state_vector:
+        :param cells:
+        :return:
+        """
+        state_tuple = tuple([tf.contrib.rnn.LSTMStateTuple(state_vector, state_vector) for _ in cells._cells])
+        return state_tuple
+
+    def manage_trainables(self, namescope_name):
         fc_vars = [f for f in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, namescope_name)
                    if namescope_name in f.name]
         cell_vars = [v for v in tf.trainable_variables() if v.name.startswith('rnn')]
         self.train_modified.extend(fc_vars + cell_vars)
 
 
-
     def apply_dropout(self, input_tensor, dropout_keep_prob):
         # add dropout
         if dropout_keep_prob > 0:
             output = tf.nn.dropout(input_tensor, keep_prob=dropout_keep_prob, name="lstm_dropout")
+        else:
+            output = input_tensor
         return output
 
     # basic, abstract lstm functions
-    def forward_pass_sequence(self, input_tensor, input_dim, num_layers, num_hidden, output_dim, sequence_length, pooling_type, dropout_prob=0.0):
+    def forward_pass_sequence(self, input_tensor, input_state, input_dim, num_layers, num_hidden, output_dim,
+                              sequence_length, nonzero_sequence, pooling_type, dropout_prob=0.0):
         '''
-        Pass an input sequence through the lstm.
+        Pass an input sequence through the lstm, returning the output sequence state vector.
         :return: output and state
         '''
 
-        with tf.name_scope("lstm_forward") as namescope:
+        with tf.name_scope("lstm_net") as namescope:
             # define the cell(s)
-            cells, cell_vscope = self.make_cell(num_hidden, num_layers)
+            cells = self.make_cell(num_hidden, num_layers)
 
+            if input_state is not None:
+                # make input state conversion fc layer if necessary
+                input_state = convert_dim_fc(input_state, num_hidden, name="input_state_fc")
             # evaluate it via dynamic_rnn
-            output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length)
+            output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length, nonzero_sequence, input_state)
 
             # pool output batch to a vector
             output = apply_temporal_pooling(output, num_hidden, sequence_length, pooling_type)
@@ -56,10 +82,10 @@ class lstm(Trainable):
             output = self.apply_dropout(output, dropout_prob)
 
             # map to match the output dimension
-            output = make_fc(output, num_hidden, output_dim)
+            output = convert_dim_fc(output, output_dim, "output_fc")
 
             # get trainable layers
-            self.manage_trainables(namescope, cell_vscope)
+            self.manage_trainables(namescope)
 
             return output, state
 
@@ -79,7 +105,9 @@ class lstm(Trainable):
 
         # reshape input tensor from shape [ num_items * num_frames_per_item , input_dim ] to
         # [ num_items , num_frames_per_item , input_dim ]
-        inputTensor = print_tensor(inputTensor, "inputTensor  in rnn_dynamic")
+        inputTensor = print_tensor(inputTensor, "inputTensor in lstm evaluate")
+        sequence_len = print_tensor(sequence_len, "sequence_len in lstm evaluate")
+        nonzero_per_sequence = print_tensor(nonzero_per_sequence, "nonzero_per_sequence in lstm evaluate")
         inputTensor = tf.reshape(inputTensor, [-1, sequence_len, input_dim], name="lstm_input_reshape")
         inputTensor = print_tensor(inputTensor, "input reshaped")
 
@@ -87,25 +115,115 @@ class lstm(Trainable):
         batch_size = tf.shape(inputTensor)[0]
 
         # get initial state
-        if init_state is None:
-            zeros = tf.zeros([batch_size, num_hidden])
-            zero_state = tuple([tf.contrib.rnn.LSTMStateTuple(zeros,zeros) for _ in cells._cells])
-        else:
+        if init_state is not None:
             if len(init_state.shape) == 1:
                 init_state = tf.expand_dims(init_state, 0)
-            zero_state = tuple([tf.contrib.rnn.LSTMStateTuple(init_state, init_state) for _ in cells._cells])
+            init_state = self.get_state_tuple(init_state, cells)
 
         if nonzero_per_sequence is None:
             # all elements in the sequence are good2go
             # specify the sequence length for each batch item: [ numitemframes for i in range(batchsize)]
-            _seq_len = tf.fill(tf.expand_dims(batch_size, 0), tf.constant(sequence_len, dtype=tf.int64))
+
+            _seq_len = tf.fill(tf.expand_dims(batch_size, 0), tf.constant(value=sequence_len, dtype=tf.int32))
         else:
             _seq_len = nonzero_per_sequence
 
         # forward pass through the network
         output, state = tf.nn.dynamic_rnn(cells, inputTensor, sequence_length=_seq_len, dtype=tf.float32,
-                                          initial_state=zero_state)
+                                          initial_state=init_state)
         return output, state
+
+    def generate_feedback_sequence(self, input_state_vectors, batch_size, output_dim, sequence_length,
+                                   num_hidden, num_layers, start_vector_, embedding_matrix_, visual_input_mode):
+        """
+        Process that consumes a single input and state vector pair, and feeds the i-th output to the i+1 input
+        :param input_state_vectors:
+        :param state_dim:
+        :param output_dim:
+        :param sequence_length:
+        :param num_hidden:
+        :param num_layers:
+        :param start_vector:
+        :param end_vector:
+        :param embedding_matrix:
+        :return:
+        """
+
+        with tf.name_scope("lstm_net") as namescope:
+
+            # make it generic : possible to accumulate vectors or idxs, generalize embedding matrix use
+            index_accumulation = tf.Variable(initial_value=np.zeros([0],np.int64),dtype=tf.int64,trainable=False)
+
+            # make cells
+            cells = self.make_cell(num_hidden, num_layers)
+
+            # make input state conversion fc layer, if necessary
+            if input_state_vectors is not None:
+                input_state_vectors = convert_dim_fc(input_state_vectors, num_hidden, name="input_state_fc")
+
+            # make tf variable constants
+            start_vector = tf.constant(start_vector_,tf.float32,[1,len(start_vector_)])
+            embedding_matrix = tf.constant(embedding_matrix_, tf.float32)
+
+            # outer loop on batch size
+            for batch_index in range(batch_size):
+                local_index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64, trainable=False)
+                # slice bias state in every loop
+                if input_state_vectors is not None:
+                    state_vector = tf.slice(input_state_vectors, [batch_index,0], [1, num_hidden])
+                    # match state vector to cell
+                    state_vector = self.get_state_tuple(state_vector, cells)
+                else:
+                    state_vector = self.get_zero_state(batch_size, num_hidden, cells)
+
+                debug("Making feedback loop of max sequence length %d" % sequence_length)
+                # inner loop on the sequence length
+                for i in range(sequence_length):
+
+                    if i == 0:
+                        io_vector = start_vector
+                        io_state = state_vector
+                        if visual_input_mode == defs.rnn_visual_mode.state_bias:
+                            io_state = state_vector
+                        elif visual_input_mode == defs.rnn_visual_mode.input_bias:
+                            io_vector = state_vector
+                        elif visual_input_mode == defs.rnn_visual_mode.input_concat:
+                            io_vector = tf.concat([state_vector, start_vector])
+                        else:
+                            error("Undefined rnn visual input mode [%s]" % visual_input_mode)
+                    elif i == 1:
+                        if visual_input_mode == defs.rnn_visual_mode.input_bias:
+                            io_vector = start_vector
+
+
+
+                    # evaluate
+                    if i > 0 : tf.get_variable_scope().reuse_variables()
+
+
+                    io_vector, io_state = cells(io_vector, io_state)
+
+                    io_vector = convert_dim_fc(io_vector, output_dim, "output_fc")
+
+                    # for a description tasks, get the corresponding word vector
+                    io_vector, word_index = self.get_embedding_from_logits(io_vector, embedding_matrix)
+                    local_index_accumulation = tf.concat([local_index_accumulation, word_index],0)
+                local_index_accumulation = print_tensor(local_index_accumulation, " local words ")
+                index_accumulation = tf.concat([index_accumulation,local_index_accumulation],0)
+            return index_accumulation
+
+    def get_embedding_from_logits(self, logits, embedding_matrix):
+        """
+
+        :param logits:
+        :param embedding_matrix:
+        :return:
+        """
+        argmax = tf.arg_max(logits, 1)
+        embedding = tf.gather(embedding_matrix, argmax)
+        return embedding, argmax
+
+
 
 
 
@@ -709,6 +827,7 @@ class lstm(Trainable):
                     # image_word_vector = print_tensor(image_word_vector ,"image_word_vector ")
                     # image_word_vector = inputTensor[item_index,:]
                     # image_word_vector = print_tensor(image_word_vector ,"image_word_vector ")
+                    image_vector, inputTensor = None, None
 
                     # item_index = tf.add(item_index , 1)
                     item_index = print_tensor(item_index, "item_index ")

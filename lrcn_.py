@@ -242,14 +242,16 @@ class LRCN:
             else:
                 error("Undefined optimizer %s" % settings.optimizer)
 
-            grads = opt.compute_gradients(self.loss)
+            grads_vars = opt.compute_gradients(self.loss)
             if settings.clip_grads is not None:
                 clipmin, clipmax = settings.clip_grads
-                grads = [(tf.clip_by_global_norm(grad, clipmin, clipmax), var) for grad, var in grads]
-            self.optimizer = opt.apply_gradients(grads, global_step=self.global_step)
+                max_norm = settings.clip_norm
+                grads,_ = tf.clip_by_global_norm([grad for grad, _ in grads_vars], max_norm)
+                grads_vars = zip(grads, [v for _,v in grads_vars])
+            self.optimizer = opt.apply_gradients(grads_vars, global_step=self.global_step)
 
         with tf.name_scope('grads_norm'):
-            grads_norm = tf.reduce_mean(list(map(tf.norm, grads)))
+            grads_norm = tf.reduce_mean(list(map(tf.norm, grads_vars)))
             summaries.train.append(add_descriptive_summary(grads_norm))
 
     # workflows
@@ -320,35 +322,37 @@ class LRCN:
         # make sure input mode is image
         if dataset.input_mode != defs.input_mode.image:
             error("The image description workflow works only in image input mode.")
+        vinput_mode  = defs.rnn_visual_mode.state_bias
         with tf.name_scope("imgdesc_workflow"):
             self.make_imgdesc_placeholders(settings,dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
-            self.make_imgdesc_statebias(settings, dataset, encodedFrames)
+            # make recurrent network
+            self.lstm_model = lstm.lstm()
+            if settings.do_training:
+                self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames, int(dataset.embedding_matrix.shape[1]),
+                                                      settings.lstm_num_layers, settings.lstm_num_hidden, dataset.num_classes,
+                                                      dataset.max_sequence_length, self.caption_lengths, defs.pooling.reshape, settings.dropout_keep_prob )
+            else:
+                self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
+                                                           dataset.num_classes, dataset.max_sequence_length, settings.lstm_num_hidden,
+                                                           settings.lstm_num_layers, dataset.embedding_matrix[dataset.vocabulary.index("BOS"),:],
+                                                           dataset.embedding_matrix, vinput_mode)
+                # output is a sequence length x batchsize vector
+                self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
+
+            # drop padding logits for training mode
+            if settings.do_training:
+                self.process_description_training_logits(settings)
 
     def make_imgdesc_placeholders(self, settings, dataset):
         # set up placeholders
         self.caption_lengths = tf.placeholder(tf.int32, shape=(None), name="words_per_item")
         self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_labels")
-        labels = tf.identity(self.inputLabels)
-        labels = print_tensor(labels, "input labels")
+        self.inputLabels = print_tensor(self.inputLabels, "input labels")
         self.word_embeddings = tf.placeholder(tf.float32, shape=(None, dataset.embedding_matrix.shape[1]),
                                               name="word_embeddings")
-        debug("input labels : [%s]" % labels)
+        debug("input labels : [%s]" % self.inputLabels)
 
-    def make_imgdesc_statebias(self, settings, dataset, encodedFrames):
-
-        # make lstm
-        self.lstm_model = lstm.lstm()
-        if settings.do_training:
-            # self.lstm_model.define_lstm_inputbias_loop(self.word_embeddings, encodedFrames, self.caption_lengths, dataset, settings)
-            self.lstm_model.define_lstm_inputbias(self.word_embeddings, encodedFrames, self.caption_lengths, dataset, settings)
-        else:
-            self.lstm_model.define_lstm_inputbias_loop_validation( encodedFrames, self.caption_lengths, dataset, settings)
-
-        self.logits = self.lstm_model.get_output()
-        # drop padding logits for training mode
-        if settings.do_training:
-            self.process_description_training_logits(settings)
 
     def make_imgdesc_early_fusion(self, settings, dataset, encodedFrames):
         frame_encoding_dim = int(encodedFrames.shape[-1])

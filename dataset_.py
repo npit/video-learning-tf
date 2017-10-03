@@ -270,12 +270,20 @@ class Dataset:
                 images, labels = self.get_next_batch_frame_tfr(currentBatch)
 
         if defs.workflows.is_description(self.workflow):
+
+            if self.do_validation:
+                # pad incomplete batch with zeros in both images and captions
+                num_pad = self.batch_size_val - len(images)
+                images.extend( [ np.zeros([1, images[0].shape[1]],images[0].dtype) for _ in range(num_pad)] )
+                labels.extend( [[-1] for _ in range(num_pad)])
             ground_truth = self.labels_to_words(labels)
         else:
             ground_truth = labels_to_one_hot(labels, self.num_classes)
 
         self.advance_batch_indexes()
         return images, ground_truth
+
+
 
     # get captions from logit vectors
     def logits_to_captions(self, logits):
@@ -287,7 +295,7 @@ class Dataset:
                 image_ids = []
                 parts = self.input_source_files[defs.val_idx].split(".")
                 image_paths_file = ".".join(parts[0:-1])
-                info("Reading image paths for id extraction from %s", image_paths_file)
+                info("Reading image paths for id extraction from %s" % image_paths_file)
                 # read image ids, presumed to be the suffixless basename
                 with open(image_paths_file, "r") as fp:
                     for line in fp:
@@ -324,40 +332,52 @@ class Dataset:
         # initialize to empties
         batch_word_vectors = np.zeros([0, self.embedding_matrix.shape[1]], np.float32)
         batch_onehot_labels = np.zeros([0, self.num_classes], np.int32)
+        batch_no_pad_index = []
         embedding_dim = self.embedding_matrix.shape[1]
         # get special tokens indices
         bos_index = self.vocabulary.index("BOS")
         eos_index = self.vocabulary.index("EOS")
 
-        for item_labels in batch_labels:
+        for batch_index, item_labels in enumerate(batch_labels):
+            # debug print the labels
+            input_labels = [bos_index] + item_labels
+            output_labels = item_labels + [eos_index]
+            debug("Item io labels:  %s , %s" % (str(input_labels), str(output_labels)))
             # get caption word embedding vector
             # set the BOS as the first input token
             image_word_vectors = self.embedding_matrix[bos_index, :]
 
-            # for training, put the caption word vectors after the BOS in the input
+            # if training, put the caption word vectors after the BOS in the input, else leave just BOS
             if self.do_training:
-                image_word_vectors = np.vstack(
-                    (image_word_vectors, self.embedding_matrix[item_labels, :]))
-                # pad to the max number of words with zero vectors
-                num_left_to_max = 1+self.max_caption_length - image_word_vectors.shape[0]
-                image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim],np.float32)))
-
+                image_word_vectors = np.vstack((image_word_vectors, self.embedding_matrix[item_labels, :]))
             # get labels needed for training loss / validation accuracy
             image_onehot_labels = np.vstack((labels_to_one_hot(item_labels, self.num_classes)))
             # append output labels with EOS, if in training mode
             if self.do_training:
                 image_onehot_labels = np.vstack((image_onehot_labels, labels_to_one_hot([eos_index], self.num_classes)))
-            # append labels to batch container
-            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
 
-            # append word vectors to batch container
+            # if the number of items is less than the batch size, pad with zeros
+            # pad to the max number of words with zero vectors. Also keep track of non-pad entries
+            num_input_labels = len(input_labels)
+            num_left_to_max = self.max_sequence_length - num_input_labels
+            local_indexes, offset = list(range(num_input_labels)), batch_index * (self.max_sequence_length)
+            batch_no_pad_index.extend([offset + elem for elem in  local_indexes])
+            if num_left_to_max > 0:
+                image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim], np.float32)))
+
+            # append labels and word vectors to batch containers
+            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
             batch_word_vectors = np.vstack((batch_word_vectors, image_word_vectors))
+
+
         # word vectors batch always contains max_caption_len x batch-size elements, due to padding.
-        # batch labels contain the exact labels for each word for each image caption
+        # batch labels contain the exact labels for each word for each image caption. I.e., no padding there.
         ground_truth = {}
         ground_truth['word_embeddings'] = batch_word_vectors
         ground_truth['onehot_labels'] = batch_onehot_labels
         ground_truth['caption_lengths'] = list(map(len, batch_labels))
+        ground_truth['non_padding_index'] = batch_no_pad_index
+        debug("Non-padding index in batch: %s" % str(batch_no_pad_index))
         return ground_truth
 
     def get_next_batch_video_tfr(self):
@@ -557,10 +577,11 @@ class Dataset:
                 error("BOS not found in vocabulary.")
             if "EOS" not in self.vocabulary:
                 error("EOS not found in vocabulary.")
+            if self.vocabulary.index("BOS") != len(self.vocabulary) -1:
+                error("The BOS index in the vocabulary has be the last one (%d), but it currently is %d" \
+                       % (len(self.vocabulary) - 1, self.vocabulary.index("BOS")) )
             # classes are all tokens minus the BOS
             self.num_classes = len(self.vocabulary) - 1
-
-
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):
@@ -697,12 +718,10 @@ class Dataset:
         self.clips_per_video = cpv
         self.num_frames_per_clip = fpc
         self.max_caption_length = int(datainfo['labelcount'])
+        self.max_sequence_length = self.max_caption_length + 1
 
-        info("Read [%s] data, count: %d, cpv: %s, fpc: %d, type: %s, lblcount: %d" %
-             (phase, num_items, cpv_str, self.num_frames_per_clip, self.input_mode, self.max_caption_length))
-
-
-
+        info("Read [%s] data, count: %d, cpv: %s, fpc: %s, type: %s, lblcount: %d+1" %
+             (phase, num_items, cpv_str, str(self.num_frames_per_clip), self.input_mode, self.max_caption_length))
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self,phase):
@@ -743,14 +762,14 @@ class Dataset:
         info(header_fmt % ("Mode","bmode","items", "clips", "frames","b-size","b-num","b-index"))
         if self.do_training:
             items = len(self.batches_train)
-            clips = None if self.clips_per_video is None else sum(self.clips_per_video)
+            clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
             frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
             info(values_fmt %
                  (defs.phase.train, self.batch_item, items, clips, frames,
                   self.batch_size_train, len(self.batches_train), self.batch_index_train))
         if self.do_validation:
             items = len(self.batches_val)
-            clips = None if self.clips_per_video is None else sum(self.clips_per_video)
+            clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
             frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
             info(values_fmt %
                  (defs.phase.val, self.batch_item, items, clips, frames,
