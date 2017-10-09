@@ -9,7 +9,7 @@ import dataset_
 
 # utils
 from utils_ import *
-
+from tools.inspect_checkpoint import get_checkpoint_tensor_names
 import logging, configparser
 
 import json
@@ -230,19 +230,49 @@ class Settings:
             info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
 
     # restore graph variables
-    def resume_graph(self, sess):
+    def resume_graph(self, sess, ignorable_variable_names):
         if self.should_resume():
             if self.saver is None:
                 self.saver = tf.train.Saver()
+
+
             savefile_graph = os.path.join(self.run_folder,"checkpoints", self.resume_file)
             info("Resuming tf graph from file:" + savefile_graph)
 
             try:
+                # if we are in validation mode, the 'global_step' training variable is discardable
+                if self.do_validation:
+                    ignorable_variable_names.append(defs.variables.global_step)
+
+                chkpt_names = get_checkpoint_tensor_names(savefile_graph)
+                # get all variables the project, omitting the :<num> appendices
+                curr_names = [ drop_tensor_name_index(t.name) for t in tf.global_variables()]
+                names_missing_from_chkpt = [n for n in curr_names if n not in chkpt_names and n not in ignorable_variable_names]
+                names_missing_from_curr = [n for n in chkpt_names if n not in curr_names and n not in ignorable_variable_names]
+
+
+
+                if names_missing_from_chkpt:
+                    missing_unignorable = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
+                    warning("Unignorable variables missing from checkpoint:[%s]" % missing_unignorable)
+                    # Better warn the user and await input
+                    ans = input("Continue? (y/n)")
+                    if ans != "y":
+                        error("Failed to load checkpoint")
+                if names_missing_from_curr:
+                    warning("There are checkpoint variables missing in the project:[%s]" % names_missing_from_curr)
+                    # Better warn the user and await input
+                    ans = input("Continue? (y/n)")
+                    if ans != "y":
+                        error("Failed to load checkpoint")
                 # load saved graph file
                 tf.reset_default_graph()
                 self.saver.restore(sess, savefile_graph)
-            except Exception as ex:
-                error(ex)
+            except tf.errors.NotFoundError as err:
+                # warning(err.message)
+                pass
+            except:
+                error("Failed to load checkpoint!")
 
     # save graph and dataset stuff
     def save(self, sess, dataset,progress, global_step):
@@ -482,7 +512,7 @@ def main():
     dataset.initialize(settings)
 
     # create and configure the nets : CNN and / or lstm
-    lrcn = lrcn_. LRCN()
+    lrcn = lrcn_.LRCN()
     lrcn.create(settings, dataset, summaries)
 
     # view_print_tensors(lrcn,dataset,settings,lrcn.print_tensors)
@@ -492,7 +522,7 @@ def main():
     sess.run(tf.global_variables_initializer())
 
     # restore graph variables,
-    settings.resume_graph(sess)
+    settings.resume_graph(sess, lrcn.get_ignorable_variable_names())
 
     # mop up all summaries. Unless you separate val and train, the training subgraph
     # will be executed when calling the summaries op. Which is bad.

@@ -30,7 +30,7 @@ def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, p
     return output
 
 
-def convert_dim_fc(input_tensor, output_dim, name="fc_convert"):
+def convert_dim_fc(input_tensor, output_dim, name="fc_convert", reuse = False):
     """
     Make and apply a fully-connected layer to map the input_dim to the output_dim, if needed
     """
@@ -38,13 +38,20 @@ def convert_dim_fc(input_tensor, output_dim, name="fc_convert"):
     input_dim = int(input_tensor.shape[1])
     if input_dim  == output_dim:
         return input_tensor
-    # layer initializations
-    fc_out__init = tf.truncated_normal((input_dim, output_dim), stddev=0.05, name=name + "_w_init")
-    fc_out_b_init = tf.constant(0.1, shape=(output_dim,), name=name + "_b_init")
+    if not reuse:
+        # layer initializations
+        fc_out__init = tf.truncated_normal((input_dim, output_dim), stddev=0.05, name=name + "_w_init")
+        fc_out_b_init = tf.constant(0.1, shape=(output_dim,), name=name + "_b_init")
 
-    # create the layers
-    fc_out_w = tf.Variable(fc_out__init, name=name + "_w")
-    fc_out_b = tf.Variable(fc_out_b_init, name=name + "_b")
+        # create the layers
+        fc_out_w = tf.get_variable(initializer=fc_out__init, name=name + "_w")
+        fc_out_b = tf.get_variable(initializer=fc_out_b_init, name=name + "_b")
+
+        # fc_out_w = tf.Variable(fc_out__init, name=name + "_w")
+        # fc_out_b = tf.Variable(fc_out_b_init, name=name + "_b")
+    else:
+        fc_out_w = tf.get_variable(name + "_w")
+        fc_out_b = tf.get_variable(name + "_b")
     output = tf.nn.xw_plus_b(input_tensor, fc_out_w, fc_out_b, name=name)
     # output = print_tensor(output, "Output from fc-convert with name %s" % name)
 

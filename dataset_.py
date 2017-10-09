@@ -761,14 +761,14 @@ class Dataset:
         values_fmt = "%-6s %-8s %-8s %-10d %-6d %-6d %-9s %-6d"
         info(header_fmt % ("Mode","bmode","items", "clips", "frames","b-size","b-num","b-index"))
         if self.do_training:
-            items = len(self.batches_train)
+            items = self.num_items_train
             clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
             frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
             info(values_fmt %
                  (defs.phase.train, self.batch_item, items, clips, frames,
                   self.batch_size_train, len(self.batches_train), self.batch_index_train))
         if self.do_validation:
-            items = len(self.batches_val)
+            items = self.num_items_val
             clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
             frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
             info(values_fmt %

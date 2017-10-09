@@ -51,32 +51,58 @@ inspect checkpoint --file_name = {}"""
       print(v2_file_error_template.format(proposed_file))
   print("%d tensors" % count)
 
-args = sys.argv[1:]
+
 
 def usage():
     print("Usage: %s path/to/checkpoint  e|tensor=tensorname  e|print=True|False" % sys.argv[0])
     exit()
 
-if not args:
-    usage()
-
-
-checkpoint_path = args[0]
-print_values = False
-filter_tensor = ""
-for arg in args[1:]:
+def get_checkpoint_tensor_names(file_name):
+    names = []
     try:
-        if arg.startswith("tensor="):
-            filter_tensor = arg.split("=")[1]
-        elif arg.startswith("print="):
-            # print values
-            tensorname=arg.split("=")[1]
-            print_values = eval(tensorname)
-        else:
-          raise Exception("Undefined arg [%s]" % arg)
-    except Exception:
+        reader = pywrap_tensorflow.NewCheckpointReader(file_name)
+        var_to_shape_map = reader.get_variable_to_shape_map()
+        for key in var_to_shape_map:
+            names.append(key)
+    except Exception as e:  # pylint: disable=broad-except
+        print(str(e))
+        if "corrupted compressed block contents" in str(e):
+            print("It's likely that your checkpoint file has been compressed "
+                  "with SNAPPY.")
+        if ("Data loss" in str(e) and
+                (any([e in file_name for e in [".index", ".meta", ".data"]]))):
+            proposed_file = ".".join(file_name.split(".")[0:-1])
+            v2_file_error_template = """
+    It's likely that this is a V2 checkpoint and you need to provide the filename
+    *prefix*.  Try removing the '.' and extension.  Try:
+    inspect checkpoint --file_name = {}"""
+            print(v2_file_error_template.format(proposed_file))
+    return names
+
+def inspect(args):
+    if not args:
         usage()
 
+    checkpoint_path = args[0]
+    print_values = False
+    filter_tensor = ""
+    for arg in args[1:]:
+        try:
+            if arg.startswith("tensor="):
+                filter_tensor = arg.split("=")[1]
+            elif arg.startswith("print="):
+                # print values
+                tensorname=arg.split("=")[1]
+                print_values = eval(tensorname)
+            else:
+              raise Exception("Undefined arg [%s]" % arg)
+        except Exception:
+            usage()
 
-print("Checkpoint file %s, printing values: %s" % (checkpoint_path, str(print_values)))
-print_tensors_in_checkpoint_file(file_name=checkpoint_path, tensor_name=filter_tensor, print_values = print_values)
+
+    print("Checkpoint file %s, printing values: %s" % (checkpoint_path, str(print_values)))
+    print_tensors_in_checkpoint_file(file_name=checkpoint_path, tensor_name=filter_tensor, print_values = print_values)
+
+
+if __name__ == '__main__':
+    inspect(sys.argv[1:])

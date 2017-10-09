@@ -152,7 +152,9 @@ class lstm(Trainable):
         with tf.name_scope("lstm_net") as namescope:
 
             # make it generic : possible to accumulate vectors or idxs, generalize embedding matrix use
-            index_accumulation = tf.Variable(initial_value=np.zeros([0],np.int64),dtype=tf.int64,trainable=False)
+            index_accumulation = tf.Variable(initial_value=np.zeros([0],np.int64),dtype=tf.int64,trainable=False,name="index_accumulation")
+            # no need to load it via checkpoint
+            self.ignorable_variable_names.append(index_accumulation.name)
 
             # make cells
             cells = self.make_cell(num_hidden, num_layers)
@@ -165,9 +167,14 @@ class lstm(Trainable):
             start_vector = tf.constant(start_vector_,tf.float32,[1,len(start_vector_)])
             embedding_matrix = tf.constant(embedding_matrix_, tf.float32)
 
+            local_index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64,
+                                                   trainable=False, name="local_index_accumulation")
+            # no need to load it via checkpoint
+            self.ignorable_variable_names.append(local_index_accumulation.name)
+
             # outer loop on batch size
             for batch_index in range(batch_size):
-                local_index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64, trainable=False)
+                local_index_accumulation = tf.zeros([0],tf.int64)
                 # slice bias state in every loop
                 if input_state_vectors is not None:
                     state_vector = tf.slice(input_state_vectors, [batch_index,0], [1, num_hidden])
@@ -201,9 +208,9 @@ class lstm(Trainable):
                     if i > 0 : tf.get_variable_scope().reuse_variables()
 
 
-                    io_vector, io_state = cells(io_vector, io_state)
+                    io_vector, io_state = cells(io_vector, io_state, scope="rnn/multi_rnn_cell")
 
-                    io_vector = convert_dim_fc(io_vector, output_dim, "output_fc")
+                    io_vector = convert_dim_fc(io_vector, output_dim, "output_fc", reuse=i>0)
 
                     # for a description tasks, get the corresponding word vector
                     io_vector, word_index = self.get_embedding_from_logits(io_vector, embedding_matrix)

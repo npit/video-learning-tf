@@ -131,6 +131,10 @@ def read_file_dict(filename):
             dictionary[key] = value
     return dictionary
 
+# remove trailing name index
+def drop_tensor_name_index(name):
+    return ":".join(name.split(":")[0:-1])
+
 
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
@@ -218,6 +222,8 @@ class defs:
 
     class eval_type:
         coco = "coco"
+    class variables:
+        global_step = "global_step"
 
     train_idx, val_idx = 0, 1
     image, label = 0, 1
@@ -226,9 +232,11 @@ class defs:
 class Trainable:
     train_regular = []
     train_modified = []
+    ignorable_variable_names = []
     def __init__(self):
         self.train_regular = []
         self.train_modified = []
+        self.ignorable_variable_names = []
 
 # eye candy
 class ProgressBar(object):

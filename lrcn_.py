@@ -35,6 +35,7 @@ class LRCN:
     lstm_model = None
 
     dcnn_weights_file = None
+    ignorable_variable_names = []
     # let there be network
     def create(self, settings, dataset, summaries):
         # initializations
@@ -443,7 +444,11 @@ class LRCN:
         # the rest of the workflow is identical to the image description workflow
         self.make_imgdesc_prepro(settings, dataset, encoded_state)
 
-
+    def get_ignorable_variable_names(self):
+        ignorables = self.dcnn_model.ignorable_variable_names + self.lstm_model.ignorable_variable_names
+        debug("Getting lrcn raw ignorables: %s" % str(ignorables))
+        ignorables = [drop_tensor_name_index(s) for s in ignorables]
+        return list(set(ignorables))
 
 
     # validation accuracy computation
