@@ -583,6 +583,10 @@ class Dataset:
             # classes are all tokens minus the BOS
             self.num_classes = len(self.vocabulary) - 1
 
+    def get_embedding_dim(self):
+        return int(self.embedding_matrix.shape[-1])
+
+
     # run data-related initialization pre-run
     def initialize_data(self, sett):
         info("Initializing %s data on input mode %s." % (self.data_format, self.input_mode))

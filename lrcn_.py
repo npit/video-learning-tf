@@ -6,7 +6,7 @@ from models.lstm import lstm
 # util
 from utils_ import *
 from defs_ import *
-from tf_util import apply_temporal_pooling
+from tf_util import *
 
 
 class LRCN:
@@ -316,7 +316,7 @@ class LRCN:
         if dataset.input_mode != defs.input_mode.image:
             error("The image description workflow works only in image input mode.")
         with tf.name_scope("imgdesc_workflow"):
-            self.make_imgdesc_placeholders(settings,dataset)
+            self.make_description_placeholders(settings,dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
 
             self.lstm_model = lstm.lstm()
@@ -354,19 +354,25 @@ class LRCN:
         if dataset.input_mode != defs.input_mode.image:
             error("The image description workflow works only in image input mode.")
         with tf.name_scope("imgdesc_workflow"):
-            self.make_imgdesc_placeholders(settings, dataset)
+            self.make_description_placeholders(settings, dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset, settings)
             # make recurrent network
             self.lstm_model = lstm.lstm()
             if settings.do_training:
                 # map the images to the embedding input
-                # ...
-                # gotta increase the seqlen by 1 and stick in each vector in the batch
-                # at the start of the captions (check caption lengths for that)
-                # do it @ numpy level if possible
-                # self.input_biased_embeddings = ...
-                # do the audio after this workflow
-                self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames,
+                encodedFrames = convert_dim_fc(encodedFrames, dataset.get_embedding_dim(), "video_pooling")
+                # reshape the embeddings to batch_size x seq_len x embedding_dim
+                self.word_embeddings = tf.reshape(self.word_embeddings, [-1, dataset.max_sequence_length, dataset.get_embedding_dim()])
+                # concat the images end to end
+                encodedFrames = tf.reshape(encodedFrames, [1,-1])
+                # insert the images as the first item in the embeddings - may need tf.expand on the images
+                input_biased_embeddings = tf.concat([encodedFrames, self.word_embeddings], axis=0)
+                # ^ MAKE SURE that the reshape is at the correct order
+                # MAKE SURE ALL RESHAPES WORK CORRECTLY ( in the project)
+
+                # increase the seq len to account for the input bias
+                dataset.max_sequence_length = dataset.max_sequence_length + 1
+                self.logits, _ = self.lstm_model.forward_pass_sequence(input_biased_embeddings, None,
                                                                        int(dataset.embedding_matrix.shape[1]),
                                                                        settings.lstm_num_layers,
                                                                        settings.lstm_num_hidden, dataset.num_classes,
@@ -398,7 +404,7 @@ class LRCN:
         if dataset.input_mode != defs.input_mode.image:
             error("The image description workflow works only in image input mode.")
         with tf.name_scope("imgdesc_workflow"):
-            self.make_imgdesc_placeholders(settings,dataset)
+            self.make_description_placeholders(settings,dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
             # make recurrent network
             self.lstm_model = lstm.lstm()
@@ -423,7 +429,7 @@ class LRCN:
 
 
 
-    def make_imgdesc_placeholders(self, settings, dataset):
+    def make_description_placeholders(self, settings, dataset):
         # set up placeholders
         self.caption_lengths = tf.placeholder(tf.int32, shape=(None), name="words_per_item")
         self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_labels")
@@ -453,12 +459,23 @@ class LRCN:
 
         # pool video frames to a single vector
         if settings.frame_pooling_type == defs.pooling.avg:
-            pooled_frame = tf.reduce_mean(encoded_frames, 0)
+            pooled_frames = tf.reduce_mean(encoded_frames, 0)
         else:
             error("Undefined pooling type %s" % settings.frame_pooling_type)
-        # the rest of the workflow is identical to the image description statebias workflow
-        self.make_imgdesc_placeholders(settings, dataset)
-        self.make_imgdesc_prepro(settings,dataset,pooled_frame)
+
+        self.make_description_placeholders(settings, dataset)
+        if settings.do_training:
+            self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames,
+                                                                   int(dataset.embedding_matrix.shape[1]),
+                                                                   settings.lstm_num_layers, settings.lstm_num_hidden,
+                                                                   dataset.num_classes,
+                                                                   dataset.max_sequence_length, self.caption_lengths,
+                                                                   defs.pooling.reshape, settings.dropout_keep_prob)
+            # remove the logits corresponding to padding
+            self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
+            # re-merge the tensor list into a tensor
+            self.logits = tf.concat(self.logits, axis=0)
+            debug("final filtered logits : [%s]" % self.logits.shape)
 
     def create_videodesc_encdec(self, settings, dataset):
         # Venugopalan et al. 2016 : lstm encoder - decoder
@@ -469,7 +486,7 @@ class LRCN:
         encoder = lstm.lstm()
         encoder.define_encoder(encoded_frames, settings, dataset)
         encoded_state = encoder.get_output()
-        self.make_imgdesc_placeholders(settings, dataset)
+        self.make_description_placeholders(settings, dataset)
         # the rest of the workflow is identical to the image description workflow
         self.make_imgdesc_prepro(settings, dataset, encoded_state)
 
