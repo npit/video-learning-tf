@@ -61,7 +61,7 @@ class CustomLogger:
     def get_logging_level():
         return CustomLogger.instance.logger.level
 
-
+# shortcut log functions
 def error(msg):
     error_(msg)
     raise Exception(msg)
@@ -98,7 +98,6 @@ def add_descriptive_summary(var):
         res.append(tf.summary.histogram('histogram', var))
     return res
 
-
 # list of sublists of size n from list
 def sublist(list, sublist_length):
     return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
@@ -134,99 +133,6 @@ def read_file_dict(filename):
 # remove trailing name index
 def drop_tensor_name_index(name):
     return ":".join(name.split(":")[0:-1])
-
-
-# constants, like C defines. Nesting indicates just convenient hierarchy.
-class defs:
-
-    # run phase
-    class phase:
-        train, val ="train", "val"
-
-    # input mode is framewise dataset vs videowise, each video having n frames
-    class input_mode:
-        video, image = "video", "image"
-        def get_from_workflow(arg):
-            if defs.workflows.is_image(arg):
-                return defs.input_mode.image
-            elif defs.workflows.is_video(arg):
-                return defs.input_mode.video
-            else:
-                error("No input mode discernible from workflow %s" % arg)
-                return None
-
-    # direct reading from disk or from packed tfrecord format
-    class data_format:
-        raw, tfrecord = "raw", "tfrecord"
-    class rnn_visual_mode:
-        state_bias, input_bias, input_concat = "state_bias", "input_bias", "input_concat"
-    # run type indicates usage of lstm or singleframe dcnn
-    class workflows:
-        class acrec:
-            singleframe, lstm = "acrec_singleframe", "acrec_lstm"
-            def is_workflow(arg):
-                return arg == defs.workflows.acrec.singleframe or \
-                       arg == defs.workflows.acrec.lstm
-        class imgdesc:
-            statebias, inputstep = "imgdesc_statebias", "imgdesc_inputstep"
-            def is_workflow(arg):
-                return arg == defs.workflows.imgdesc.statebias or \
-                       arg == defs.workflows.imgdesc.inputstep
-        class videodesc:
-            pooled, encdec = "videodesc_pooled", "videodesc_encdec"
-            def is_workflow(arg):
-                return arg == defs.workflows.videodesc.pooled or \
-                       arg == defs.workflows.videodesc.encdec
-        def is_description(arg):
-            return defs.workflows.imgdesc.is_workflow(arg) or \
-                    defs.workflows.videodesc.is_workflow(arg)
-        def is_video(arg):
-            return defs.workflows.acrec.singleframe == arg or \
-                   defs.workflows.acrec.lstm== arg or \
-                   defs.workflows.videodesc.encdec == arg or \
-                   defs.workflows.videodesc.pooled == arg
-        def is_image(arg):
-            return defs.workflows.imgdesc.statebias == arg or \
-                   defs.workflows.imgdesc.inputstep == arg
-
-        #lstm, singleframe, imgdesc, videodesc = "lstm","singleframe", "imgdesc", "videodesc"
-
-    # video pooling methods
-    class pooling:
-        avg, last, reshape = "avg", "last", "reshape"
-
-    # how the video's frames are structured        
-    class clipframe_mode:
-        rand_frames, rand_clips, iterative = "rand_frames", "rand_clips", "iterative"
-
-    class batch_item:
-        default, clip = "default", "clip"
-
-    class optim:
-        sgd, adam = "sgd", "adam"
-
-    # learning rate decay parameters
-    class decay:
-        # granularity level
-        class granularity:
-            exp, staircase = "exp", "staircase"
-        # drop at intervals or a total number of times
-        class scheme:
-            interval, total = "interval", "total"
-
-    class label_type:
-        single, multiple = "single", "multiple"
-
-    class caption_search:
-        max = "max"
-
-    class eval_type:
-        coco = "coco"
-    class variables:
-        global_step = "global_step"
-
-    train_idx, val_idx = 0, 1
-    image, label = 0, 1
 
 # trainable object class
 class Trainable:

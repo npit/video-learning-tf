@@ -1,7 +1,6 @@
 
 # generic IO
-import pickle
-import sys
+import pickle, sys
 
 # project modules
 import lrcn_
@@ -10,9 +9,9 @@ import dataset_
 # utils
 from utils_ import *
 from tools.inspect_checkpoint import get_checkpoint_tensor_names
-import logging, configparser
+import logging, configparser, json
+from defs_ import *
 
-import json
 
 # summaries for training & validation
 class Summaries:

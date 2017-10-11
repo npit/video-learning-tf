@@ -3,10 +3,9 @@ import numpy as np
 from random import shuffle
 from scipy.misc import imread, imresize, imsave
 
-import logging, time, threading, os
+import logging, time, threading, os, configparser, sys
 from utils_ import *
-import configparser
-import sys
+from defs_ import *
 
 '''
 Script for production of training / testing data collections and serialization to tf.record files.

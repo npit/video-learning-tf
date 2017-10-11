@@ -1,6 +1,7 @@
 import tensorflow as tf
 from utils_ import *
 from tf_util import *
+from defs_ import *
 
 class lstm(Trainable):
 
@@ -133,11 +134,12 @@ class lstm(Trainable):
                                           initial_state=init_state)
         return output, state
 
-    def generate_feedback_sequence(self, input_state_vectors, batch_size, output_dim, sequence_length,
-                                   num_hidden, num_layers, start_vector_, embedding_matrix_, visual_input_mode):
+    def generate_feedback_sequence(self, input_tensors, batch_size, output_dim, sequence_length, num_hidden, num_layers,
+                                   start_vector_arg, embedding_matrix_arg, visual_input_mode, return_type = defs.return_type.argmax_index):
         """
         Process that consumes a single input and state vector pair, and feeds the i-th output to the i+1 input
-        :param input_state_vectors:
+        :param return_type: specify whether to return output tensors or just the argmax index
+        :param input_tensors:
         :param state_dim:
         :param output_dim:
         :param sequence_length:
@@ -151,57 +153,86 @@ class lstm(Trainable):
 
         with tf.name_scope("lstm_net") as namescope:
 
-            # make it generic : possible to accumulate vectors or idxs, generalize embedding matrix use
-            index_accumulation = tf.Variable(initial_value=np.zeros([0],np.int64),dtype=tf.int64,trainable=False,name="index_accumulation")
-            # no need to load it via checkpoint
-            self.ignorable_variable_names.append(index_accumulation.name)
-
             # make cells
             cells = self.make_cell(num_hidden, num_layers)
 
-            # make input state conversion fc layer, if necessary
-            if input_state_vectors is not None:
-                input_state_vectors = convert_dim_fc(input_state_vectors, num_hidden, name="input_state_fc")
+            input_dim = int(input_tensors.shape[-1])
+
+            # make input tensors conversion fc layer, if necessary
+            if input_tensors is not None:
+                if visual_input_mode == defs.rnn_visual_mode.state_bias:
+                    # tensor should match the state dimension
+                    input_tensors = convert_dim_fc(input_tensors, num_hidden, name="input_state_fc")
+                    # update the input dimension
+                    input_dim = num_hidden
+
+            if return_type == defs.return_type.argmax_index:
+                index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64,
+                                                 trainable=False,
+                                                 name="index_accumulation")
+                # no need to load it via checkpoint
+                self.ignorable_variable_names.append(index_accumulation.name)
+            elif return_type == defs.return_type.standard:
+                vector_accumulation = tf.Variable(initial_value=np.zeros([0, output_dim], np.float32),
+                                                  dtype=tf.float32,
+                                                  trainable=False, name="vector_accumulation")
+                state_accumulation = tf.Variable(initial_value=np.zeros([0, input_dim], np.float32),
+                                                 dtype=tf.float32,
+                                                 trainable=False, name="state_accumulation")
+                # no need to load it via checkpoint
+                self.ignorable_variable_names.extend([vector_accumulation.name, state_accumulation.name])
+            else:
+                error("Undefined lstm return type [%s]" % return_type)
+
 
             # make tf variable constants
-            start_vector = tf.constant(start_vector_,tf.float32,[1,len(start_vector_)])
-            embedding_matrix = tf.constant(embedding_matrix_, tf.float32)
+            start_vector = tf.constant(start_vector_arg, tf.float32, [1, len(start_vector_arg)])
+            embedding_matrix = tf.constant(embedding_matrix_arg, tf.float32)
 
-            local_index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64,
-                                                   trainable=False, name="local_index_accumulation")
-            # no need to load it via checkpoint
-            self.ignorable_variable_names.append(local_index_accumulation.name)
+            # local_index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64,
+            #                                        trainable=False, name="local_index_accumulation")
+            # # no need to load it via checkpoint
+            # self.ignorable_variable_names.append(local_index_accumulation.name)
+
+            if visual_input_mode == defs.rnn_visual_mode.input_bias:
+                sequence_length = sequence_length + 1
+                info("Incrementing sequence length to %d for the input bias step" % (sequence_length))
 
             # outer loop on batch size
             for batch_index in range(batch_size):
-                local_index_accumulation = tf.zeros([0],tf.int64)
-                # slice bias state in every loop
-                if input_state_vectors is not None:
-                    state_vector = tf.slice(input_state_vectors, [batch_index,0], [1, num_hidden])
-                    # match state vector to cell
-                    state_vector = self.get_state_tuple(state_vector, cells)
-                else:
-                    state_vector = self.get_zero_state(batch_size, num_hidden, cells)
+                # local_index_accumulation = tf.zeros([0],tf.int64) # TODO obsolete
+                # slice input tensors, getting a vector per loop
+                if input_tensors is not None:
+                    input_vector = tf.slice(input_tensors, [batch_index, 0], [1, input_dim])
 
-                debug("Making feedback loop of max sequence length %d" % sequence_length)
+                # set "defaults", i.e. zero initial state and start_vector as the initial vector
+                io_vector = start_vector
+                io_state = self.get_zero_state(1, num_hidden, cells)
+
+                debug("Making feedback loop for the %d-th batch item, with a max sequence length %d" % (1+batch_index, sequence_length))
                 # inner loop on the sequence length
                 for i in range(sequence_length):
 
-                    if i == 0:
-                        io_vector = start_vector
-                        io_state = state_vector
-                        if visual_input_mode == defs.rnn_visual_mode.state_bias:
-                            io_state = state_vector
-                        elif visual_input_mode == defs.rnn_visual_mode.input_bias:
-                            io_vector = state_vector
-                        elif visual_input_mode == defs.rnn_visual_mode.input_concat:
-                            io_vector = tf.concat([state_vector, start_vector])
-                        else:
-                            error("Undefined rnn visual input mode [%s]" % visual_input_mode)
-                    elif i == 1:
-                        if visual_input_mode == defs.rnn_visual_mode.input_bias:
-                            io_vector = start_vector
+                    # the <visual_input_mode> determines how to handle the input tensors
+                    if visual_input_mode == defs.rnn_visual_mode.state_bias:
+                        # the visual input is a initial state: set it at the first sequence, if provided
+                        if i == 0:
+                            if input_tensors is not None:
+                                io_state = self.get_state_tuple(input_vector, cells)
 
+                    elif visual_input_mode == defs.rnn_visual_mode.input_concat:
+                        # the visual input should be concatenated with the timestep input
+                        io_vector = tf.concat([io_vector, input_vector], axis=1)
+
+                    elif visual_input_mode == defs.rnn_visual_mode.input_bias:
+                        # the visual input is an initial input: set it as first timestep input, prior to start_vector
+                        if i==0:
+                            io_vector = input_vector
+                        elif i == 1:
+                            # the 2nd sequence element is the actual start vector
+                            io_vector = start_vector
+                    else:
+                        error("Undefined rnn visual input mode [%s]" % visual_input_mode)
 
 
                     # evaluate
@@ -214,9 +245,17 @@ class lstm(Trainable):
 
                     # for a description tasks, get the corresponding word vector
                     io_vector, word_index = self.get_embedding_from_logits(io_vector, embedding_matrix)
-                    local_index_accumulation = tf.concat([local_index_accumulation, word_index],0)
-                local_index_accumulation = print_tensor(local_index_accumulation, " local words ")
-                index_accumulation = tf.concat([index_accumulation,local_index_accumulation],0)
+                #     local_index_accumulation = tf.concat([local_index_accumulation, word_index],0)
+                # local_index_accumulation = print_tensor(local_index_accumulation, " local words ")
+                    if return_type == defs.return_type.argmax_index:
+                        # for input bias mode, no need to store the first element
+                        if not (visual_input_mode == defs.rnn_visual_mode.input_bias and i == 0):
+                            index_accumulation = tf.concat([index_accumulation,word_index],0)
+                    else:
+                        # for input bias mode, no need to store the first element
+                        if not (visual_input_mode == defs.rnn_visual_mode.input_bias and i == 0):
+                            vector_accumulation = tf.concat([vector_accumulation, io_vector],0)
+                            state_accumulation = tf.concat([state_accumulation, io_state],0)
             return index_accumulation
 
     def get_embedding_from_logits(self, logits, embedding_matrix):

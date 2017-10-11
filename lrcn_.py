@@ -5,6 +5,7 @@ from models.alexnet import alexnet
 from models.lstm import lstm
 # util
 from utils_ import *
+from defs_ import *
 from tf_util import apply_temporal_pooling
 
 
@@ -61,17 +62,20 @@ class LRCN:
         if not os.path.exists(self.dcnn_weights_file):
             error("Weights file %s does not exist." % self.dcnn_weights_file)
 
-        # create the workflow
+        # create the workflows
+        # Activity recognition
         if self.workflow == defs.workflows.acrec.singleframe:
            self.create_actrec_singleframe(settings, dataset)
         elif self.workflow == defs.workflows.acrec.lstm:
             self.create_actrec_lstm(settings, dataset)
-
+        # Image description
         elif self.workflow == defs.workflows.imgdesc.inputstep:
             self.create_imgdesc_visualinput(settings, dataset)
         elif self.workflow == defs.workflows.imgdesc.statebias:
             self.create_imgdesc_statebias(settings, dataset)
-
+        elif self.workflow == defs.workflows.imgdesc.inputbias:
+            self.create_imgdesc_inputbias(settings, dataset)
+        # Video description
         elif self.workflow == defs.workflows.videodesc.pooled:
             self.create_videodesc_pooling(settings,dataset)
         elif self.workflow == defs.workflows.videodesc.encdec:
@@ -308,22 +312,91 @@ class LRCN:
     # Image description
     def create_imgdesc_visualinput(self, settings, dataset):
 
+        # make sure input mode is image
+        if dataset.input_mode != defs.input_mode.image:
+            error("The image description workflow works only in image input mode.")
         with tf.name_scope("imgdesc_workflow"):
-            # make sure input mode is image
-            if dataset.input_mode != defs.input_mode.image:
-                error("The image description workflow works only in image input mode.")
-
             self.make_imgdesc_placeholders(settings,dataset)
-
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
-            self.make_imgdesc_early_fusion(settings,dataset,encodedFrames)
 
-    def create_imgdesc_statebias(self, settings, dataset):
+            self.lstm_model = lstm.lstm()
+            visual_dim, embedding_dim = int(encodedFrames.shape[-1]), int(dataset.embedding_matrix.shape[-1])
+            if settings.do_training:
+                # repeat the images in the batch seqlength times horizontally (batchsize x (dim * seq))
+                encodedFrames = tf.tile(encodedFrames, [1, dataset.max_sequence_length])
+                # restore to 'one image per column', i.e. (batchsize * seq x dim)
+                encodedFrames = tf.reshape(encodedFrames, [-1, visual_dim], name="restore_to_sequence")
+                debug("Duplicated encoded frames : [%s]" % encodedFrames.shape)
+                # horizontal concat the images to the words
+                frames_words = tf.concat([encodedFrames, self.word_embeddings], axis=1)
+
+                self.logits, _ = self.lstm_model.forward_pass_sequence(frames_words, None, embedding_dim + visual_dim, settings.lstm_num_layers,
+                                                      settings.lstm_num_hidden, dataset.num_classes, dataset.max_sequence_length,
+                                                      self.caption_lengths, defs.pooling.reshape, settings.dropout_keep_prob)
+
+                # remove the logits corresponding to padding
+                self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
+                # re-merge the tensor list into a tensor
+                self.logits = tf.concat(self.logits, axis=0)
+                debug("final filtered logits : [%s]" % self.logits.shape)
+
+            else:
+                vinput_mode = defs.rnn_visual_mode.input_concat
+                self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val, dataset.num_classes,
+                                                                         dataset.max_sequence_length, settings.lstm_num_hidden, settings.lstm_num_layers,
+                                                                         dataset.embedding_matrix[dataset.vocabulary.index("BOS"), :], dataset.embedding_matrix, vinput_mode)
+                self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
+
+    def create_imgdesc_inputbias(self, settings, dataset):
+        error("The inputbias workflow is TODO.")
         # the implementation here implements the "show and tell model"
         # make sure input mode is image
         if dataset.input_mode != defs.input_mode.image:
             error("The image description workflow works only in image input mode.")
-        vinput_mode  = defs.rnn_visual_mode.state_bias
+        with tf.name_scope("imgdesc_workflow"):
+            self.make_imgdesc_placeholders(settings, dataset)
+            self.inputData, encodedFrames = self.make_dcnn(dataset, settings)
+            # make recurrent network
+            self.lstm_model = lstm.lstm()
+            if settings.do_training:
+                # map the images to the embedding input
+                # ...
+                # gotta increase the seqlen by 1 and stick in each vector in the batch
+                # at the start of the captions (check caption lengths for that)
+                # do it @ numpy level if possible
+                # self.input_biased_embeddings = ...
+                # do the audio after this workflow
+                self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames,
+                                                                       int(dataset.embedding_matrix.shape[1]),
+                                                                       settings.lstm_num_layers,
+                                                                       settings.lstm_num_hidden, dataset.num_classes,
+                                                                       dataset.max_sequence_length,
+                                                                       self.caption_lengths, defs.pooling.reshape,
+                                                                       settings.dropout_keep_prob)
+                # remove the logits corresponding to padding
+                self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
+                # re-merge the tensor list into a tensor
+                self.logits = tf.concat(self.logits, axis=0)
+                debug("final filtered logits : [%s]" % self.logits.shape)
+
+            else:
+                vinput_mode = defs.rnn_visual_mode.state_bias
+                self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
+                                                                         dataset.num_classes,
+                                                                         dataset.max_sequence_length,
+                                                                         settings.lstm_num_hidden,
+                                                                         settings.lstm_num_layers,
+                                                                         dataset.embedding_matrix[
+                                                                         dataset.vocabulary.index("BOS"), :],
+                                                                         dataset.embedding_matrix, vinput_mode)
+                # output is a sequence length * batchsize vector
+                self.logits = tf.reshape(self.logits, [-1, dataset.max_sequence_length])
+
+    def create_imgdesc_statebias(self, settings, dataset):
+        # the implementation here is similar to the "show and tell model"
+        # make sure input mode is image
+        if dataset.input_mode != defs.input_mode.image:
+            error("The image description workflow works only in image input mode.")
         with tf.name_scope("imgdesc_workflow"):
             self.make_imgdesc_placeholders(settings,dataset)
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
@@ -333,17 +406,22 @@ class LRCN:
                 self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames, int(dataset.embedding_matrix.shape[1]),
                                                       settings.lstm_num_layers, settings.lstm_num_hidden, dataset.num_classes,
                                                       dataset.max_sequence_length, self.caption_lengths, defs.pooling.reshape, settings.dropout_keep_prob )
+                # remove the logits corresponding to padding
+                self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
+                # re-merge the tensor list into a tensor
+                self.logits = tf.concat(self.logits, axis=0)
+                debug("final filtered logits : [%s]" % self.logits.shape)
+
             else:
+                vinput_mode = defs.rnn_visual_mode.state_bias
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
                                                            dataset.num_classes, dataset.max_sequence_length, settings.lstm_num_hidden,
                                                            settings.lstm_num_layers, dataset.embedding_matrix[dataset.vocabulary.index("BOS"),:],
                                                            dataset.embedding_matrix, vinput_mode)
-                # output is a sequence length x batchsize vector
+                # output is a sequence length * batchsize vector
                 self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
 
-            # drop padding logits for training mode
-            if settings.do_training:
-                self.process_description_training_logits(settings)
+
 
     def make_imgdesc_placeholders(self, settings, dataset):
         # set up placeholders
@@ -354,55 +432,6 @@ class LRCN:
                                               name="word_embeddings")
         debug("input labels : [%s]" % self.inputLabels)
 
-
-    def make_imgdesc_early_fusion(self, settings, dataset, encodedFrames):
-        frame_encoding_dim = int(encodedFrames.shape[-1])
-
-        if settings.do_training:
-            # duplicate the image to the max number of the words in the caption plus 1 for the BOS: concat horizontally
-            encodedFrames = tf.tile(encodedFrames, [1, dataset.max_caption_length + 1])
-            encodedFrames = print_tensor(encodedFrames, "hor. concatenated frames")
-            debug("hor. concatenated frames : [%s]" % encodedFrames.shape)
-            encodedFrames = tf.reshape(encodedFrames, [-1, frame_encoding_dim], name="restore_to_sequence")
-            encodedFrames = print_tensor(encodedFrames, "restored frames")
-            debug("restored : [%s]" % encodedFrames.shape)
-
-        # horizontal concat the images to the words
-        frames_words = tf.concat([encodedFrames, self.word_embeddings], axis=1)
-        debug("frames concat words : [%s]" % frames_words.shape)
-        frames_words = print_tensor(frames_words, "frames concat words ")
-
-        # feed to lstm
-        self.lstm_model = lstm.lstm()
-        if settings.do_training:
-            self.lstm_model.define_imgdesc_inputstep(frames_words, frame_encoding_dim,
-                                                     self.caption_lengths, dataset, settings)
-        else:
-            self.lstm_model.define_imgdesc_inputstep_validation(frames_words, frame_encoding_dim,
-                                                                self.caption_lengths,
-                                                                dataset, settings)
-
-        self.logits = self.lstm_model.get_output()
-
-        # remove the tensor rows where no ground truth caption is present
-        debug("logits : [%s]" % self.logits.shape)
-        self.logits = print_tensor(self.logits, "logits to process")
-        # split the logits to the chunks in the caption_lengths. First append the number of rows left to complete
-        # the sequence length, so as to subsequently tf.split the tensor
-
-        if settings.do_training:
-            self.process_description_training_logits(settings)
-
-    def process_description_training_logits(self, settings):
-        # remove the logits corresponding to padding
-        non_padding_logits = tf.identity(self.non_padding_word_idxs)
-        non_padding_logits = print_tensor(non_padding_logits, "non-padding word idxs to keep")
-        self.logits = tf.gather(self.logits, non_padding_logits)
-        self.logits = print_tensor(self.logits, "filtered logits list")
-        # re-merge the tensor list into a tensor
-        self.logits = tf.concat(self.logits, axis=0)
-        self.logits = print_tensor(self.logits, "final filtered logits")
-        debug("final filtered logits : [%s]" % self.logits.shape)
 
     def make_dcnn(self, dataset, settings):
         # DCNN for frame encoding

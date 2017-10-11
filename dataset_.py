@@ -1,14 +1,13 @@
 
 # files and io
-
 import os, pickle, math
 
 # utils
-from utils_ import CustomLogger
 from utils_ import *
 from random import choice, randrange
 # image IO
 from scipy.misc import imread, imresize, imsave
+from defs_ import *
 # displaying
 #import matplotlib.pyplot as plt
 
@@ -124,9 +123,10 @@ class Dataset:
         # plt.imshow(np.ndarray.astype(image,np.uint8))
         # back to 0,255
 
-        plt.imshow(np.ndarray.astype(image, np.uint8))
-        plt.show()
+        # plt.imshow(np.ndarray.astype(image, np.uint8))
+        # plt.show()
         # plt.waitforbuttonpress()
+        pass
 
     # read from tfrecord
     def deserialize_from_tfrecord(self, iterator, images_per_iteration):

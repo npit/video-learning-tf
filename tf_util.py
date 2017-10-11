@@ -1,5 +1,5 @@
 from utils_ import  *
-
+from defs_ import *
 
 def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, pooling_type=defs.pooling.reshape, name="lstm_temporal_pooling"):
     '''
