@@ -189,18 +189,8 @@ class lstm(Trainable):
             start_vector = tf.constant(start_vector_arg, tf.float32, [1, len(start_vector_arg)])
             embedding_matrix = tf.constant(embedding_matrix_arg, tf.float32)
 
-            # local_index_accumulation = tf.Variable(initial_value=np.zeros([0], np.int64), dtype=tf.int64,
-            #                                        trainable=False, name="local_index_accumulation")
-            # # no need to load it via checkpoint
-            # self.ignorable_variable_names.append(local_index_accumulation.name)
-
-            if visual_input_mode == defs.rnn_visual_mode.input_bias:
-                sequence_length = sequence_length + 1
-                info("Incrementing sequence length to %d for the input bias step" % (sequence_length))
-
             # outer loop on batch size
             for batch_index in range(batch_size):
-                # local_index_accumulation = tf.zeros([0],tf.int64) # TODO obsolete
                 # slice input tensors, getting a vector per loop
                 if input_tensors is not None:
                     input_vector = tf.slice(input_tensors, [batch_index, 0], [1, input_dim])
@@ -234,10 +224,8 @@ class lstm(Trainable):
                     else:
                         error("Undefined rnn visual input mode [%s]" % visual_input_mode)
 
-
                     # evaluate
                     if i > 0 : tf.get_variable_scope().reuse_variables()
-
 
                     io_vector, io_state = cells(io_vector, io_state, scope="rnn/multi_rnn_cell")
 
@@ -245,8 +233,7 @@ class lstm(Trainable):
 
                     # for a description tasks, get the corresponding word vector
                     io_vector, word_index = self.get_embedding_from_logits(io_vector, embedding_matrix)
-                #     local_index_accumulation = tf.concat([local_index_accumulation, word_index],0)
-                # local_index_accumulation = print_tensor(local_index_accumulation, " local words ")
+
                     if return_type == defs.return_type.argmax_index:
                         # for input bias mode, no need to store the first element
                         if not (visual_input_mode == defs.rnn_visual_mode.input_bias and i == 0):

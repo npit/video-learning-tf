@@ -5,6 +5,7 @@ from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os, configparser, sys
 from utils_ import *
+from tqdm import tqdm
 from defs_ import *
 
 '''
@@ -448,7 +449,6 @@ def validate(written_data, settings):
         num_validate = round(len(paths) * settings.validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
         info("Will validate %d%% of a total of %d items (but at least 10K), i.e. %d items." % (settings.validate_pcnt, len(paths), num_validate))
         sys.stdout.flush()
-        progress = ProgressBar(num_validate, fmt=ProgressBar.FULL)
         error_free = True
         idx_list = [ i for i in range(len(paths))]
         shuffle(idx_list)
@@ -459,31 +459,31 @@ def validate(written_data, settings):
         iter = tf.python_io.tf_record_iterator(inp + ".tfrecord")
         if not os.path.isfile(inp + ".tfrecord"):
             error("TFRecord file %s does not exist." % (inp + ".tfrecord"))
-        for i in range(len(paths)):
-            if not i == testidx:
-                next(iter)
-                continue
-            progress()
-            frame = read_image(paths[i])
-            label = labels[i]
+        with tqdm(total=num_validate, desc="Validating [%s]" %
+                  os.path.basename(inp)) as pbar:
+            for i in range(len(paths)):
+                if not i == testidx:
+                    next(iter)
+                    continue
+                frame, label = read_image(paths[i]), labels[i]
 
-            fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
-            frametf = fframetf[0]
-            labeltf = llabeltf[0]
+                fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
+                frametf, labeltf = fframetf[0], llabeltf[0]
 
-            if not np.array_equal(frame , frametf):
-                error("Unequal image @ %s" % paths[i])
-                error_free = False
-            if not label == labeltf:
-                error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
-                error_free = False
+                if not np.array_equal(frame , frametf):
+                    error("Unequal image @ %s" % paths[i])
+                    error_free = False
+                if not label == labeltf:
+                    error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
+                    error_free = False
 
-            lidx = lidx + 1
-            if lidx >= len(idx_list):
-                break
+                lidx = lidx + 1
+                pbar.update()
+                if lidx >= len(idx_list):
+                    break
 
-            testidx = idx_list[lidx]
-        progress.done()
+                testidx = idx_list[lidx]
+
         if not error_free:
             error("errors exist.")
         else:

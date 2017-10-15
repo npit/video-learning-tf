@@ -348,7 +348,6 @@ class LRCN:
                 self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
 
     def create_imgdesc_inputbias(self, settings, dataset):
-        error("The inputbias workflow is TODO.")
         # the implementation here implements the "show and tell model"
         # make sure input mode is image
         if dataset.input_mode != defs.input_mode.image:
@@ -358,25 +357,32 @@ class LRCN:
             self.inputData, encodedFrames = self.make_dcnn(dataset, settings)
             # make recurrent network
             self.lstm_model = lstm.lstm()
-            if settings.do_training:
-                # map the images to the embedding input
-                encodedFrames = convert_dim_fc(encodedFrames, dataset.get_embedding_dim(), "video_pooling")
-                # reshape the embeddings to batch_size x seq_len x embedding_dim
-                self.word_embeddings = tf.reshape(self.word_embeddings, [-1, dataset.max_sequence_length, dataset.get_embedding_dim()])
-                # concat the images end to end
-                encodedFrames = tf.reshape(encodedFrames, [1,-1])
-                # insert the images as the first item in the embeddings - may need tf.expand on the images
-                input_biased_embeddings = tf.concat([encodedFrames, self.word_embeddings], axis=0)
-                # ^ MAKE SURE that the reshape is at the correct order
-                # MAKE SURE ALL RESHAPES WORK CORRECTLY ( in the project)
+            # map the images to the embedding input
+            encodedFrames = convert_dim_fc(encodedFrames, dataset.get_embedding_dim(), "visual_embedding_fc")
 
-                # increase the seq len to account for the input bias
-                dataset.max_sequence_length = dataset.max_sequence_length + 1
+            if settings.do_training:
+                batch_size_train = tf.shape(encodedFrames)[0]
+                # reshape the embeddings to batch_size x seq_len x embedding_dim
+                reshaped_word_embeddings = tf.reshape(self.word_embeddings,
+                                                      [batch_size_train,
+                                                       dataset.max_sequence_length,
+                                                       dataset.get_embedding_dim()])
+                # reshape the images accordingly
+                encodedFrames = tf.reshape(encodedFrames, [batch_size_train, 1, dataset.get_embedding_dim()])
+                # insert the images as the first item in the embeddings - may need tf.expand on the images
+                input_biased_embeddings = tf.concat([encodedFrames, reshaped_word_embeddings], axis=1)
+                # increase the seq len to account for Wthe input bias extra timestep
+                augmented_sequence_length = dataset.max_sequence_length + 1
+                # restore to batchsize*seqlen x embedding_dim
+                input_biased_embeddings = tf.reshape(input_biased_embeddings,[augmented_sequence_length * batch_size_train,
+                                                                              dataset.get_embedding_dim()])
+
+                info("Incrementing sequence length to %d for the input bias step" % (augmented_sequence_length))
                 self.logits, _ = self.lstm_model.forward_pass_sequence(input_biased_embeddings, None,
                                                                        int(dataset.embedding_matrix.shape[1]),
                                                                        settings.lstm_num_layers,
                                                                        settings.lstm_num_hidden, dataset.num_classes,
-                                                                       dataset.max_sequence_length,
+                                                                       augmented_sequence_length,
                                                                        self.caption_lengths, defs.pooling.reshape,
                                                                        settings.dropout_keep_prob)
                 # remove the logits corresponding to padding
@@ -386,15 +392,19 @@ class LRCN:
                 debug("final filtered logits : [%s]" % self.logits.shape)
 
             else:
-                vinput_mode = defs.rnn_visual_mode.state_bias
+                # increase the seq len to account for the input bias
+                augmented_sequence_length = dataset.max_sequence_length + 1
+                info("Incrementing sequence length to %d for the input bias step" % (augmented_sequence_length))
+                vinput_mode = defs.rnn_visual_mode.input_bias
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
                                                                          dataset.num_classes,
-                                                                         dataset.max_sequence_length,
+                                                                         augmented_sequence_length,
                                                                          settings.lstm_num_hidden,
                                                                          settings.lstm_num_layers,
                                                                          dataset.embedding_matrix[
                                                                          dataset.vocabulary.index("BOS"), :],
                                                                          dataset.embedding_matrix, vinput_mode)
+                debug("Raw logits : [%s]",str(self.logits.shape))
                 # output is a sequence length * batchsize vector
                 self.logits = tf.reshape(self.logits, [-1, dataset.max_sequence_length])
 
@@ -428,7 +438,7 @@ class LRCN:
                 self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
 
 
-
+    # make description placeholders
     def make_description_placeholders(self, settings, dataset):
         # set up placeholders
         self.caption_lengths = tf.placeholder(tf.int32, shape=(None), name="words_per_item")
@@ -438,7 +448,7 @@ class LRCN:
                                               name="word_embeddings")
         debug("input labels : [%s]" % self.inputLabels)
 
-
+    # make then dcnn network
     def make_dcnn(self, dataset, settings):
         # DCNN for frame encoding
         self.dcnn_model = alexnet.dcnn()
