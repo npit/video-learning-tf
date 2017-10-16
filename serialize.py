@@ -4,6 +4,7 @@ from random import shuffle
 from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os, configparser, sys
+from os.path import basename
 from utils_ import *
 from tqdm import tqdm
 from defs_ import *
@@ -460,7 +461,7 @@ def validate(written_data, settings):
         if not os.path.isfile(inp + ".tfrecord"):
             error("TFRecord file %s does not exist." % (inp + ".tfrecord"))
         with tqdm(total=num_validate, desc="Validating [%s]" %
-                  os.path.basename(inp)) as pbar:
+                  basename(inp)) as pbar:
             for i in range(len(paths)):
                 if not i == testidx:
                     next(iter)
@@ -499,10 +500,13 @@ def write_paths_file(data, settings):
         item_paths, item_labels, paths, labels, mode = data[i]
 
         if settings.do_shuffle:
-            # write paths, if they got shuffled
-            item_outfile = inp + ".shuffled"
-            info("Documenting shuffled video order to %s" % (item_outfile))
-            with open(item_outfile,'w') as f:
+            # re-write paths, if they got shuffled, renaming the original
+            renamed_orig_file = inp + ".unshuffled"
+            info("Renaming original paths file from %s to %s" % (basename(inp),basename(renamed_orig_file)))
+            os.rename(inp, renamed_orig_file)
+            shuffled_paths_file = inp 
+            info("Documenting shuffled video order to %s" % (shuffled_paths_file))
+            with open(shuffled_paths_file,'w') as f:
                 for v in range(len(item_paths)):
                     item = item_paths[v]
                     f.write("%s " % item)
@@ -523,7 +527,7 @@ def write_paths_file(data, settings):
 
         if not mode == defs.input_mode.video:
             continue
-        info("Documenting selected paths from file %s \n\tto %s" % (inp, os.path.basename(outfile)))
+        info("Documenting selected clip/frame/... info to %s" % (basename(outfile)))
         with open(outfile, "w") as f:
             for path, label in zip(paths, labels):
                 f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))
