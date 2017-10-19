@@ -42,6 +42,8 @@ class CustomLogger:
         if storage_id in self.log_storage:
             return self.log_storage[storage_id]
         return []
+    def clear_log_storage(self, storage_id):
+        del self.log_storage[storage_id]
 
     def add_to_log_storage(self, storage_id,message):
         if storage_id not in self.log_storage:

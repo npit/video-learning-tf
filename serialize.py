@@ -9,12 +9,13 @@ from shutil import copyfile
 from utils_ import *
 import tqdm
 from defs_ import *
-
+import pickle
 '''
 Script for production of training / testing data collections and serialization to tf.record files.
 '''
 class serialization_settings:
     init_file = "config.ini"
+    run_id = None
 
     # necessary config. variables
     input_files = []
@@ -57,8 +58,12 @@ class serialization_settings:
         for key in config:
             exec("self.%s=%s" % (key, config[key]))
 
+        if self.run_id is None:
+            self.run_id = "serialize_%s" % (get_datetime_str())
+        else:
+            print("Using explicit run id of [%s]" % self.run_id)
         # configure the logs
-        logfile = "log_serialize_" + get_datetime_str() + ".log"
+        logfile = "log_" + self.run_id  + ".log"
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
@@ -94,7 +99,6 @@ def write_size_file(item_paths, clips_per_item, outfile, mode, max_num_labels, s
         f.write("cpi\t%s\n" % str(clips_per_item))
         f.write("fpc\t%s\n" % str(settings.num_frames_per_clip))
         f.write("labelcount\t%s\n" % str(max_num_labels))
-
 
 def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfile, mode, max_num_labels, settings):
 
@@ -158,35 +162,20 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
 
     writer.close()
 
-
-def get_item_paths(paths_list, mode):
+def generate_frames_per_video(paths_list, mode):
     tic = time.time()
     paths_per_video = []
-    if mode == defs.input_mode.image:
-        return paths_list
-    else:
-        info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." % 
-             (len(paths_list), settings.clipframe_mode, settings.clip_offset_or_num, settings.num_frames_per_clip))
-        with tqdm.tqdm(range(len(paths_list)), ascii=True, total=len(paths_list)) as pbar:
-            for vid_idx in range(len(paths_list)):
-                video_path = paths_list[vid_idx]
-                video_frame_paths = get_video_frame_paths(video_path)
-                paths_per_video.append(video_frame_paths)
-                pbar.set_description("Processing %-30s" % basename(video_path))
-                pbar.update()
-        info("Total generation time for %f total paths: %s " % (sum([len(p) for p in paths_per_video]), elapsed_str(time.time()-tic)))
-        stored_log = settings.logger.get_log_storage("serialization")
-        if stored_log:
-            warning("%d generation errors occured, that were resolved with the [%s] strategy:" %
-                    (len(stored_log), settings.on_generation_error))
-            for logline in settings.logger.get_log_storage("serialization"):
-                warning(logline)
-            if settings.on_generation_error == defs.generation_error.report:
-                info("Quitting due to generation error setting: [%s]." % settings.on_generation_error)
-                exit(0)
+    info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." % 
+         (len(paths_list), settings.clipframe_mode, settings.clip_offset_or_num, settings.num_frames_per_clip))
+    with tqdm.tqdm(range(len(paths_list)), ascii=True, total=len(paths_list)) as pbar:
+        for vid_idx in range(len(paths_list)):
+            video_path = paths_list[vid_idx]
+            video_frame_paths = generate_frames_for_video(video_path)
+            paths_per_video.append(video_frame_paths)
+            pbar.set_description("Processing %-30s" % basename(video_path))
+            pbar.update()
+    info("Total generation time for %f total paths: %s " % (sum([len(p) for p in paths_per_video]), elapsed_str(time.time()-tic)))
     return paths_per_video
-
-
 
 def read_item_list_threaded(paths, storage, id):
     for framepath in paths:
@@ -194,7 +183,6 @@ def read_item_list_threaded(paths, storage, id):
         if image is None:
             return
         storage[id].append(image)
-
 
 def serialize_to_tfrecord( frames, labels, outfil, writer):
     for idx in range(len(frames)):
@@ -208,25 +196,28 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
             'image_raw': _bytes_feature(frame.tostring())}))
         writer.write(example.SerializeToString())
 
-
-
 def get_random_frames(avail_frame_idxs, settings, path):
         # select frames randomly from the video
         avail_frame_idxs = shuffle(avail_frame_idxs)
+        num_frames = len(avail_frame_idxs)
         # handle videos with too few frames
         num_frames_missing = settings.num_frames_per_clip - num_frames
         if num_frames_missing > 0:
             message = "Attempted to get a %d-framed clip from video %s which has %d frames." % (settings.num_frames_per_clip, basename(path), num_frames)
-            if settings.on_generation_error == defs.generation_error.abort:
+            if settings.generation_error == defs.generation_error.abort:
                 error(message)
             # log the error for later
-            settings.logger.add_to_log_storage("serialization", message)
-            if settings.on_generation_error == defs.generation_error.compromise:
+            settings.logger.add_to_log_storage("generation", (message, path))
+            if settings.generation_error == defs.generation_error.compromise:
                 # to compromise, just duplicate random frames until we're good
                 avail_frame_idxs.extend([choice(avail_frame_idxs) for _
-                                         in num_frames_missing])
+                                         in range(num_frames_missing)])
+            elif settings.generation_error == defs.generation_error.report:
+                return []
+            else:
+                error("Undefined generation error stragegy: %s" % settings.generation_error)
 
-        avail_frames = avail_frames[:settings.num_frames_per_clip]
+        avail_frame_idxs = avail_frame_idxs[:settings.num_frames_per_clip]
         return avail_frame_idxs
 
 def get_random_clips(avail_frame_idxs, settings, path):
@@ -237,15 +228,19 @@ def get_random_clips(avail_frame_idxs, settings, path):
         num_frames_missing = settings.num_frames_per_clip - num_frames
         if num_frames_missing > 0:
             message = "Video %s cannot sustain a number of %d fpc, as it has %d frames" % (basename(path), settings.num_frames_per_clip, num_frames)
-            if settings.on_generation_error == defs.generation_error.abort:
+            if settings.generation_error == defs.generation_error.abort:
                 error(message)
             # log the error for later
-            settings.logger.add_to_log_storage("serialization", message)
-            if settings.on_generation_error == defs.generation_error.compromise:
+            settings.logger.add_to_log_storage("generation", (message, path))
+            if settings.generation_error == defs.generation_error.compromise:
                 # duplicate start frame to match the fpc,
                 # duplicate the clip to match the cpv
                 avail_frame_idxs = [0 for _ in range(num_frames_missing)] + avail_frame_idxs
                 return [avail_frame_idxs for _ in range(settings.clip_offset_or_num)]
+            elif settings.generation_error == defs.generation_error.report:
+                return []
+            else:
+                error("Undefined generation error stragegy: %s" % settings.generation_error)
 
 
         possible_clip_start = list(range(num_frames - settings.num_frames_per_clip + 1))
@@ -253,12 +248,18 @@ def get_random_clips(avail_frame_idxs, settings, path):
         num_clips_missing = settings.clip_offset_or_num - len(possible_clip_start)
         if num_clips_missing > 0:
             message = "Video %s cannot sustain a number of %d,%d cpv, fpc in, as it has %d frames" % (basename(path), settings.num_frames_per_clip, settings.clip_offset_or_num, num_frames)
-            if settings.on_generation_error == defs.generation_error.abort:
+            if settings.generation_error == defs.generation_error.abort:
                 error(message)
-            elif settings.on_generation_error == defs.generation_error.compromise:
+            # log the error for later
+            settings.logger.add_to_log_storage("generation", (message, path))
+            if settings.generation_error == defs.generation_error.compromise:
                 # duplicate clip starts to match the required
                 possible_clip_start.extend([choice(possible_clip_start) for _ in range(num_clips_missing)])
-                settings.logger.add_to_log_storage("serialization",message)
+                settings.logger.add_to_log_storage("generation",(message, path))
+            elif settings.generation_error == defs.generation_error.report:
+                return []
+            else:
+                error("Undefined generation error stragegy: %s" % settings.generation_error)
 
         shuffle(possible_clip_start)
         possible_clip_start = possible_clip_start[:settings.clip_offset_or_num]
@@ -271,21 +272,25 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
         num_frames_missing = settings.num_frames_per_clip - num_frames
         if num_frames_missing > 0:
             message = "Attempted to get %d-framed sequential clips from video %s which has %d frames." % (settings.num_frames_per_clip, basename(path), num_frames)
-            if settings.on_generation_error == defs.generation_error.abort:
+            if settings.generation_error == defs.generation_error.abort:
                 error(message)
             # log the error for later
-            settings.logger.add_to_log_storage("serialization",message)
-            if settings.on_generation_error == defs.generation_error.compromise:
+            settings.logger.add_to_log_storage("generation",(message,path))
+            if settings.generation_error == defs.generation_error.compromise:
                 # to compromise, just duplicate random frames until we're good
                 avail_frame_idxs.extend([choice(avail_frame_idxs) for _
                                          in num_frames_missing])
+            elif settings.generation_error == defs.generation_error.report:
+                return []
+            else:
+                error("Undefined generation error stragegy: %s" % settings.generation_error)
 
         clip_start_distance = settings.num_frames_per_clip + settings.clip_offset_or_num
         start_indexes = list(range(0 , num_frames - settings.num_frames_per_clip + 1, clip_start_distance))
         return [list(range(s,s+settings.num_frames_per_clip )) for s in start_indexes]
 
-# read all frames for a video
-def get_video_frame_paths(path):
+# generate frames per video, according to the input settings 
+def generate_frames_for_video(path):
 
     files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
     num_frames = len(files)
@@ -311,9 +316,7 @@ def get_video_frame_paths(path):
             frame_paths.append(frame_path)
         clip_frame_paths.append(frame_paths)
     return clip_frame_paths
-
  # read image from disk
-
 def read_image(imagepath):
     try:
         image = imread(imagepath)
@@ -338,7 +341,6 @@ def read_image(imagepath):
         error("Error reading image.")
         return None
     return image
-
 # read from tfrecord
 def deserialize_from_tfrecord( iterator, images_per_iteration):
     # images_per_iteration :
@@ -382,8 +384,6 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 
     return images, labels
 
-
-
 def read_file(inp):
     mode = None
     info("Reading input file [%s] " % (inp))
@@ -421,7 +421,6 @@ def read_file(inp):
             labels.append(label)
     return paths, labels, mode, max_num_labels
 
-
 def shuffle_pair(*args):
     z = list(zip(*args))
     shuffle(z)
@@ -429,7 +428,7 @@ def shuffle_pair(*args):
     return args
 
 def shuffle_paths(item_paths, paths, labels, mode):
-    info("Shuffling data...")
+    info("Shuffling data.")
 
     if mode == defs.input_mode.image:
         item_paths, labels = shuffle_pair(item_paths, labels)
@@ -452,9 +451,10 @@ def shuffle_paths(item_paths, paths, labels, mode):
             shuffle(paths[vid_idx])
         return item_paths, paths, labels
 
-def write(settings):
+def write_serialization(settings):
     # store written data per input file, to print shuffled & validate, later
     framepaths_per_input = []
+    errors_per_input = [False for _ in settings.input_files]
     for idx in range(len(settings.input_files)):
         inp = settings.input_files[idx]
         item_paths, item_labels, mode, max_num_labels = read_file(inp)
@@ -468,7 +468,33 @@ def write(settings):
 
         elif mode == defs.input_mode.video:
             # generate paths per video
-            paths = get_item_paths(item_paths, mode)
+            paths = generate_frames_per_video(item_paths, mode)
+            # check generation status
+            stored_log = settings.logger.get_log_storage("generation")
+            if stored_log:
+                # errors exist, print them
+                errors_per_input[idx] = True
+                warning("%d generation errors occured, that were resolved with the [%s] strategy:" %
+                        (len(stored_log), settings.generation_error))
+                for i,logline, _ in enumerate(stored_log):
+                    warning("%d/%d: %s" % (i+1, len(logline), logline))
+                # handle the errors according to the generation error strategy
+                if settings.generation_error == defs.generation_error.report:
+                    probl_savefile = "generation_errors_files_%s_%s"
+                    with open(probl_savefile % (settings.run_id, get_datetime_str()),"w") as f:
+                        for _, problematic_file in stored_log:
+                            f.write(problematic_file + "\n")
+                    info("Writing problematic files in %s" % probl_savefile)
+                    info("Omitting serialization due to generation error setting [%s]." % defs.generation_error.report)
+
+                    # clear generation logs
+                    settings.logger.clear_log_storage("generation")
+                    continue
+                elif settings.generation_error == defs.generation_error.compromise:
+                    # errors were fixed on the fly during generation
+                    settings.logger.clear_log_storage("generation")
+                else:
+                    error("Generated paths with errors, but error strategy is [%s]" % settings.generation_error)
 
             if settings.do_shuffle:
                 item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode)
@@ -496,14 +522,18 @@ def write(settings):
             info("Done serializing %s " % inp)
         info("Done processing input file %s" % inp)
 
-    return framepaths_per_input
-
+    return framepaths_per_input, errors_per_input
 # verify the serialization validity
-def validate(written_data, settings):
+def validate(written_data, errors, settings):
 
     for index in range(len(settings.input_files)):
 
         inp = settings.input_files[index]
+
+        if errors[index]:
+            info("Skipping file %s due to generation errors and stragegy [%s]" % (basename(inp), settings.generation_error))
+            continue
+
         output_file = inp + ".tfrecord"
         if settings.output_folder is not None:
             output_file = os.path.join(settings.output_folder, basename(output_file))
@@ -562,14 +592,16 @@ def validate(written_data, settings):
             error("errors exist.")
         else:
             info("Validation for %s completed successfully." % (inp + ".tfrecord"))
-    info("All files validated successfully.")
+    info("Validation completed error-free for all files.")
 
-
-def write_paths_file(data, settings):
+def write_paths_file(data, errors, settings):
     info("Writing serialization metadata")
     # write the selected clips / frames
     for i in range(len(data)):
         inp = settings.input_files[i]
+        if errors[i]:
+            info("Skipping file %s due to generation errors and stragegy [%s]" % (basename(inp), settings.generation_error))
+            continue
 
         item_paths, item_labels, paths, labels, mode = data[i]
 
@@ -595,8 +627,6 @@ def write_paths_file(data, settings):
                         f.write("%d" % item_labels[v])
                     f.write("\n")
 
-
-
         clip_info = "" if settings.clipframe_mode == defs.clipframe_mode.rand_frames or \
                           mode == defs.input_mode.image else ".%d.cpv" % settings.clip_offset_or_num
         frame_info = "" if mode == defs.input_mode.image else ".%d.fpc" % settings.num_frames_per_clip
@@ -610,16 +640,15 @@ def write_paths_file(data, settings):
             for path, label in zip(paths, labels):
                 f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))
 
-
 if __name__ == '__main__':
     settings = serialization_settings()
     settings.initialize_from_file(sys.argv)
     # outpaths is either the input frame paths in image mode, or the expanded frame paths in video mode
-    written_data = write(settings)
-    write_paths_file(written_data, settings)
+    written_data, errors_per_file = write_serialization(settings)
+    write_paths_file(written_data, errors_per_file, settings)
     if settings.do_validate:
         info("Validating serialization")
-        validate(written_data, settings)
+        validate(written_data, errors_per_file, settings)
 
 
 
