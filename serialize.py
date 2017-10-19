@@ -1,12 +1,13 @@
 import tensorflow as tf
 import numpy as np
-from random import shuffle
+from random import shuffle, choice
 from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os, configparser, sys
 from os.path import basename
+from shutil import copyfile
 from utils_ import *
-from tqdm import tqdm
+import tqdm
 from defs_ import *
 
 '''
@@ -20,6 +21,7 @@ class serialization_settings:
 
     # defaults
     path_prepend_folder = None
+    output_folder = None
     num_threads = 4
     num_items_per_thread = 500
     num_frames_per_clip = 16
@@ -54,9 +56,11 @@ class serialization_settings:
         config = config[tag_to_read]
         for key in config:
             exec("self.%s=%s" % (key, config[key]))
-        # initialize logging
-        self.logger = CustomLogger()
+
+        # configure the logs
         logfile = "log_serialize_" + get_datetime_str() + ".log"
+        self.logger = CustomLogger()
+        CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
         print("Successfully initialized from file %s" % self.init_file)
 
@@ -92,83 +96,94 @@ def write_size_file(item_paths, clips_per_item, outfile, mode, max_num_labels, s
         f.write("labelcount\t%s\n" % str(max_num_labels))
 
 
-
-
 def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfile, mode, max_num_labels, settings):
 
     write_size_file(item_paths, clips_per_item, outfile, mode, max_num_labels, settings)
 
-    # split up paths/labels list per thread run
-    num_images_per_thread_run = settings.num_items_per_thread * settings.num_threads
-    paths_per_thread_run = sublist(frame_paths, num_images_per_thread_run)
-    labels_per_thread_run = sublist(labels, num_images_per_thread_run)
+    # precompute 
+    num_images_per_run = settings.num_items_per_thread * settings.num_threads
+    paths_per_run = sublist(frame_paths, num_images_per_run )
+    labels_per_run = sublist(labels, num_images_per_run)
+    paths_per_thread_per_run = [sublist(paths, settings.num_items_per_thread) for paths in paths_per_run]
+    labels_per_thread_per_run = [sublist(lbls, settings.num_items_per_thread)
+                                 for lbls in labels_per_run]
+    total_thread_runs = sum([len(pt) for pt in paths_per_thread_per_run])
 
+    # print schedule
+    info("Serialization schedule:")
+    for ridx, rpaths in enumerate(paths_per_thread_per_run):
+        run_msg = "Run %d/%d {" % (1+ridx, len(paths_per_thread_per_run))
+        for tidx, tpaths in enumerate(rpaths):
+            run_msg += " t%d:%d" % (tidx, len(tpaths))
+        run_msg +=" }"
+        info(run_msg)
 
+    tic = time.time()
     count = 0
     writer = tf.python_io.TFRecordWriter(outfile)
-    for run_index in range(len(paths_per_thread_run)):
+    with tqdm.tqdm(total=total_thread_runs, ascii=True) as pbar:
+        for run_index in range(len(paths_per_run)):
+            paths_per_thread = paths_per_thread_per_run[run_index]
+            labels_per_thread = labels_per_thread_per_run[run_index]
 
-        paths_in_run = paths_per_thread_run[run_index]
-        labels_in_run = labels_per_thread_run[run_index]
+            num_threads_in_run = len(paths_per_thread)
+            # make thread result containers
+            threads = [[] for _ in range(num_threads_in_run)]
+            frames =  [[] for _ in range(num_threads_in_run)]
+            # start threads
+            for t in range(num_threads_in_run):
+                threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],frames,t))
+                threads[t].start()
 
-        tic = time.time()
-        debug("Processing %d items for the run." % len(paths_in_run))
+            # wait for threads to read
+            for t in range(num_threads_in_run):
+                threads[t].join()
 
-        paths_per_thread = sublist(paths_in_run, settings.num_items_per_thread )
-        labels_per_thread = sublist(labels_in_run, settings.num_items_per_thread )
+            for t in range(num_threads_in_run):
+                debug("Frames produced  for thread #%d : %d." % (t, len(frames[t])))
 
-        debug("Items scheduled list len : %d." % (len(paths_per_thread)))
+            # write the read images to the tfrecord
+            for t in range(num_threads_in_run):
+                if not frames[t]:
+                    error("Thread # %d encountered an error." % t)
+                    exit(1)
+                serialize_to_tfrecord(frames[t], labels_per_thread[t], outfile, writer)
+                count += len(frames[t])
+                pbar.set_description("Run %d/%d, processed %7d/%7d frames" %
+                                     (run_index + 1, len(paths_per_run), count,
+                                     len(frame_paths)))
+                pbar.update()
 
-        num_threads_in_run = len(paths_per_thread)
-        for t in range(num_threads_in_run):
-            debug("Frames scheduled for thread #%d : %d." % (t, len(paths_per_thread[t])))
-        # start threads
-        threads = [[] for _ in range(num_threads_in_run)]
-        frames =  [[] for _ in range(num_threads_in_run)]
-        for t in range(num_threads_in_run):
-            threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],frames,t))
-            threads[t].start()
-
-
-        # wait for threads to read
-        for t in range(num_threads_in_run):
-            threads[t].join()
-
-        for t in range(num_threads_in_run):
-            debug("Frames produced  for thread #%d : %d." % (t, len(frames[t])))
-
-
-        # write the read images to the tfrecord
-
-
-
-        for t in range(num_threads_in_run):
-            if not frames[t]:
-                error("Thread # %d encountered an error." % t)
-                exit(1)
-            serialize_to_tfrecord(frames[t], labels_per_thread[t], outfile, writer)
-            count += len(frames[t])
-
-
-        info("Processed %d frames, latest %d-sized batch took %s." %
-                    (count, sum(list(map(len,paths_per_thread))), elapsed_str(time.time()-tic)))
+    info("Time elapsed for file serialization: %s" % elapsed_str(time.time()-tic))
 
     writer.close()
 
 
 def get_item_paths(paths_list, mode):
-    info("Generating paths...")
     tic = time.time()
     paths_per_video = []
     if mode == defs.input_mode.image:
         return paths_list
     else:
-        for vid_idx in range(len(paths_list)):
-            #info("Processing path %d / %d" % (vid_idx+1, len(paths_list)))
-            video_path = paths_list[vid_idx]
-            video_frame_paths = get_video_frame_paths(video_path)
-            paths_per_video.append(video_frame_paths)
-    info("Total path generation time: %s " % elapsed_str(time.time() - tic))
+        info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." % 
+             (len(paths_list), settings.clipframe_mode, settings.clip_offset_or_num, settings.num_frames_per_clip))
+        with tqdm.tqdm(range(len(paths_list)), ascii=True, total=len(paths_list)) as pbar:
+            for vid_idx in range(len(paths_list)):
+                video_path = paths_list[vid_idx]
+                video_frame_paths = get_video_frame_paths(video_path)
+                paths_per_video.append(video_frame_paths)
+                pbar.set_description("Processing %-30s" % basename(video_path))
+                pbar.update()
+        info("Total generation time for %f total paths: %s " % (sum([len(p) for p in paths_per_video]), elapsed_str(time.time()-tic)))
+        stored_log = settings.logger.get_log_storage("serialization")
+        if stored_log:
+            warning("%d generation errors occured, that were resolved with the [%s] strategy:" %
+                    (len(stored_log), settings.on_generation_error))
+            for logline in settings.logger.get_log_storage("serialization"):
+                warning(logline)
+            if settings.on_generation_error == defs.generation_error.report:
+                info("Quitting due to generation error setting: [%s]." % settings.on_generation_error)
+                exit(0)
     return paths_per_video
 
 
@@ -186,54 +201,109 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
         frame = frames[idx]
         label = labels[idx]
         example = tf.train.Example(features=tf.train.Features(feature={
-            'height': _int64_feature(settings.raw_image_shape[0]),
-            'width': _int64_feature(settings.raw_image_shape[1]),
-            'depth': _int64_feature(settings.raw_image_shape[2]),
+            'height': _int64_feature(frame.shape[0]),
+            'width': _int64_feature(frame.shape[1]),
+            'depth': _int64_feature(frame.shape[2]),
             'label': _int64_feature(label),
             'image_raw': _bytes_feature(frame.tostring())}))
         writer.write(example.SerializeToString())
+
+
+
+def get_random_frames(avail_frame_idxs, settings, path):
+        # select frames randomly from the video
+        avail_frame_idxs = shuffle(avail_frame_idxs)
+        # handle videos with too few frames
+        num_frames_missing = settings.num_frames_per_clip - num_frames
+        if num_frames_missing > 0:
+            message = "Attempted to get a %d-framed clip from video %s which has %d frames." % (settings.num_frames_per_clip, basename(path), num_frames)
+            if settings.on_generation_error == defs.generation_error.abort:
+                error(message)
+            # log the error for later
+            settings.logger.add_to_log_storage("serialization", message)
+            if settings.on_generation_error == defs.generation_error.compromise:
+                # to compromise, just duplicate random frames until we're good
+                avail_frame_idxs.extend([choice(avail_frame_idxs) for _
+                                         in num_frames_missing])
+
+        avail_frames = avail_frames[:settings.num_frames_per_clip]
+        return avail_frame_idxs
+
+def get_random_clips(avail_frame_idxs, settings, path):
+        # get <num_clips> random chunks of a consequtive <num_frames> frames
+        # the clips may overlap
+        # handle videos with too few frames
+        num_frames = len(avail_frame_idxs)
+        num_frames_missing = settings.num_frames_per_clip - num_frames
+        if num_frames_missing > 0:
+            message = "Video %s cannot sustain a number of %d fpc, as it has %d frames" % (basename(path), settings.num_frames_per_clip, num_frames)
+            if settings.on_generation_error == defs.generation_error.abort:
+                error(message)
+            # log the error for later
+            settings.logger.add_to_log_storage("serialization", message)
+            if settings.on_generation_error == defs.generation_error.compromise:
+                # duplicate start frame to match the fpc,
+                # duplicate the clip to match the cpv
+                avail_frame_idxs = [0 for _ in range(num_frames_missing)] + avail_frame_idxs
+                return [avail_frame_idxs for _ in range(settings.clip_offset_or_num)]
+
+
+        possible_clip_start = list(range(num_frames - settings.num_frames_per_clip + 1))
+        # handle videos that cannot support that many clips
+        num_clips_missing = settings.clip_offset_or_num - len(possible_clip_start)
+        if num_clips_missing > 0:
+            message = "Video %s cannot sustain a number of %d,%d cpv, fpc in, as it has %d frames" % (basename(path), settings.num_frames_per_clip, settings.clip_offset_or_num, num_frames)
+            if settings.on_generation_error == defs.generation_error.abort:
+                error(message)
+            elif settings.on_generation_error == defs.generation_error.compromise:
+                # duplicate clip starts to match the required
+                possible_clip_start.extend([choice(possible_clip_start) for _ in range(num_clips_missing)])
+                settings.logger.add_to_log_storage("serialization",message)
+
+        shuffle(possible_clip_start)
+        possible_clip_start = possible_clip_start[:settings.clip_offset_or_num]
+        ret = [list(range(st,st+settings.num_frames_per_clip)) for st in possible_clip_start]
+        return ret
+
+def get_sequential_clips(avail_frame_idxs, settings, path):
+        # get all possible video clips spaced by <clip_offset_or_num> frames
+        num_frames = len(avail_frame_idxs)
+        num_frames_missing = settings.num_frames_per_clip - num_frames
+        if num_frames_missing > 0:
+            message = "Attempted to get %d-framed sequential clips from video %s which has %d frames." % (settings.num_frames_per_clip, basename(path), num_frames)
+            if settings.on_generation_error == defs.generation_error.abort:
+                error(message)
+            # log the error for later
+            settings.logger.add_to_log_storage("serialization",message)
+            if settings.on_generation_error == defs.generation_error.compromise:
+                # to compromise, just duplicate random frames until we're good
+                avail_frame_idxs.extend([choice(avail_frame_idxs) for _
+                                         in num_frames_missing])
+
+        clip_start_distance = settings.num_frames_per_clip + settings.clip_offset_or_num
+        start_indexes = list(range(0 , num_frames - settings.num_frames_per_clip + 1, clip_start_distance))
+        return [list(range(s,s+settings.num_frames_per_clip )) for s in start_indexes]
 
 # read all frames for a video
 def get_video_frame_paths(path):
 
     files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
-    files = sorted(files)
-    num_files = len(files)
+    num_frames = len(files)
+    avail_frame_idxs = list(range(num_frames))
 
     clips = []
     # generate a number of frame paths from the video path
     if settings.clipframe_mode == defs.clipframe_mode.rand_frames:
-
-        # select frames randomly from the video
-        avail_frames = list(range(num_files))
-        shuffle(avail_frames)
-        avail_frames = avail_frames[:settings.num_frames_per_clip]
-        clips.append(avail_frames)
+        clips = get_random_frames(avail_frame_idxs, settings, path)
 
     elif settings.clipframe_mode == defs.clipframe_mode.rand_clips:
-
-        # get <num_clips> random chunks of a consequtive <num_frames> frames
-        possible_chunk_start = list(range(num_files - settings.num_frames_per_clip + 1))
-        if len(possible_chunk_start) < settings.clip_offset_or_num:
-            error("Video %s cannot sustain a number of %d unique %d-frame clips" %
-                  (path, settings.clip_offset_or_num, settings.num_frames_per_clip))
-        shuffle(possible_chunk_start)
-        for _ in range(settings.clip_offset_or_num):
-            start_index = possible_chunk_start[-1]
-            possible_chunk_start = possible_chunk_start[:-1]
-            clip_frames = list(range(start_index, start_index + settings.num_frames_per_clip))
-            clips.append(clip_frames)
-
+        clips = get_random_clips(avail_frame_idxs, settings, path)
 
     elif  settings.clipframe_mode == defs.clipframe_mode.iterative:
-        # get all possible video clips.
-        start_indexes = list(range(0 , num_files - settings.num_frames_per_clip + 1,
-                                   settings.num_frames_per_clip + settings.clip_offset_or_num))
-        for s in start_indexes :
-            clip_frames = list(range(s,s+settings.num_frames_per_clip ))
-            clips.append(clip_frames)
+        clips = get_sequential_clips(avail_frame_idxs, settings, path)
 
     clip_frame_paths = []
+    files = sorted(files)
     for clip in clips:
         frame_paths=[]
         for fridx in clip:
@@ -257,7 +327,8 @@ def read_image(imagepath):
         #  convert to BGR
         image = image[:, :, ::-1]
         # resize
-        image = imresize(image, settings.raw_image_shape)
+        if settings.raw_image_shape is not None:
+            image = imresize(image, settings.raw_image_shape)
 
         # there is a problem if we want to store mean-subtracted images, as we'll have to store a float per pixel
         # => 4 x the space of a uint8 image
@@ -281,25 +352,23 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
             img_string = (example.features.feature['image_raw']
                           .bytes_list
                           .value[0])
-            # height = int(example.features.feature['height']
-            #              .int64_list
-            #              .value[0])
-            # width = int(example.features.feature['width']
-            #             .int64_list
-            #             .value[0])
-            #
-            # depth = (example.features.feature['depth']
-            #          .int64_list
-            #          .value[0])
+            height = int(example.features.feature['height']
+                         .int64_list
+                         .value[0])
+            width = int(example.features.feature['width']
+                        .int64_list
+                        .value[0])
+            depth = (example.features.feature['depth']
+                     .int64_list
+                     .value[0])
             label = (example.features.feature['label']
                      .int64_list
                      .value)
             label = list(label)
             label = label[0] if len(label) == 0 else label
             img_1d = np.fromstring(img_string, dtype=np.uint8)
-            # watch it : hardcoding preferd dimensions according to the dataset object.
-            # it should be the shape of the stored image instead, for generic use
-            image = img_1d.reshape((settings.raw_image_shape[0], settings.raw_image_shape[1], settings.raw_image_shape[2]))
+            # reshape according to the stored dimensions
+            image = img_1d.reshape((height, width, depth))
 
             images.append(image)
             labels.append(label)
@@ -416,13 +485,15 @@ def write(settings):
             error("Unknown data type: ",mode)
 
         if settings.do_serialize:
-            tic = time.time()
             output_file = inp + ".tfrecord"
-            info("Serializing %s " % (output_file))
+            if settings.output_folder is not None:
+                output_file = os.path.join(settings.output_folder, basename(output_file))
+                if not os.path.exists(settings.output_folder):
+                    os.makedirs(settings.output_folder)
+            info("Serializing to %s " % (output_file))
             serialize_multithread(item_paths, clips_per_item, paths_to_serialize, labels_to_serialize,
-                                  output_file , mode, max_num_labels, settings)
+                                  output_file, mode, max_num_labels, settings)
             info("Done serializing %s " % inp)
-            info("Total serialization time: %s " % elapsed_str(time.time() - tic))
         info("Done processing input file %s" % inp)
 
     return framepaths_per_input
@@ -430,11 +501,16 @@ def write(settings):
 # verify the serialization validity
 def validate(written_data, settings):
 
-
     for index in range(len(settings.input_files)):
 
         inp = settings.input_files[index]
-        info('Validating %s' % inp)
+        output_file = inp + ".tfrecord"
+        if settings.output_folder is not None:
+            output_file = os.path.join(settings.output_folder, basename(output_file))
+        if not os.path.isfile(output_file):
+            error("TFRecord file %s does not exist." % output_file)
+
+        info('Validating %s' % output_file)
 
         item_paths, item_labels, paths, labels, mode,  = written_data[index]
         if mode == defs.input_mode.video and not settings.do_serialize:
@@ -446,7 +522,6 @@ def validate(written_data, settings):
             labels = item_labels
 
         # validate
-
         num_validate = round(len(paths) * settings.validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
         info("Will validate %d%% of a total of %d items (but at least 10K), i.e. %d items." % (settings.validate_pcnt, len(paths), num_validate))
         sys.stdout.flush()
@@ -457,11 +532,9 @@ def validate(written_data, settings):
         idx_list.sort()
         lidx = 0
         testidx = idx_list[lidx]
-        iter = tf.python_io.tf_record_iterator(inp + ".tfrecord")
-        if not os.path.isfile(inp + ".tfrecord"):
-            error("TFRecord file %s does not exist." % (inp + ".tfrecord"))
-        with tqdm(total=num_validate, desc="Validating [%s]" %
-                  basename(inp)) as pbar:
+        iter = tf.python_io.tf_record_iterator(output_file)
+        with tqdm.tqdm(total=num_validate, desc="Validating [%s]" %
+                  basename(output_file), ascii=True) as pbar:
             for i in range(len(paths)):
                 if not i == testidx:
                     next(iter)
@@ -488,11 +561,12 @@ def validate(written_data, settings):
         if not error_free:
             error("errors exist.")
         else:
-            info("Validation for %s ok" % (inp + ".tfrecord"))
-
+            info("Validation for %s completed successfully." % (inp + ".tfrecord"))
+    info("All files validated successfully.")
 
 
 def write_paths_file(data, settings):
+    info("Writing serialization metadata")
     # write the selected clips / frames
     for i in range(len(data)):
         inp = settings.input_files[i]
@@ -501,10 +575,14 @@ def write_paths_file(data, settings):
 
         if settings.do_shuffle:
             # re-write paths, if they got shuffled, renaming the original
-            renamed_orig_file = inp + ".unshuffled"
-            info("Renaming original paths file from %s to %s" % (basename(inp),basename(renamed_orig_file)))
-            os.rename(inp, renamed_orig_file)
-            shuffled_paths_file = inp 
+            if settings.output_folder is not None:
+                output_file = os.path.join(settings.output_folder,
+                                           basename(inp))
+            else:
+                output_file = inp
+
+            copyfile(inp, output_file + ".unshuffled")
+            shuffled_paths_file= output_file + ".shuffled"
             info("Documenting shuffled video order to %s" % (shuffled_paths_file))
             with open(shuffled_paths_file,'w') as f:
                 for v in range(len(item_paths)):
@@ -523,7 +601,7 @@ def write_paths_file(data, settings):
                           mode == defs.input_mode.image else ".%d.cpv" % settings.clip_offset_or_num
         frame_info = "" if mode == defs.input_mode.image else ".%d.fpc" % settings.num_frames_per_clip
         clipframe_mode_info = "" if mode == defs.input_mode.image else ".%s.cfm" % settings.clipframe_mode
-        outfile = "%s%s%s%s" % (inp, clip_info, frame_info, clipframe_mode_info)
+        outfile = "%s%s%s%s" % (output_file, clip_info, frame_info, clipframe_mode_info)
 
         if not mode == defs.input_mode.video:
             continue
@@ -540,6 +618,7 @@ if __name__ == '__main__':
     written_data = write(settings)
     write_paths_file(written_data, settings)
     if settings.do_validate:
+        info("Validating serialization")
         validate(written_data, settings)
 
 

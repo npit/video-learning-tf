@@ -36,6 +36,21 @@ class CustomLogger:
     loggername='default'
     logging_level = logging.INFO
     instance = None
+    # have a container to store log messages to be displayed with a delay
+    log_storage = {}
+    def get_log_storage(self, storage_id):
+        if storage_id in self.log_storage:
+            return self.log_storage[storage_id]
+        return []
+
+    def add_to_log_storage(self, storage_id,message):
+        if storage_id not in self.log_storage:
+            self.log_storage[storage_id] = []
+        self.log_storage[storage_id].append(message)
+
+
+
+
     # configure logging settings
     def configure_logging(self, logfile, logging_level):
         print("Initializing logging to logfile: %s" % logfile)
@@ -99,8 +114,12 @@ def add_descriptive_summary(var):
     return res
 
 # list of sublists of size n from list
-def sublist(list, sublist_length):
-    return [ list[i:i+sublist_length] for i in range(0, len(list), sublist_length)]
+def sublist(llist, sublist_length, only_num = False):
+    divisions = range(0, len(llist), sublist_length)
+    if only_num:
+        # just the lengths
+        return [len(d) for d in divisions]
+    return [ llist[i:i+sublist_length] for i in divisions]
 
 # shortcut for tensor printing
 def print_tensor(tensor, message):

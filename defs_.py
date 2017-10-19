@@ -63,6 +63,10 @@ class defs:
     class clipframe_mode:
         rand_frames, rand_clips, iterative = "rand_frames", "rand_clips", "iterative"
 
+    # what to do if clip generation fails
+    class generation_error:
+        abort, compromise, report = "abort", "compromise", "report"
+
     class batch_item:
         default, clip = "default", "clip"
 

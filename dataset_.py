@@ -141,16 +141,15 @@ class Dataset:
                 img_string = (example.features.feature['image_raw']
                               .bytes_list
                               .value[0])
-                # height = int(example.features.feature['height']
-                #              .int64_list
-                #              .value[0])
-                # width = int(example.features.feature['width']
-                #             .int64_list
-                #             .value[0])
-                #
-                # depth = (example.features.feature['depth']
-                #          .int64_list
-                #          .value[0])
+                height = int(example.features.feature['height']
+                             .int64_list
+                             .value[0])
+                width = int(example.features.feature['width']
+                            .int64_list
+                            .value[0])
+                depth = (example.features.feature['depth']
+                         .int64_list
+                         .value[0])
                 label = (example.features.feature['label']
                          .int64_list
                          .value)
@@ -159,18 +158,12 @@ class Dataset:
 
 
                 img_1d = np.fromstring(img_string, dtype=np.uint8)
-                # watch it : hardcoding preferd dimensions according to the dataset object.
-                # it should be the shape of the stored image instead, for generic use
-                image = img_1d.reshape((self.raw_image_shape[0], self.raw_image_shape[1], self.raw_image_shape[2]))
-
-
-
+                image = img_1d.reshape(height, width, depth)
 
             except StopIteration:
                 if imidx < images_per_iteration:
                     warning('Tfrecord unexpected EOF, loading from scratch')
                     image, label = self.manually_read_image(imidx)
-
 
             except Exception as ex:
                 warning('Exception at reading image, loading from scratch')
@@ -179,7 +172,6 @@ class Dataset:
             image = self.process_image(image)
             images.append(image)
             labels.append(label)
-
 
         return images, labels
 
