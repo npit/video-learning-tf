@@ -1,7 +1,7 @@
 from utils_ import  *
 from defs_ import *
-
-def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, pooling_type=defs.pooling.reshape, name="lstm_temporal_pooling"):
+from models.lstm import lstm
+def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, pooling_type=defs.pooling.reshape, name="temporal_pooling"):
     '''
     Apply pooling over the temporal (column) dimension of the input tensor
     :param self:
@@ -25,6 +25,11 @@ def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, p
         debug("LSTM time-averaged output : %s" % str(output.shape))
     elif pooling_type == defs.pooling.reshape:
         output = tf.reshape(input_tensor,[-1, vector_dimension])
+    elif pooling_type == defs.pooling.lstm:
+        # pool via lstm encoding; simplest lstm setting: 1 layer, statedim = inputdim, outputdim = 8
+        lstm_model = lstm.lstm()
+        output, _ = lstm_model.forward_pass_sequence(input_tensor, None, vector_dimension, 1, vector_dimension, 8,
+                                                     temporal_dimension, None, defs.pooling.reshape, 0.5)
     else:
         error("Undefined frame pooling type : %d" % pooling_type)
     return output

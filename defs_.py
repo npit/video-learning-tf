@@ -57,7 +57,7 @@ class defs:
 
     # video pooling methods
     class pooling:
-        avg, last, reshape = "avg", "last", "reshape"
+        avg, last, reshape, lstm = "avg", "last", "reshape", "lstm"
 
     # how the video's frames are structured
     class clipframe_mode:

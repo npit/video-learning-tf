@@ -115,7 +115,14 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
 
     # print schedule
     info("Serialization schedule:")
-    for ridx, rpaths in enumerate(paths_per_thread_per_run):
+    max_print = 8
+    run_info = list(enumerate(paths_per_thread_per_run))
+    if len(run_info) > max_print:
+        run_info = run_info[:int(max_print/2)] + [(None,None)] + run_info[-int(max_print/2):]
+    for ridx, rpaths in run_info:
+        if ridx is None:
+            info(".......")
+            continue
         run_msg = "Run %d/%d {" % (1+ridx, len(paths_per_thread_per_run))
         for tidx, tpaths in enumerate(rpaths):
             run_msg += " t%d:%d" % (tidx, len(tpaths))
@@ -215,7 +222,7 @@ def get_random_frames(avail_frame_idxs, settings, path):
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
-                error("Undefined generation error stragegy: %s" % settings.generation_error)
+                error("Undefined generation error strategy: %s" % settings.generation_error)
 
         avail_frame_idxs = avail_frame_idxs[:settings.num_frames_per_clip]
         return avail_frame_idxs
@@ -240,7 +247,7 @@ def get_random_clips(avail_frame_idxs, settings, path):
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
-                error("Undefined generation error stragegy: %s" % settings.generation_error)
+                error("Undefined generation error strategy: %s" % settings.generation_error)
 
 
         possible_clip_start = list(range(num_frames - settings.num_frames_per_clip + 1))
@@ -259,7 +266,7 @@ def get_random_clips(avail_frame_idxs, settings, path):
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
-                error("Undefined generation error stragegy: %s" % settings.generation_error)
+                error("Undefined generation error strategy: %s" % settings.generation_error)
 
         shuffle(possible_clip_start)
         possible_clip_start = possible_clip_start[:settings.clip_offset_or_num]
@@ -283,7 +290,7 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
-                error("Undefined generation error stragegy: %s" % settings.generation_error)
+                error("Undefined generation error strategy: %s" % settings.generation_error)
 
         clip_start_distance = settings.num_frames_per_clip + settings.clip_offset_or_num
         start_indexes = list(range(0 , num_frames - settings.num_frames_per_clip + 1, clip_start_distance))
@@ -476,8 +483,8 @@ def write_serialization(settings):
                 errors_per_input[idx] = True
                 warning("%d generation errors occured, that were resolved with the [%s] strategy:" %
                         (len(stored_log), settings.generation_error))
-                for i,logline, _ in enumerate(stored_log):
-                    warning("%d/%d: %s" % (i+1, len(logline), logline))
+                for i,(logline, _) in enumerate(stored_log):
+                    warning("%d/%d: %s" % (i+1, len(stored_log), logline))
                 # handle the errors according to the generation error strategy
                 if settings.generation_error == defs.generation_error.report:
                     probl_savefile = "generation_errors_files_%s_%s"
@@ -493,6 +500,7 @@ def write_serialization(settings):
                 elif settings.generation_error == defs.generation_error.compromise:
                     # errors were fixed on the fly during generation
                     settings.logger.clear_log_storage("generation")
+                    errors_per_input[idx] = False
                 else:
                     error("Generated paths with errors, but error strategy is [%s]" % settings.generation_error)
 
@@ -531,7 +539,7 @@ def validate(written_data, errors, settings):
         inp = settings.input_files[index]
 
         if errors[index]:
-            info("Skipping file %s due to generation errors and stragegy [%s]" % (basename(inp), settings.generation_error))
+            info("Skipping file %s due to generation errors and strategy [%s]" % (basename(inp), settings.generation_error))
             continue
 
         output_file = inp + ".tfrecord"
@@ -600,7 +608,7 @@ def write_paths_file(data, errors, settings):
     for i in range(len(data)):
         inp = settings.input_files[i]
         if errors[i]:
-            info("Skipping file %s due to generation errors and stragegy [%s]" % (basename(inp), settings.generation_error))
+            info("Skipping file %s due to generation errors and strategy [%s]" % (basename(inp), settings.generation_error))
             continue
 
         item_paths, item_labels, paths, labels, mode = data[i]
