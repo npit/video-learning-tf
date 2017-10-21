@@ -1,6 +1,8 @@
 
 # generic IO
-import pickle, sys
+import pickle
+import sys
+import tensorflow as tf 
 
 # project modules
 import lrcn_
@@ -96,9 +98,8 @@ class Settings:
 
     # initialization
 
-
     # input data files
-    input = [[],[]]
+    input = [[], []]
 
     # training settings
     epoch_index = 0
@@ -225,7 +226,10 @@ class Settings:
                 error(ex)
 
             # set run options from loaded stuff
-            self.train_index, self.epoch_index = params
+            self.train_index, self.epoch_index = params[:2]
+            if defs.workflows.is_description(self.workflow):
+                self.sequence_length = params[2:]
+
             info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
 
     # restore graph variables
@@ -274,7 +278,7 @@ class Settings:
                 error("Failed to load checkpoint!")
 
     # save graph and dataset stuff
-    def save(self, sess, dataset,progress, global_step):
+    def save(self, sess, dataset, progress, global_step):
         try:
             if self.saver is None:
                 self.saver = tf.train.Saver()
@@ -296,7 +300,9 @@ class Settings:
             info("Saving params for epoch index %d, train index %d" %
                 (dataset.epoch_index, dataset.batch_index_train))
 
-            params2save = [dataset.batch_index_train , dataset.epoch_index]
+            params2save = [dataset.batch_index_train, dataset.epoch_index]
+            if defs.workflows.is_description(self.workflow):
+                params2save += [dataset.max_caption_length]
 
             with open(savefile_metapars,'wb') as f:
                 pickle.dump(params2save,f)
@@ -328,9 +334,6 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
         num_labels = len(ground_truth)
 
     return fdict, num_labels, padding
-
-
-
 
 
 # train the network
@@ -453,8 +456,6 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     tboard_writer.flush()
     return True
 
-
-
 # the main function
 def main():
 
@@ -463,7 +464,7 @@ def main():
     settings.initialize(sys.argv)
 
     # init summaries for printage
-    summaries=Summaries()
+    summaries = Summaries()
 
     # initialize & pre-process dataset
     dataset = dataset_.Dataset()

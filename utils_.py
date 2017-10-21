@@ -21,8 +21,11 @@ def init_config(init_file, tag_to_read):
     return config
 
 # timestamp print
-def elapsed_str(seconds):
-    m, s = divmod(seconds, 60)
+def elapsed_str(previous_tic, up_to = None):
+    if up_to is None:
+        up_to = time.time()
+    duration_sec = up_to - previous_tic
+    m, s = divmod(duration_sec, 60)
     h, m = divmod(m, 60)
     return "%d:%02d:%02d" % (h, m, s)
 

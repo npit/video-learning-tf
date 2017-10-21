@@ -1,4 +1,5 @@
 import tensorflow as tf
+import itertools
 import numpy as np
 from random import shuffle, choice
 from scipy.misc import imread, imresize, imsave
@@ -26,7 +27,7 @@ class serialization_settings:
     num_threads = 4
     num_items_per_thread = 500
     num_frames_per_clip = 16
-    raw_image_shape = (240,320,3)
+    raw_image_shape = (240, 320, 3)
     clipframe_mode = defs.clipframe_mode.rand_clips
     clip_offset_or_num = 1
     frame_format = "jpg"
@@ -96,7 +97,11 @@ def write_size_file(item_paths, clips_per_item, outfile, mode, max_num_labels, s
         # do the write
         f.write("items\t%d\n" % len(item_paths))
         f.write("type\t%s\n" % mode)
-        f.write("cpi\t%s\n" % str(clips_per_item))
+        if clips_per_item is not None:
+            cpv_str = [(len(list(g)), k) for k,g in itertools.groupby(clips_per_item)]
+        else:
+            cpv_str = str(clips_per_item)
+        f.write("cpi\t%s\n" % cpv_str)
         f.write("fpc\t%s\n" % str(settings.num_frames_per_clip))
         f.write("labelcount\t%s\n" % str(max_num_labels))
 
@@ -165,14 +170,14 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
                                      len(frame_paths)))
                 pbar.update()
 
-    info("Time elapsed for file serialization: %s" % elapsed_str(time.time()-tic))
+    info("Time elapsed for file serialization: %s" % elapsed_str(tic))
 
     writer.close()
 
 def generate_frames_per_video(paths_list, mode):
     tic = time.time()
     paths_per_video = []
-    info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." % 
+    info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." %
          (len(paths_list), settings.clipframe_mode, settings.clip_offset_or_num, settings.num_frames_per_clip))
     with tqdm.tqdm(range(len(paths_list)), ascii=True, total=len(paths_list)) as pbar:
         for vid_idx in range(len(paths_list)):
@@ -181,7 +186,8 @@ def generate_frames_per_video(paths_list, mode):
             paths_per_video.append(video_frame_paths)
             pbar.set_description("Processing %-30s" % basename(video_path))
             pbar.update()
-    info("Total generation time for %f total paths: %s " % (sum([len(p) for p in paths_per_video]), elapsed_str(time.time()-tic)))
+    total_num_paths = int(sum([len(p) for p in paths_per_video]))
+    info("Total generation time for a total of %d video paths: %s " % (total_num_paths, elapsed_str(tic)))
     return paths_per_video
 
 def read_item_list_threaded(paths, storage, id):
@@ -535,9 +541,8 @@ def write_serialization(settings):
 def validate(written_data, errors, settings):
 
     for index in range(len(settings.input_files)):
-
+        tic = time.time()
         inp = settings.input_files[index]
-
         if errors[index]:
             info("Skipping file %s due to generation errors and strategy [%s]" % (basename(inp), settings.generation_error))
             continue
@@ -599,13 +604,14 @@ def validate(written_data, errors, settings):
         if not error_free:
             error("errors exist.")
         else:
-            info("Validation for %s completed successfully." % (inp + ".tfrecord"))
+            info("Validation for %s completed successfully in %s." % (basename(inp) + ".tfrecord", elapsed_str(tic)))
     info("Validation completed error-free for all files.")
 
 def write_paths_file(data, errors, settings):
     info("Writing serialization metadata")
     # write the selected clips / frames
     for i in range(len(data)):
+        tic = time.time()
         inp = settings.input_files[i]
         if errors[i]:
             info("Skipping file %s due to generation errors and strategy [%s]" % (basename(inp), settings.generation_error))

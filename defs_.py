@@ -26,7 +26,7 @@ class defs:
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
         class acrec:
-            singleframe, lstm = "acrec_singleframe", "acrec_lstm"
+            singleframe, lstm, audio = "acrec_singleframe", "acrec_lstm", "acrec_audio"
             def is_workflow(arg):
                 return arg == defs.workflows.acrec.singleframe or \
                        arg == defs.workflows.acrec.lstm

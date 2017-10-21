@@ -2,6 +2,7 @@ import tensorflow as tf
 import  math
 # models
 from models.alexnet import alexnet
+from models.audionet import audionet
 from models.lstm import lstm
 # util
 from utils_ import *
@@ -66,6 +67,8 @@ class LRCN:
         # Activity recognition
         if self.workflow == defs.workflows.acrec.singleframe:
            self.create_actrec_singleframe(settings, dataset)
+        elif self.workflow == defs.workflows.acrec.audio:
+            self.create_actrec_audio(settings, dataset)
         elif self.workflow == defs.workflows.acrec.lstm:
             self.create_actrec_lstm(settings, dataset)
         # Image description
@@ -248,15 +251,18 @@ class LRCN:
                 error("Undefined optimizer %s" % settings.optimizer)
 
             grads_vars = opt.compute_gradients(self.loss)
-            if settings.clip_grads is not None:
-                clipmin, clipmax = settings.clip_grads
-                max_norm = settings.clip_norm
-                grads,_ = tf.clip_by_global_norm([grad for grad, _ in grads_vars], max_norm)
+            grads = [grad for grad, _ in grads_vars]
+            if settings.clip_norm:
+                info("Setting gradient clipping to a global norm of %d" % settings.clip_norm)
+                #clipmin, clipmax = settings.clip_grads
+                #max_norm = settings.clip_norm
+                grads,_ = tf.clip_by_global_norm(grads, settings.clip_norm)
                 grads_vars = zip(grads, [v for _,v in grads_vars])
             self.optimizer = opt.apply_gradients(grads_vars, global_step=self.global_step)
 
         with tf.name_scope('grads_norm'):
-            grads_norm = tf.reduce_mean(list(map(tf.norm, grads_vars)))
+            grads_norm = tf.reduce_mean(list(map(tf.norm, grads)))
+            grads_norm = print_tensor(grads_norm, "grads_clipped" )
             summaries.train.append(add_descriptive_summary(grads_norm))
 
     # workflows
@@ -308,6 +314,32 @@ class LRCN:
             # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
             # self.logits = self.lstm_model.get_output()
             info("logits : [%s]" % self.logits.shape)
+
+    def create_actrec_audio(self, settings,dataset):
+        # define label inputs
+        batchLabelsShape = [None, dataset.num_classes]
+        self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
+
+        settings.frame_encoding_layer = None
+        # create the singleframe workflow
+        with tf.name_scope("audionet_workflow"):
+            info("Audionet workflow")
+            # single DCNN, classifying individual frames
+            self.dcnn_model = audionet()
+            self.dcnn_model.create(dataset.image_shape, dataset.num_classes)
+            self.inputData, self.logits = self.dcnn_model.get_io()
+        # reshape to num_items x num_frames_per_item x dimension
+        self.logits = tf.reshape(self.logits, (-1, dataset.num_frames_per_clip, dataset.num_classes),
+                                 name="reshape_framelogits_pervideo")
+
+        if dataset.input_mode == defs.input_mode.image or dataset.num_frames_per_clip == 1:
+            return
+
+        # pool the logits on the temporal dimension
+        self.logits = apply_temporal_pooling(self.logits, dataset.num_classes, dataset.num_frames_per_clip, settings.frame_pooling_type)
+
+        info("logits out : [%s]" % self.logits.shape)
+
 
     # Image description
     def create_imgdesc_visualinput(self, settings, dataset):
@@ -501,7 +533,12 @@ class LRCN:
         self.make_imgdesc_prepro(settings, dataset, encoded_state)
 
     def get_ignorable_variable_names(self):
-        ignorables = self.dcnn_model.ignorable_variable_names + self.lstm_model.ignorable_variable_names
+        ignorables = []
+
+        if self.dcnn_model:
+            ignorables.extend(self.dcnn_model.ignorable_variable_names)
+        if self.lstm_model:
+            ignorables.extend(self.lstm_model.ignorable_variable_names)
         debug("Getting lrcn raw ignorables: %s" % str(ignorables))
         ignorables = [drop_tensor_name_index(s) for s in ignorables]
         return list(set(ignorables))

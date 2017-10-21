@@ -79,9 +79,11 @@ class Dataset:
     # variables for validation clip batches
     video_index = 0
 
-    # misc
+    # description
     embedding_matrix = None
     vocabulary = None
+    max_caption_length = None
+    max_sequence_length = None
 
     save_interval = None
 
@@ -574,6 +576,10 @@ class Dataset:
                        % (len(self.vocabulary) - 1, self.vocabulary.index("BOS")) )
             # classes are all tokens minus the BOS
             self.num_classes = len(self.vocabulary) - 1
+            # if a max caption length is read, assign it
+            if settings.sequence_length is not None:
+                info("Restricting to a caption length of", self.max_caption_length)
+                self.max_caption_length = settings.sequence_length
 
     def get_embedding_dim(self):
         return int(self.embedding_matrix.shape[-1])
@@ -697,12 +703,16 @@ class Dataset:
         assert ((fpc is not None) != (self.input_mode == defs.input_mode.image)), \
             "Read fpc of %d but input mode is %s" % (fpc, self.input_mode)
 
-
         # print data information
         if type(cpv)==list:
+            # read RLC-encoded cpv, if applicable
+            if type(cpv[0]) == tuple:
+                cpv= [item for num, item in cpv for _ in range(num)] 
+            # else, the list contains 1 cpv entry per item
             # check consistency
-            if len(cpv) != num_items:
-                error("Read %d items but got cpv list of size %d" % (num_items, len(cpv)))
+            else:
+                if len(cpv) != num_items:
+                    error("Read %d items but got cpv list of size %d" % (num_items, len(cpv)))
 
             # and len(self.clips_per_video) > 12:
             # if it's large, make it small and printable
@@ -713,10 +723,18 @@ class Dataset:
 
         self.clips_per_video = cpv
         self.num_frames_per_clip = fpc
-        self.max_caption_length = int(datainfo['labelcount'])
+        loaded_caption_length = int(datainfo['labelcount'])
+        # if a max caption length was already read, make sure it is greq the one in the data
+        if self.max_caption_length is not None:
+            if loaded_caption_length > self.max_caption_length:
+                error("Data contains a max caption length of %d, but current setting is restricted to %d" % 
+                      (loaded_caption_length, self.max_caption_length))
+        else:
+            self.max_caption_length = loaded_caption_length
+                # if the loaded caption length is leq the restricted, keep the latter
         self.max_sequence_length = self.max_caption_length + 1
 
-        info("Read [%s] data, count: %d, cpv: %s, fpc: %s, type: %s, lblcount: %d+1" %
+        info("Read [%s] data, count: %d, cpv: %s, fpc: %s, type: %s, lblcount: %d" %
              (phase, num_items, cpv_str, str(self.num_frames_per_clip), self.input_mode, self.max_caption_length))
 
     # set iterator to point to the beginning of the tfrecord file, per phase
