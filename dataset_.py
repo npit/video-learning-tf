@@ -280,34 +280,41 @@ class Dataset:
 
 
     # get captions from logit vectors
-    def logits_to_captions(self, logits):
-        return_data = []
+    def validation_logits_to_captions(self, logits, start_index = 0):
+        image_ids = []
         captions = []
-        # for validation mode, we better have the image ids
-        if self.phase == defs.phase.val:
-            if self.eval_type == defs.eval_type.coco:
-                image_ids = []
-                parts = self.input_source_files[defs.val_idx].split(".")
-                image_paths_file = ".".join(parts[0:-1])
-                info("Reading image paths for id extraction from %s" % image_paths_file)
-                # read image ids, presumed to be the suffixless basename
-                with open(image_paths_file, "r") as fp:
-                    for line in fp:
-                        # format example : COCO_val2014_000000000042.jpg
-                        # strip id from path
-                        try:
-                            # get filename
-                            parts = line.strip().split()
-                            filename = os.path.basename(parts[0]).split('.')[0]
-                            # get image id
-                            image_id = filename.split("_") [-1]
-                            image_id = int(image_id)
-                        except Exception:
-                            warning("Could not convert image id %s to int. Storing as string." % image_id)
-                        image_ids.append(image_id)
-                # return it
-                return_data.append(image_ids)
-        # read captions
+        if self.eval_type == defs.eval_type.coco:
+            # read the image ids
+            parts = self.input_source_files[defs.val_idx].split(".")
+            image_paths_file = ".".join(parts[0:-1])
+            line_counter = -1
+            chunk_size = len(logits)
+            # read image ids, presumed to be the suffixless basename
+            with open(image_paths_file, "r") as fp:
+                for line in fp:
+                    line_counter += 1
+                    # make sure you read the correct chunk
+                    if line_counter < start_index:
+                        continue
+                    # limit to chunk length
+                    if len(image_ids) == len(logits):
+                        break
+                    # format example : COCO_val2014_000000000042.jpg
+                    # strip id from path
+                    try:
+                        # get filename
+                        parts = line.strip().split()
+                        filename = os.path.basename(parts[0]).split('.')[0]
+                        # get image id
+                        image_id = filename.split("_") [-1]
+                        image_id = int(image_id)
+                    except Exception:
+                        warning("Could not convert image id %s to int. Storing as string." % image_id)
+                    image_ids.append(image_id)
+            debug("Read image ids %d-%d from %s" % (start_index, start_index + chunk_size, os.path.basename(image_paths_file)))
+
+        # generate captions from logits
+        # recall that logits contain caption word indexes in the vocabulary
         for i,image_logits in enumerate(logits):
             image_caption = []
             for caption_index in image_logits:
@@ -315,7 +322,9 @@ class Dataset:
             if not image_caption:
                 image_caption = ' '
             captions.append(" ".join(image_caption))
-        return_data.append(captions)
+
+        # Populate the return data
+        return_data = [{"image_id":iid , "caption": caption} for (iid, caption) in zip(image_ids,captions)]
         debug("Generated ids:")
         for i in range(len(image_ids)):
             debug("image id: %s caption:%s" % (str(image_ids[i]),str(captions[i])))
@@ -717,7 +726,7 @@ class Dataset:
             # and len(self.clips_per_video) > 12:
             # if it's large, make it small and printable
             nump = 3
-            cpv_str = "["+ str(cpv[:nump])[1:-1] +", ...," + str(cpv[-nump:])[1:-1] + "]"
+            cpv_str = "["+ str(cpv[:nump])[1:-1] +", ..., " + str(cpv[-nump:])[1:-1] + "]"
         else:
             cpv_str = str(cpv)
 

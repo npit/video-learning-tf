@@ -97,10 +97,8 @@ def debug(message):
 # onehot vector generation
 def labels_to_one_hot(labels,num_classes):
     onehots = np.zeros(shape=(len(labels),num_classes),dtype=np.int32)
-
     for l in range(len(labels)):
         onehots[l][labels[l]] = 1
-
     return onehots
 
 # summary generation
@@ -133,6 +131,10 @@ def print_tensor(tensor, message):
     tensor_cols = 20
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
     return tens
+
+# duplicate elements from list
+def duplicates(llist):
+    return set([x for x in llist if llist.count(x) > 1])
 
 # read lines from text file, cleaning whitespace
 def read_file_lines(filename):

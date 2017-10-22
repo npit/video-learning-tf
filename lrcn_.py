@@ -1,4 +1,5 @@
 import tensorflow as tf
+import pickle
 import  math
 # models
 from models.alexnet import alexnet
@@ -38,10 +39,16 @@ class LRCN:
 
     dcnn_weights_file = None
     ignorable_variable_names = []
+
+    validation_logits_save_counter = 0
+    validation_logits_save_interval = None
+    run_id = None
+    run_folder = None
+
     # let there be network
     def create(self, settings, dataset, summaries):
         # initializations
-        if defs.workflows.is_description(settings.workflow):
+        if defs.workflows.is_description(settings.workflow) and defs.workflows.is_image(settings.workflow):
             self.item_logits = []
             self.item_labels = []
             self.non_padding_word_idxs = tf.placeholder(tf.int32, (None))
@@ -55,13 +62,10 @@ class LRCN:
             self.clip_pooling_type = settings.clip_pooling_type
 
         # define network input
-        self.logger = settings.logger
         self.workflow = settings.workflow
-
-        # make sure dcnn weights are good2go
-        self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
-        if not os.path.exists(self.dcnn_weights_file):
-            error("Weights file %s does not exist." % self.dcnn_weights_file)
+        self.run_id = settings.run_id
+        self.run_folder = settings.run_folder
+        self.validation_logits_save_interval = settings.validation_logits_save_interval
 
         # create the workflows
         # Activity recognition
@@ -482,6 +486,12 @@ class LRCN:
 
     # make then dcnn network
     def make_dcnn(self, dataset, settings):
+
+        # make sure dcnn weights are good2go
+        self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
+        if not os.path.exists(self.dcnn_weights_file):
+            error("Weights file %s does not exist." % self.dcnn_weights_file)
+
         # DCNN for frame encoding
         self.dcnn_model = alexnet.dcnn()
         self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes,
@@ -507,7 +517,7 @@ class LRCN:
 
         self.make_description_placeholders(settings, dataset)
         if settings.do_training:
-            self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames,
+            self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, pooled_frames,
                                                                    int(dataset.embedding_matrix.shape[1]),
                                                                    settings.lstm_num_layers, settings.lstm_num_hidden,
                                                                    dataset.num_classes,
@@ -624,6 +634,36 @@ class LRCN:
                 # frames, simply append
                 self.add_item_logits_labels(logits,labels)
 
+    def save_validation_logits_chunk(self):
+        if self.validation_logits_save_interval is None:
+            return
+        if len(self.item_logits) >= self.validation_logits_save_interval:
+            # save them
+            save_file = os.path.join(self.run_folder,"validation_logits_%s.part_%d" %
+                                     ( self.run_id, self.validation_logits_save_counter))
+            info("Saving a %d-sized chunk of validation logits to %s" % (len(self.item_logits), save_file))
+            with open(save_file, "wb") as f:
+                pickle.dump(self.item_logits, f)
+            # reset the container
+            if type(self.item_logits) == np.ndarray:
+                num_classes = int(self.item_logits.shape[-1])
+                del self.item_logits
+                self.item_logits = np.zeros([0, num_classes], np.float32)
+            else:
+                # list
+                del self.item_logits
+                self.item_logits = []
+
+            self.validation_logits_save_counter += 1
+
+    def load_validation_logits_chunk(self, chunk_idx):
+        if self.validation_logits_save_interval is None:
+            return self.item_logits
+        save_file = os.path.join(self.run_folder,"validation_logits_%s.part_%d" % ( self.run_id, chunk_idx))
+        with open(save_file, "rb") as f:
+            logits_chunk = pickle.load(f)
+        return logits_chunk
+
     def apply_clip_pooling(self, clips_logits, cpv, video_labels):
         curr_clips = clips_logits[0:cpv,:]
         video_label = video_labels[0,:]
@@ -641,8 +681,32 @@ class LRCN:
 
     def get_accuracy(self):
         # compute accuracy
-        info("Computing accuracy out of %d items" % len(self.item_logits))
-        predicted_classes = np.argmax(self.item_logits, axis=1)
-        correct_classes = np.argmax(self.item_labels, axis=1)
-        accuracy = np.mean(np.equal(predicted_classes, correct_classes))
+        info("Computing accuracy")
+        accuracies = []
+        curr_item_idx = 0
+        # compute partial accuracies for each saved chunk
+        for saved_idx in range(self.validation_logits_save_counter):
+            logits = self.load_validation_logits_chunk(saved_idx)
+            chunk_size = len(logits)
+            labels = self.item_labels[curr_item_idx:curr_item_idx + chunk_size, :]
+            accuracies.append(self.get_chunk_accuracy(logits, labels))
+            curr_item_idx += chunk_size
+            info("Processed saved chunk %d/%d containing %d items - item total: %d" %
+                 (saved_idx+1, self.validation_logits_save_counter, chunk_size, curr_item_idx))
+
+        # compute partial accuracies for the unsaved chunk in item_logits
+        if len(self.item_logits) > 0:
+            chunk_size = len(self.item_logits)
+            labels = self.item_labels[curr_item_idx:curr_item_idx + chunk_size, :]
+            accuracies.append(self.get_chunk_accuracy(self.item_logits, labels))
+            curr_item_idx += chunk_size
+            info("Processed existing chunk containing %d items - item total: %d" % ( chunk_size, curr_item_idx))
+
+        accuracy = np.mean(accuracies)
         return accuracy
+
+    def get_chunk_accuracy(self, logits, labels):
+        predicted_classes = np.argmax(logits, axis=1)
+        correct_classes = np.argmax(labels, axis=1)
+        return  np.mean(np.equal(predicted_classes, correct_classes))
+

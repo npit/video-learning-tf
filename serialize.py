@@ -53,7 +53,7 @@ class serialization_settings:
         print("Initializing from file %s" % self.init_file)
         config = configparser.ConfigParser()
         config.read(self.init_file)
-        if not config[tag_to_read ]:
+        if not config[tag_to_read]:
             error('Expected header [%s] in the configuration file!' % tag_to_read)
         config = config[tag_to_read]
         for key in config:
@@ -64,7 +64,7 @@ class serialization_settings:
         else:
             print("Using explicit run id of [%s]" % self.run_id)
         # configure the logs
-        logfile = "log_" + self.run_id  + ".log"
+        logfile = "log_" + self.run_id + ".log"
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)

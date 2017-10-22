@@ -90,6 +90,8 @@ class Settings:
     logging_level = logging.DEBUG
     tensorboard_folder = "tensorboard_graphs"
 
+    sequence_length = None
+
     # end of user - settable parameters
     ################################
 
@@ -319,7 +321,6 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
     # for description workflows, supply wordvectors and caption lengths
     if defs.workflows.is_description(dataset.workflow):
         # get words per caption, onehot labels, embeddings
-
         embeddings = ground_truth['word_embeddings']
         onehot_labels = ground_truth['onehot_labels']
         caption_lengths = ground_truth['caption_lengths']
@@ -411,6 +412,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         dataset.print_iter_info(len(images), num_labels)
         logits = sess.run(lrcn.logits, feed_dict=fdict)
         lrcn.process_validation_logits(logits, dataset, fdict, padding)
+        lrcn.save_validation_logits_chunk()
     # done, get accuracy
     if defs.workflows.is_description(settings.workflow):
         # get description metric
@@ -424,19 +426,31 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
 
             # get captions from logits, write them in the needed format,
             # pass them to the evaluation function
-            ids_captions = dataset.logits_to_captions(lrcn.item_logits)
-            if len(ids_captions[0]) != len(ids_captions[1]):
-                error("Unequal number of image ids and captions")
-                error("Image ids / captions mismatch")
+            ids_captions = []
+            num_processed_logits = 0
 
-            json_data = [ { "image_id" : ids_captions[0][i] , "caption" : ids_captions[1][i] }
-                          for i in range(len(ids_captions[0]))]
+            for idx in range(lrcn.validation_logits_save_counter):
+                logits_chunk = lrcn.load_validation_logits_chunk(idx)
+                ids_captions_chunk = dataset.validation_logits_to_captions(logits_chunk, num_processed_logits)
+                ids_captions.extend(ids_captions_chunk)
+                num_processed_logits  += len(logits_chunk)
+                info("Processed saved chunk %d/%d containing %d items - item total: %d" %
+                    (idx+1,lrcn.validation_logits_save_counter, len(logits_chunk), num_processed_logits))
+            if len(lrcn.item_logits) > 0:
+                ids_captions_chunk = dataset.validation_logits_to_captions(lrcn.item_logits, num_processed_logits)
+                ids_captions.extend(ids_captions_chunk)
+                info("Processed existing chunk containing %d items - item total: %d" % (len(lrcn.item_logits), len(ids_captions)))
+
+            # check for erroneous duplicates
+            dupl = [obj["image_id"] for obj in ids_captions]
+            if duplicates(dupl):
+                error("Duplicate image ids in coco validation: %s" % str(dupl))
+
             # write results
-
             results_file = dataset.input_source_files[defs.val_idx] + ".coco.results.json"
             info("Writing captioning results to %s" % results_file)
             with open(results_file , "w") as fp:
-                json.dump(json_data, fp)
+                json.dump(ids_captions, fp)
 
             # also, get captions from the read image paths - labels files
             # initialize with it the COCO object
@@ -449,7 +463,6 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
 
     else:
         accuracy = lrcn.get_accuracy()
-
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
         info("Validation run complete, accuracy: %2.5f" % accuracy)
         tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_batch_step())
