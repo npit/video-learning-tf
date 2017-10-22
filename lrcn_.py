@@ -479,7 +479,6 @@ class LRCN:
         # set up placeholders
         self.caption_lengths = tf.placeholder(tf.int32, shape=(None), name="words_per_item")
         self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_labels")
-        self.inputLabels = print_tensor(self.inputLabels, "input labels")
         self.word_embeddings = tf.placeholder(tf.float32, shape=(None, dataset.embedding_matrix.shape[1]),
                                               name="word_embeddings")
         debug("input labels : [%s]" % self.inputLabels)
@@ -553,36 +552,39 @@ class LRCN:
         ignorables = [drop_tensor_name_index(s) for s in ignorables]
         return list(set(ignorables))
 
+    # process description logits
+    def process_description_validation_logits(self, logits, labels, dataset, fdict, padding):
+        caption_lengths = fdict[self.caption_lengths]
+        assert (len(logits) - padding == len(caption_lengths)), "Logits, labels length mismatch (%d, %d)" % (len(logits)-padding, len(caption_lengths))
+        eos_index = dataset.vocabulary.index("EOS")
+        # logits is words
+        for idx in range(len(logits) - padding):
+            image_logits = logits[idx,:]
+            image_logits = image_logits[:dataset.max_caption_length]
+            eos_position_binary_idx = [1 if x == eos_index else 0 for x in image_logits]
+
+            if any(eos_position_binary_idx):
+                # keep up to but not including eos. Get first index, if multiple .
+                first_eos = eos_position_binary_idx.index(1)
+                image_logits = image_logits[0:first_eos]
+            # else, no EOS exists in the predicted caption
+            # append the vector
+            self.item_logits.append(image_logits)
+
+        # get the labels. In validation mode, labels are EOS-free.
+        cumulative_offset = 0
+        for item_idx, cap_len in enumerate(caption_lengths):
+            label_idxs = [ x + cumulative_offset for x in list(range(cap_len))]
+            item_labels = labels[label_idxs,:]
+            self.item_labels.append(item_labels)
+            cumulative_offset = cumulative_offset + cap_len
 
     # validation accuracy computation
     def process_validation_logits(self, logits, dataset, fdict, padding):
         labels = fdict[self.inputLabels]
         # processing for image description
         if defs.workflows.is_description(self.workflow):
-            caption_lengths = fdict[self.caption_lengths]
-            assert (len(logits) - padding == len(caption_lengths)), "Logits, labels length mismatch (%d, %d)" % (len(logits)-padding, len(caption_lengths))
-            eos_index = dataset.vocabulary.index("EOS")
-            # logits is words
-            for idx in range(len(logits) - padding):
-                image_logits = logits[idx,:]
-                image_logits = image_logits[:dataset.max_caption_length]
-                eos_position_binary_idx = [1 if x == eos_index else 0 for x in image_logits]
-
-                if any(eos_position_binary_idx):
-                    # keep up to but not including eos. Get first index, if multiple .
-                    first_eos = eos_position_binary_idx.index(1)
-                    image_logits = image_logits[0:first_eos]
-                # else, no EOS exists in the predicted caption
-                # append the vector
-                self.item_logits.append(image_logits)
-
-            # get the labels. In validation mode, labels are EOS-free.
-            cumulative_offset = 0
-            for item_idx, cap_len in enumerate(caption_lengths):
-                label_idxs = [ x + cumulative_offset for x in list(range(cap_len))]
-                item_labels = labels[label_idxs,:]
-                self.item_labels.append(item_labels)
-                cumulative_offset = cumulative_offset + cap_len
+            self.process_description_validation_logits(logits, labels, dataset, fdict, padding)
             return
 
         # batch item contains logits that correspond to whole clips. Accumulate to clip storage, and check for aggregation.

@@ -321,15 +321,11 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
     # for description workflows, supply wordvectors and caption lengths
     if defs.workflows.is_description(dataset.workflow):
         # get words per caption, onehot labels, embeddings
-        embeddings = ground_truth['word_embeddings']
-        onehot_labels = ground_truth['onehot_labels']
-        caption_lengths = ground_truth['caption_lengths']
-        fdict[lrcn.inputLabels] = onehot_labels
-        fdict[lrcn.caption_lengths] = caption_lengths
-        fdict[lrcn.word_embeddings] = embeddings
+        fdict[lrcn.inputLabels] = ground_truth["onehot_labels"]
+        fdict[lrcn.caption_lengths] = ground_truth['caption_lengths']
+        fdict[lrcn.word_embeddings] = ground_truth['word_embeddings']
         fdict[lrcn.non_padding_word_idxs] = ground_truth['non_padding_index']
-        num_labels = len(onehot_labels)
-
+        num_labels = len(ground_truth["onehot_labels"])
     else:
         fdict[lrcn.inputLabels] = ground_truth
         num_labels = len(ground_truth)
@@ -348,7 +344,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             # read  batch
             images, ground_truth = dataset.get_next_batch()
             fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
-            dataset.print_iter_info( len(images) , num_labels)
+            dataset.print_iter_info( len(images), padding, num_labels)
             # count batch iterations
             run_batch_count = run_batch_count + 1
             summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
@@ -409,10 +405,11 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         # get images and labels
         images, ground_truth = dataset.get_next_batch()
         fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
-        dataset.print_iter_info(len(images), num_labels)
+        dataset.print_iter_info(len(images), padding, num_labels)
         logits = sess.run(lrcn.logits, feed_dict=fdict)
         lrcn.process_validation_logits(logits, dataset, fdict, padding)
         lrcn.save_validation_logits_chunk()
+
     # done, get accuracy
     if defs.workflows.is_description(settings.workflow):
         # get description metric

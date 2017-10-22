@@ -268,7 +268,7 @@ class Dataset:
             if self.do_validation:
                 # pad incomplete batch with zeros in both images and captions
                 num_pad = self.batch_size_val - len(images)
-                images.extend( [ np.zeros([1, images[0].shape[1]],images[0].dtype) for _ in range(num_pad)] )
+                images.extend( [ np.zeros(images[0].shape, images[0].dtype) for _ in range(num_pad)] )
                 labels.extend( [[-1] for _ in range(num_pad)])
             ground_truth = self.labels_to_words(labels)
         else:
@@ -330,55 +330,61 @@ class Dataset:
             debug("image id: %s caption:%s" % (str(image_ids[i]),str(captions[i])))
         return return_data
 
+    def apply_caption_padding(self, word_vectors, curr_caption_length, batch_index):
+        # for training, pad to the max number of words with zero vectors. Also keep track of non-pad entries
+        num_left_to_max = self.max_sequence_length - curr_caption_length
+        local_indexes, offset = list(range(curr_caption_length)), batch_index * (self.max_sequence_length)
+        no_pad_index = [offset + elem for elem in  local_indexes]
+        if num_left_to_max > 0:
+            word_vectors= np.vstack((word_vectors, np.zeros([num_left_to_max, word_vectors.shape[-1]], np.float32)))
+        return no_pad_index, word_vectors
+
     # get word embedding vectors from vocabulary encoded indices
-    def labels_to_words(self, batch_labels):
+    def labels_to_words(self, raw_batch_labels):
         # initialize to empties
         batch_word_vectors = np.zeros([0, self.embedding_matrix.shape[1]], np.float32)
-        batch_onehot_labels = np.zeros([0, self.num_classes], np.int32)
+        batch_labels = np.zeros([0, self.num_classes], np.int32)
         batch_no_pad_index = []
-        embedding_dim = self.embedding_matrix.shape[1]
+
         # get special tokens indices
         bos_index = self.vocabulary.index("BOS")
         eos_index = self.vocabulary.index("EOS")
-
-        for batch_index, item_labels in enumerate(batch_labels):
+        # for each label set
+        for batch_index, item_labels in enumerate(raw_batch_labels):
             # debug print the labels
             input_labels = [bos_index] + item_labels
             output_labels = item_labels + [eos_index]
-            debug("Item io labels:  %s , %s" % (str(input_labels), str(output_labels)))
-            # get caption word embedding vector
-            # set the BOS as the first input token
-            image_word_vectors = self.embedding_matrix[bos_index, :]
+            debug("Item io labels:  %s, %s" % (str(input_labels), str(output_labels)))
 
+            # get caption word embedding vectors - set BOS as first input token
+            word_vectors = self.embedding_matrix[bos_index, :]
             # if training, put the caption word vectors after the BOS in the input, else leave just BOS
             if self.do_training:
-                image_word_vectors = np.vstack((image_word_vectors, self.embedding_matrix[item_labels, :]))
+                word_vectors = np.vstack((word_vectors, self.embedding_matrix[item_labels, :]))
+
             # get labels needed for training loss / validation accuracy
-            image_onehot_labels = np.vstack((labels_to_one_hot(item_labels, self.num_classes)))
-            # append output labels with EOS, if in training mode
+            # there is no need to onehot-encode in the validation case, but it's done to get uniform-length labels
+            labels = np.asarray(labels_to_one_hot(item_labels, self.num_classes))
             if self.do_training:
-                image_onehot_labels = np.vstack((image_onehot_labels, labels_to_one_hot([eos_index], self.num_classes)))
+                # in training mode, append with EOS
+                eos_onehot = labels_to_one_hot(eos_index, self.num_classes)
+                labels = np.vstack((labels, eos_onehot))
 
-            # if the number of items is less than the batch size, pad with zeros
-            # pad to the max number of words with zero vectors. Also keep track of non-pad entries
-            num_input_labels = len(input_labels)
-            num_left_to_max = self.max_sequence_length - num_input_labels
-            local_indexes, offset = list(range(num_input_labels)), batch_index * (self.max_sequence_length)
-            batch_no_pad_index.extend([offset + elem for elem in  local_indexes])
-            if num_left_to_max > 0:
-                image_word_vectors = np.vstack((image_word_vectors, np.zeros([num_left_to_max, embedding_dim], np.float32)))
+            # pad the input caption to the maximum caption length.
+            if self.do_training:
+                no_pad_index, word_vectors = self.apply_caption_padding(word_vectors, len(input_labels), batch_index)
+                batch_no_pad_index.extend(no_pad_index)
 
-            # append labels and word vectors to batch containers
-            batch_onehot_labels = np.vstack((batch_onehot_labels, image_onehot_labels))
-            batch_word_vectors = np.vstack((batch_word_vectors, image_word_vectors))
-
+            # append labels and word vectors to their batch containers
+            batch_labels = np.vstack((batch_labels, labels))
+            batch_word_vectors = np.vstack((batch_word_vectors, word_vectors))
 
         # word vectors batch always contains max_caption_len x batch-size elements, due to padding.
         # batch labels contain the exact labels for each word for each image caption. I.e., no padding there.
         ground_truth = {}
         ground_truth['word_embeddings'] = batch_word_vectors
-        ground_truth['onehot_labels'] = batch_onehot_labels
-        ground_truth['caption_lengths'] = list(map(len, batch_labels))
+        ground_truth['onehot_labels'] = batch_labels
+        ground_truth['caption_lengths'] = list(map(len, raw_batch_labels))
         ground_truth['non_padding_index'] = batch_no_pad_index
         debug("Non-padding index in batch: %s" % str(batch_no_pad_index))
         return ground_truth
@@ -810,17 +816,19 @@ class Dataset:
         return self.epoch_index * len(self.batches) + self.batch_index
 
     # print iteration information
-    def print_iter_info(self, num_images, num_labels):
+    def print_iter_info(self, num_images, num_pad, num_labels):
+
+        padinfo = "(%d padding)" % num_pad if num_pad > 0 else ""
         if self.phase == defs.phase.train:
-            info("Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images, %3d labels" %
-                         (self.phase, self.epoch_index + 1,
-                          self.epochs, self.batch_index, len(self.batches),
-                          num_images, num_labels))
+            msg = "Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images%s, %3d labels" % (self.phase,
+                            self.epoch_index + 1, self.epochs, self.batch_index, len(self.batches),
+                          num_images, padinfo, num_labels)
+            info(msg)
         # same as train, but no epoch
         elif self.phase == defs.phase.val:
-            info("Mode: [%s], batch %4d / %4d : %3d images, %3d labels" %
-                         (self.phase, self.batch_index, len(self.batches),
-                          num_images, num_labels))
+            msg = "Mode: [%s], batch %4d / %4d : %3d images%s, %3d labels" % (self.phase, self.batch_index,
+                         len(self.batches), num_images, padinfo, num_labels)
+            info(msg)
 
     # specify valid loop iteration
     def loop(self):

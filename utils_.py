@@ -96,6 +96,8 @@ def debug(message):
 
 # onehot vector generation
 def labels_to_one_hot(labels,num_classes):
+    if not type(labels) == list:
+        labels= [labels]
     onehots = np.zeros(shape=(len(labels),num_classes),dtype=np.int32)
     for l in range(len(labels)):
         onehots[l][labels[l]] = 1
