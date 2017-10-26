@@ -46,9 +46,10 @@ class defs:
                     defs.workflows.videodesc.is_workflow(arg)
         def is_video(arg):
             return defs.workflows.acrec.singleframe == arg or \
-                   defs.workflows.acrec.lstm== arg or \
+                   defs.workflows.acrec.lstm == arg or \
                    defs.workflows.videodesc.encdec == arg or \
-                   defs.workflows.videodesc.pooled == arg
+                   defs.workflows.videodesc.pooled == arg or \
+                   defs.workflows.acrec.audio == arg
         def is_image(arg):
             return defs.workflows.imgdesc.statebias == arg or \
                    defs.workflows.imgdesc.inputstep == arg or \

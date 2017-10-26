@@ -485,6 +485,9 @@ class Dataset:
 
     # apply image post-process
     def process_image(self, image):
+        # resize to desired raw dimensions
+        if image.shape != self.raw_image_shape:
+            image = imresize(image, self.raw_image_shape)
         # take cropping
         if self.do_random_cropping:
             image = self.random_crop(image)
@@ -560,7 +563,7 @@ class Dataset:
         # set save interval
         if (sett.save_freq_per_epoch is not None) and (sett.do_training):
             self.save_interval = math.ceil(len(self.batches_train) / sett.save_freq_per_epoch)
-            info("Computed batch save interval (from %f per %d-batched epoch) to %d batches" %
+            info("Computed batch save interval (from %2.4f per %d-batched epoch) to %d batches" %
                              (sett.save_freq_per_epoch, len(self.batches_train), self.save_interval))
         self.tell()
 

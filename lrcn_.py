@@ -66,6 +66,7 @@ class LRCN:
         self.timestamp = settings.timestamp
         self.run_id = settings.run_id
         self.run_folder = settings.run_folder
+        self.save_validation_logits = settings.save_validation_logits
         self.validation_logits_save_interval = settings.validation_logits_save_interval
 
         # create the workflows
@@ -639,7 +640,7 @@ class LRCN:
 
     def save_validation_logits_chunk(self, save_all = False):
 
-        if self.validation_logits_save_interval is None:
+        if self.validation_logits_save_interval is None or not self.save_validation_logits:
             return
         if len(self.item_logits) == 0:
             return
