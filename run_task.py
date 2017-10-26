@@ -1,8 +1,9 @@
 
 # generic IO
 import pickle
+from shutil import copyfile
 import sys
-import tensorflow as tf 
+import tensorflow as tf
 
 # project modules
 import lrcn_
@@ -44,6 +45,7 @@ class Settings:
 
     # save / load configuration
     resume_file = None
+    data_path = None
     run_folder = None
     path_prepend_folder = None
 
@@ -77,7 +79,7 @@ class Settings:
     dropout_keep_prob = 0.5
 
     # validation settings
-    do_validation = True
+    do_validation = False
     validation_interval = 1
     batch_size_val = 88
     batch_item = defs.batch_item.default
@@ -101,7 +103,7 @@ class Settings:
     # initialization
 
     # input data files
-    input = [[], []]
+    input_files = [[], []]
 
     # training settings
     epoch_index = 0
@@ -117,13 +119,21 @@ class Settings:
     def should_resume(self):
         return self.resume_file is not None and self.resume_file
 
-
-
     # set the input files
     def set_input_files(self):
-        basefilename = "data"
-        self.input[defs.train_idx] = os.path.join(self.run_folder, basefilename + ".train")
-        self.input[defs.val_idx] = os.path.join(self.run_folder, basefilename + ".test")
+        # for directory run path, use default file names: data.<train|test>                                                                                                              
+        if os.path.isdir(self.data_path):
+            basefilename = "data"
+            self.input_files[defs.train_idx] = os.path.join(self.data_folder, basefilename + ".train")
+            self.input_files[defs.val_idx] = os.path.join(self.data_folder, basefilename + ".test")
+            # set the run path to the point to the file
+            self.data_path = self.input_files[defs.train_idx] if self.do_training else self.input_files[defs.val_idx]
+        else:
+            # run path is already the file path
+            if self.do_training:
+                self.input_files[defs.train_idx] = self.data_path
+            else:
+                self.input_files[defs.val_idx] =  self.data_path
 
     # file initialization
     def initialize_from_file(self):
@@ -158,7 +168,6 @@ class Settings:
             trainval_str = trainval_str + "_scratch"
 
         # if run id specified, use it
-        run_identifiers= []
         if self.run_id:
             run_identifiers = [self.workflow ,self.run_id , trainval_str]
         else:
@@ -171,6 +180,12 @@ class Settings:
 
         self.run_id = "_".join(run_identifiers)
 
+        # fix potential inconsistencies
+        if self.do_validation and self.do_random_cropping:
+            warning("Disabling enabled random cropping in validation.")
+        if self.do_validation and self.do_random_mirroring:
+            warning("Disabling enabled random mirroring in validation.")
+
         print("Initialized run [%s] from file %s" % ( self.run_id, self.init_file))
         sys.stdout.flush()
 
@@ -180,12 +195,18 @@ class Settings:
             self.init_file = args[-1]
 
         self.initialize_from_file()
+        if not os.path.exists(self.data_path):
+            error("Non existent data file/folder %s" % self.data_path)
         if not os.path.exists(self.run_folder):
-            error("Non existent run folder %s" % self.run_folder)
-        if not self.do_validation and not self.do_training:
-            error("Neither training nor validation is enabled.")
+            warning("Non existent run folder %s - creating." % self.run_folder)
+            os.mkdir(self.run_folder)
+        # if config file is not in the run folder, copy it there to preserve a settings log
+        if not (os.path.basename(self.init_file) == self.run_folder):
+            copyfile(self.init_file,  os.path.join(self.run_folder, os.path.basename( self.init_file)))
+
         # configure the logs
-        logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + get_datetime_str() + ".log")
+        self.timestamp = get_datetime_str()
+        logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + self.timestamp + ".log")
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
@@ -199,25 +220,26 @@ class Settings:
                 info("Resuming training.")
                 # resume training metadata only in training
                 self.resume_metadata()
+            if self.do_validation:
+                info("Evaluating trained network.")
         else:
             if self.do_training:
                 info("Starting training from scratch.")
-            if not self.do_training and self.do_validation:
-                warning("Starting validation-only run with an untrained network.")
+            else:
+                if self.do_validation:
+                    warning("Starting validation-only run with an untrained network.")
+                else:
+                    error("Neither training nor validation is enabled.")
+        info("Run folder is [%s]" % self.run_folder)
         self.set_input_files()
-        if not self.good():
-            error("Wacky configuration, exiting.")
 
-    # check if settings are ok
-    def good(self):
-        if not self.epochs: error("Non positive number of epochs.")
-        return True
 
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
             savefile_metapars = os.path.join(self.run_folder,"checkpoints", self.resume_file + ".snap")
-
+            if not os.path.exists(savefile_metapars):
+                error("Graph savefile does not exist: %s" %  savefile_metapars)
             info("Resuming metadata from file:" + savefile_metapars)
 
             try:
@@ -240,9 +262,10 @@ class Settings:
             if self.saver is None:
                 self.saver = tf.train.Saver()
 
-
             savefile_graph = os.path.join(self.run_folder,"checkpoints", self.resume_file)
             info("Resuming tf graph from file:" + savefile_graph)
+            if not (os.path.exists(savefile_graph + ".meta") or os.path.exists(savefile_graph + ".index")):
+                error("Missing meta or index part from graph savefile: %s" % savefile_graph)
 
             try:
                 # if we are in validation mode, the 'global_step' training variable is discardable
@@ -255,19 +278,17 @@ class Settings:
                 names_missing_from_chkpt = [n for n in curr_names if n not in chkpt_names and n not in ignorable_variable_names]
                 names_missing_from_curr = [n for n in chkpt_names if n not in curr_names and n not in ignorable_variable_names]
 
-
-
                 if names_missing_from_chkpt:
                     missing_unignorable = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
                     warning("Unignorable variables missing from checkpoint:[%s]" % missing_unignorable)
                     # Better warn the user and await input
-                    ans = input("Continue? (y/n)")
+                    ans = input_files("Continue? (y/n)")
                     if ans != "y":
                         error("Failed to load checkpoint")
                 if names_missing_from_curr:
                     warning("There are checkpoint variables missing in the project:[%s]" % names_missing_from_curr)
                     # Better warn the user and await input
-                    ans = input("Continue? (y/n)")
+                    ans = input_files("Continue? (y/n)")
                     if ans != "y":
                         error("Failed to load checkpoint")
                 # load saved graph file
@@ -399,7 +420,6 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     # reset validation phase indexes
     dataset.reset_phase(dataset.phase)
 
-
     # validation
     while dataset.loop():
         # get images and labels
@@ -409,6 +429,8 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         logits = sess.run(lrcn.logits, feed_dict=fdict)
         lrcn.process_validation_logits(logits, dataset, fdict, padding)
         lrcn.save_validation_logits_chunk()
+    # save the complete output logits
+    lrcn.save_validation_logits_chunk(save_all = True)
 
     # done, get accuracy
     if defs.workflows.is_description(settings.workflow):
@@ -434,6 +456,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
                 info("Processed saved chunk %d/%d containing %d items - item total: %d" %
                     (idx+1,lrcn.validation_logits_save_counter, len(logits_chunk), num_processed_logits))
             if len(lrcn.item_logits) > 0:
+                error("Should never get item logits last chunk in runtask!!")
                 ids_captions_chunk = dataset.validation_logits_to_captions(lrcn.item_logits, num_processed_logits)
                 ids_captions.extend(ids_captions_chunk)
                 info("Processed existing chunk containing %d items - item total: %d" % (len(lrcn.item_logits), len(ids_captions)))

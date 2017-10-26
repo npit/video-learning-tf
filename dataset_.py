@@ -519,7 +519,8 @@ class Dataset:
         self.num_classes = sett.num_classes
         self.do_random_cropping = sett.do_random_cropping
         self.image_shape = sett.image_shape
-        info("Initializing run on folder [%s]" % self.run_folder)
+
+        info("Initializing dataset at [%s]" % sett.data_path)
 
         self.batch_size_train = sett.batch_size_train
         self.batch_size_val = sett.batch_size_val
@@ -602,12 +603,12 @@ class Dataset:
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):
-        info("Initializing %s data on input mode %s." % (self.data_format, self.input_mode))
+        info("Reading [%s] data on input mode [%s]." % (self.data_format, self.input_mode))
         if self.data_format == defs.data_format.tfrecord:
 
             # initialize tfrecord, check file consistency
             if self.do_training:
-                self.input_source_files[defs.train_idx] = sett.input[defs.train_idx]
+                self.input_source_files[defs.train_idx] = sett.input_files[defs.train_idx]
                 if not os.path.exists(self.input_source_files[defs.train_idx]):
                     error("Input paths file does not exist: %s" % self.input_source_files[defs.train_idx])
                 # read frames and classes
@@ -637,7 +638,7 @@ class Dataset:
                     self.batches_train.append(items_left)
 
             if self.do_validation:
-                self.input_source_files[defs.val_idx] = sett.input[defs.val_idx] + ".tfrecord"
+                self.input_source_files[defs.val_idx] = sett.input_files[defs.val_idx] + ".tfrecord"
                 if not os.path.exists(self.input_source_files[defs.val_idx]):
                     error("Input file does not exist: %s" % self.input_source_files[defs.val_idx])
                 self.reset_iterator(defs.phase.val)

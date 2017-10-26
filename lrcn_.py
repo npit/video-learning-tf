@@ -63,6 +63,7 @@ class LRCN:
 
         # define network input
         self.workflow = settings.workflow
+        self.timestamp = settings.timestamp
         self.run_id = settings.run_id
         self.run_folder = settings.run_folder
         self.validation_logits_save_interval = settings.validation_logits_save_interval
@@ -636,13 +637,22 @@ class LRCN:
                 # frames, simply append
                 self.add_item_logits_labels(logits,labels)
 
-    def save_validation_logits_chunk(self):
+    def save_validation_logits_chunk(self, save_all = False):
+
         if self.validation_logits_save_interval is None:
             return
-        if len(self.item_logits) >= self.validation_logits_save_interval:
-            # save them
-            save_file = os.path.join(self.run_folder,"validation_logits_%s.part_%d" %
-                                     ( self.run_id, self.validation_logits_save_counter))
+        if len(self.item_logits) == 0:
+            return
+        # if last step and no interm. saving, save all extracted logits at once
+        if save_all and  self.validation_logits_save_interval <= 0:
+            # all extracted logits are in the container
+            save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.total" % (self.run_id, self.timestamp))
+            info("Saving all %d extracted validation logits to %s" % (len(self.item_logits), save_file))
+            return
+        # else save intermmediate step if large enough, or remaining last one however large
+        if len(self.item_logits) >= self.validation_logits_save_interval or save_all:
+            save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.part_%d" %
+                                     ( self.run_id, self.timestamp, self.validation_logits_save_counter))
             info("Saving a %d-sized chunk of validation logits to %s" % (len(self.item_logits), save_file))
             with open(save_file, "wb") as f:
                 pickle.dump(self.item_logits, f)
@@ -661,7 +671,7 @@ class LRCN:
     def load_validation_logits_chunk(self, chunk_idx):
         if self.validation_logits_save_interval is None:
             return self.item_logits
-        save_file = os.path.join(self.run_folder,"validation_logits_%s.part_%d" % ( self.run_id, chunk_idx))
+        save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.part_%d" % ( self.run_id, self.timestamp, chunk_idx))
         with open(save_file, "rb") as f:
             logits_chunk = pickle.load(f)
         return logits_chunk

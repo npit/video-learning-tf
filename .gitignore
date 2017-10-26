@@ -2,6 +2,8 @@
 
 config.ini.*
 !config.ini.example
+# validation logits
+validation_logits_*
 # also ignore all:
 .idea
 *.tfrecord
@@ -24,5 +26,7 @@ tensorboard_graphs
 start.sh
 examples/test_run/checkpoints/
 examples/test_run/data*
-
 test/
+# vim
+*.swp
+tags
