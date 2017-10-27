@@ -212,7 +212,6 @@ class Settings:
         self.logger.configure_logging(logfile, self.logging_level)
 
         sys.stdout.flush(), sys.stderr.flush()
-        info("Starting [%s] workflow." % self.workflow)
         # if not resuming, set start folder according to now()
         if  self.should_resume():
             if self.do_training:
@@ -230,7 +229,7 @@ class Settings:
                     warning("Starting validation-only run with an untrained network.")
                 else:
                     error("Neither training nor validation is enabled.")
-        info("Run folder is [%s]" % self.run_folder)
+        info("Starting [%s] workflow on folder [%s]." % (self.workflow, self.run_folder))
         self.set_input_files()
 
 
