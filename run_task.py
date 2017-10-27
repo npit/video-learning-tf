@@ -124,8 +124,8 @@ class Settings:
         # for directory run path, use default file names: data.<train|test>                                                                                                              
         if os.path.isdir(self.data_path):
             basefilename = "data"
-            self.input_files[defs.train_idx] = os.path.join(self.data_folder, basefilename + ".train")
-            self.input_files[defs.val_idx] = os.path.join(self.data_folder, basefilename + ".test")
+            self.input_files[defs.train_idx] = os.path.join(self.data_path, basefilename + ".train")
+            self.input_files[defs.val_idx] = os.path.join(self.data_path, basefilename + ".test")
             # set the run path to the point to the file
             self.data_path = self.input_files[defs.train_idx] if self.do_training else self.input_files[defs.val_idx]
         else:
