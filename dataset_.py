@@ -486,7 +486,7 @@ class Dataset:
     # apply image post-process
     def process_image(self, image):
         # resize to desired raw dimensions
-        if image.shape != self.raw_image_shape:
+        if self.raw_image_shape is not None and image.shape != self.raw_image_shape:
             image = imresize(image, self.raw_image_shape)
         # take cropping
         if self.do_random_cropping:

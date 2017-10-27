@@ -130,6 +130,13 @@ def sublist(llist, sublist_length, only_num = False):
 def print_tensor(tensor, message):
     if not CustomLogger.get_logging_level() == logging.DEBUG:
         return tensor
+    if tensor is None:
+        debug("[null tensor] " + message)
+        return tensor
+    if not type(tensor) == tf.Tensor:
+        debug("Non-tensor type: [%s], value:[%s] | %s" % (type(tensor), str(tensor), message))
+        return tensor
+
     tensor_cols = 20
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
     return tens

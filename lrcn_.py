@@ -160,12 +160,10 @@ class LRCN:
         info(log_message)
         return lr_per_batch
 
-
     # training ops
     def create_training(self, settings, dataset, summaries):
 
         self.logits = print_tensor(self.logits, "training: logits : ")
-
         # configure loss
         with tf.name_scope("cross_entropy_loss"):
             loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
@@ -293,7 +291,13 @@ class LRCN:
             return
 
         # pool the logits on the temporal dimension
-        self.logits = apply_temporal_pooling(self.logits, dataset.num_classes, dataset.num_frames_per_clip, settings.frame_pooling_type)
+        if settings.frame_pooling_type == defs.pooling.lstm:
+            encoder = lstm.lstm()
+        else:
+            encoder = None
+
+        self.logits = apply_temporal_pooling(self.logits, dataset.num_classes, dataset.num_frames_per_clip,
+                                             settings.frame_pooling_type, lstm_encoder=encoder)
 
         info("logits out : [%s]" % self.logits.shape)
 
@@ -314,9 +318,9 @@ class LRCN:
             # LSTM for frame sequence classification for frame encoding
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
-            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, input_dim, settings.lstm_num_layers,
+            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.lstm_num_layers,
                                         settings.lstm_num_hidden, dataset.num_classes, dataset.num_frames_per_clip,
-                                                             settings.frame_pooling_type, settings.dropout_keep_prob)
+                                                           None,  settings.frame_pooling_type, settings.dropout_keep_prob)
             # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
             # self.logits = self.lstm_model.get_output()
             info("logits : [%s]" % self.logits.shape)
@@ -331,7 +335,7 @@ class LRCN:
         with tf.name_scope("audionet_workflow"):
             info("Audionet workflow")
             # single DCNN, classifying individual frames
-            self.dcnn_model = audionet()
+            self.dcnn_model = audionet.audionet()
             self.dcnn_model.create(dataset.image_shape, dataset.num_classes)
             self.inputData, self.logits = self.dcnn_model.get_io()
         # reshape to num_items x num_frames_per_item x dimension
