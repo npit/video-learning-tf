@@ -52,7 +52,9 @@ def deserialize_from_tfrecord(iterator, images_per_iteration):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Give an input file")
+        print("Give an input .tfrecord file")
+        exit(1)
+
     filename = sys.argv[-1]
     print("Examining contents of %s" % filename)
     sizefile = filename + ".size"

@@ -13,6 +13,7 @@ from pyAudioAnalysis import audioBasicIO
 from pyAudioAnalysis import audioFeatureExtraction as aF
 import librosa
 import matplotlib.pyplot as plt
+import logging
 
 audio_extensions = ["wav", "mp3"]
 
@@ -28,16 +29,16 @@ def parseArguments():
         parser.error("argument -i/--input--folder must be directory")
     return args
 
-def produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix):
+def produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix, logger):
 
 
-    file_paths = []
+    generated_shapes = {}
     file_paths = [ os.path.join(input_folder,f) for f in os.listdir(input_folder)]
     file_paths = [f for f in file_paths if f.split(".")[-1].lower() in audio_extensions]
 
 
     if not file_paths:
-        print "No suitable files in the folder."
+        logger.info("No suitable files in the folder.")
         return
     t = tqdm.trange(len(file_paths))
     totalFrames = 0
@@ -73,7 +74,12 @@ def produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix)
             #specgram = ((specgram + 1) * 22)/255     
             #specgram = specgram.T                                
 
-            im1 = Image.fromarray(numpy.uint8(matplotlib.cm.jet(specgram)*255))
+            ndarr = numpy.uint8(matplotlib.cm.jet(specgram)*255)
+            if not ndarr.shape in generated_shapes:
+                generated_shapes[ndarr.shape] = 0
+            generated_shapes[ndarr.shape] += 1
+
+            im1 = Image.fromarray(ndarr)
             #outfile = file_name.replace(input_folder, spectrRootFolder + os.sep) + "_segment{0:d}.png".format(countFrames)
             outfile = os.path.join(outfolder,"_segment%d.png" % countFrames)
 
@@ -88,13 +94,43 @@ def produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix)
         print "\nFailed to produce spects for %d/%d files:" % (len(errorLog), len(t))
     for msg in errorLog:
 
-        print msg
+        logger.error(msg)
 
         #except Exception as e:
         #    print e
-    print("Produced a total of %d frames from %d source videos."%(totalFrames,len(t)))
+    logger.info("Produced a total of %d frames from %d source videos."%(totalFrames,len(t)))
+    logger.info("Image shapes produced:")
+    for shp in generated_shapes:
+        print(shp, generated_shapes[shp])
+
+
+
+# configure logging settings
+def configure_logging( logfile, logging_level):
+    print("Initializing logging to logfile: %s" % logfile)
+
+    logging_level = logging_level
+    logger = logging.getLogger('default')
+    logger.setLevel(logging_level)
+
+    formatter = logging.Formatter('%(asctime)s| %(levelname)7s - %(filename)15s - line %(lineno)4d - %(message)s')
+
+    # file handler
+    handler = logging.FileHandler(logfile)
+    handler.setLevel(logging_level)
+    handler.setFormatter(formatter)
+    # console handler
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(formatter)
+
+    # add the handlers to the logger
+    logger.addHandler(handler)
+    logger.addHandler(consoleHandler)
+    return logger
+
 
 if __name__ == '__main__':
+
     args = parseArguments()
     print args
     time_slice = args.time_slice[0]
@@ -104,20 +140,25 @@ if __name__ == '__main__':
     output_folder = output_folder[:-1] if output_folder[-1] == os.sep else output_folder
     output_folder += "_ts_%s" % str(time_slice) 
     walk_folders = args.walk_folders
+
+
+    logfile = "log_spectrograms_" ".log"
+    logger = configure_logging(logfile,logging.INFO)
+
     if not walk_folders:
-        print "Extracting from a single folder."
+        logger.info("Extracting from a single folder.")
         fold_prefix = os.path.basename(input_folder)
-        print "Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice)
+        logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice))
         produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix)
     else:
-        print "Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice)
+        logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice)
         folders = [ fold for fold in os.listdir(input_folder) if os.path.isdir(os.path.join(input_folder,fold)) ]
-        print "Walking ", len(folders) ," folders in", input_folder
+        logger.info("Walking ", len(folders) ," folders in", input_folder)
         for i,fold in enumerate(folders):
             curr_input_folder = os.path.join(input_folder, fold)
             fold_prefix = os.path.basename(fold)
-            print "Folder %d/%d" % (i+1,len(folders)),curr_input_folder,"fold.prefix",fold_prefix
-            produceSpectoGrams_Aug(curr_input_folder, output_folder, time_slice, fold_prefix)
+            logger.info( "Folder %d/%d" % (i+1,len(folders)),curr_input_folder,"fold.prefix",fold_prefix)
+            produceSpectoGrams_Aug(curr_input_folder, output_folder, time_slice, fold_prefix, logger)
 
 
 

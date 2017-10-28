@@ -557,6 +557,8 @@ class Dataset:
             self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
 
         if self.do_random_cropping:
+            if self.raw_image_shape is None:
+                error("Cropping without a fixed raw image shape is not supported.")
             self.crop_h_avail = [i for i in range(0, self.raw_image_shape[0] - self.image_shape[0] - 1)]
             self.crop_w_avail = [i for i in range(0, self.raw_image_shape[1] - self.image_shape[1] - 1)]
 
