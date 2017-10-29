@@ -9,7 +9,7 @@ def print_projections(decayrange, total_batches, baselr, decay):
     for n, num_values in enumerate(decayrange):
         interval = round(total_batches / num_values)
         last_lr = baselr * pow(decay, num_values)
-        print("Num. lr values=%5d: lr=%2.6f decay interval=%5d" % (num_values, last_lr, interval))
+        print("Num. lr values=%5d: last-lr=%2.6f decay interval=%5d" % (num_values, last_lr, interval))
 
 if __name__ == '__main__':
     if len(sys.argv) < 5:

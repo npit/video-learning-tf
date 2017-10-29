@@ -204,12 +204,20 @@ class Settings:
         if not (os.path.basename(self.init_file) == self.run_folder):
             copyfile(self.init_file,  os.path.join(self.run_folder, os.path.basename( self.init_file)))
 
+        # train-val mode has become unsupported
+        if self.do_training and self.do_validation:
+            error("Cannot specify simultaneous training and validation run, for now.")
+
         # configure the logs
         self.timestamp = get_datetime_str()
         logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + self.timestamp + ".log")
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
+
+        # set the tensorboard mode-dependent folder
+        mode_folder = defs.phase.train if self.do_training else defs.phase.val
+        self.tensorboard_folder = os.path.join(self.run_folder, self.tensorboard_folder, mode_folder)
 
         sys.stdout.flush(), sys.stderr.flush()
         # if not resuming, set start folder according to now()
@@ -281,13 +289,13 @@ class Settings:
                     missing_unignorable = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
                     warning("Unignorable variables missing from checkpoint:[%s]" % missing_unignorable)
                     # Better warn the user and await input
-                    ans = input_files("Continue? (y/n)")
+                    ans = input("Continue? (y/n)")
                     if ans != "y":
                         error("Failed to load checkpoint")
                 if names_missing_from_curr:
                     warning("There are checkpoint variables missing in the project:[%s]" % names_missing_from_curr)
                     # Better warn the user and await input
-                    ans = input_files("Continue? (y/n)")
+                    ans = input("Continue? (y/n)")
                     if ans != "y":
                         error("Failed to load checkpoint")
                 # load saved graph file
@@ -330,7 +338,6 @@ class Settings:
                 pickle.dump(params2save,f)
         except Exception as ex:
             error(ex)
-
 
 def get_feed_dict(lrcn, dataset, images, ground_truth):
     fdict = {}
