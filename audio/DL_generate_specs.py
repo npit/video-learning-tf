@@ -36,7 +36,6 @@ def produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix,
     file_paths = [ os.path.join(input_folder,f) for f in os.listdir(input_folder)]
     file_paths = [f for f in file_paths if f.split(".")[-1].lower() in audio_extensions]
 
-
     if not file_paths:
         logger.info("No suitable files in the folder.")
         return
@@ -108,24 +107,28 @@ def produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix,
 # configure logging settings
 def configure_logging( logfile, logging_level):
     print("Initializing logging to logfile: %s" % logfile)
+    # clear existing logging config from pyaudioanalysis
+    root = logging.getLogger()
+    map(root.removeHandler, root.handlers[:])
+    map(root.removeFilter, root.filters[:])
 
     logging_level = logging_level
-    logger = logging.getLogger('default')
+    logger = logging.getLogger('audio-logger')
     logger.setLevel(logging_level)
 
     formatter = logging.Formatter('%(asctime)s| %(levelname)7s - %(filename)15s - line %(lineno)4d - %(message)s')
 
     # file handler
-    handler = logging.FileHandler(logfile)
-    handler.setLevel(logging_level)
-    handler.setFormatter(formatter)
-    # console handler
-    consoleHandler = logging.StreamHandler()
-    consoleHandler.setFormatter(formatter)
-
-    # add the handlers to the logger
-    logger.addHandler(handler)
-    logger.addHandler(consoleHandler)
+    if not logger.handlers:
+        handler = logging.FileHandler(logfile)
+        handler.setLevel(logging_level)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        # console handler
+        consoleHandler = logging.StreamHandler()
+        consoleHandler.setLevel(logging_level)
+        consoleHandler.setFormatter(formatter)
+        logger.addHandler(consoleHandler)
     return logger
 
 
@@ -138,11 +141,10 @@ if __name__ == '__main__':
     output_folder = args.output_folder[0]
     # append with the time slice value
     output_folder = output_folder[:-1] if output_folder[-1] == os.sep else output_folder
-    output_folder += "_ts_%s" % str(time_slice) 
     walk_folders = args.walk_folders
 
 
-    logfile = "log_spectrograms_" ".log"
+    logfile = "log_spectrograms_ts_%f.log" % time_slice
     logger = configure_logging(logfile,logging.INFO)
 
     if not walk_folders:
