@@ -151,13 +151,13 @@ if __name__ == '__main__':
         logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice))
         produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix)
     else:
-        logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice)
+        logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice))
         folders = [ fold for fold in os.listdir(input_folder) if os.path.isdir(os.path.join(input_folder,fold)) ]
-        logger.info("Walking ", len(folders) ," folders in", input_folder)
+        logger.info("Walking %d %s %s" % (len(folders) ," folders in", input_folder))
         for i,fold in enumerate(folders):
             curr_input_folder = os.path.join(input_folder, fold)
             fold_prefix = os.path.basename(fold)
-            logger.info( "Folder %d/%d" % (i+1,len(folders)),curr_input_folder,"fold.prefix",fold_prefix)
+            logger.info( "Folder %d/%d %s %s %s" % (i+1,len(folders),curr_input_folder,"fold.prefix",fold_prefix))
             produceSpectoGrams_Aug(curr_input_folder, output_folder, time_slice, fold_prefix, logger)
 
 

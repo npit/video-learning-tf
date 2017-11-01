@@ -376,8 +376,9 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
             run_batch_count = run_batch_count + 1
             summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.global_step, lrcn.optimizer],feed_dict=fdict)
-
-            info("Learning rate %2.8f, global step: %d, batch loss : %2.5f " % (learning_rate, global_step, batch_loss))
+            # calcluate the number of bits
+            nats = batch_loss / math.log(dataset.num_classes)
+            info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f/%2.3f " % (learning_rate, global_step, batch_loss, nats))
             info("Dataset global step %d, epoch index %d, batch size train %d, batch index train %d" %
                                  (dataset.get_global_batch_step(), dataset.epoch_index, dataset.batch_size_train, dataset.batch_index_train))
 
