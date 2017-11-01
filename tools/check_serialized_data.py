@@ -54,8 +54,19 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Give an input .tfrecord file")
         exit(1)
+    if len(sys.argv) > 2:
+        opts = sys.argv[2:]
+    else:
+        opts = []
+    num_items = None
+    if opts:
+        try:
+            num_items = int(opts[0]) 
+        except Exception as ex:
+            print(ex)
+            exit(1)
 
-    filename = sys.argv[-1]
+    filename = sys.argv[1]
     print("Examining contents of %s" % filename)
     sizefile = filename + ".size"
     if os.path.exists(sizefile):
@@ -71,6 +82,9 @@ if __name__ == '__main__':
     if not os.path.exists(sizefile):
         print("File %s does not exist." % filename)
         exit(1)
+    print()
+    if num_items is not None:
+        print("Printing %s items due to user argument" % str(num_items))
     iterator = tf.python_io.tf_record_iterator(path = filename)
     shapes = OrderedDict()
     count = 0
@@ -88,6 +102,9 @@ if __name__ == '__main__':
                 shapes[shp] += 1
                 pbar.set_description(desc = "Processed [%d] items. " % count)
                 pbar.update()
+                if num_items is not None:
+                    if num_items == count:
+                        break
             except EOFError as ex:
                 print(ex)
                 break
