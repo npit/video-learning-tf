@@ -1,4 +1,5 @@
 import os, sys
+import shutil
 import subprocess
 
 if len(sys.argv) < 3:
@@ -24,9 +25,18 @@ def sec_to_hms(duration_sec):
     return "%d:%02d:%02d" % (h, m, s)
 
 # read frame numbers
+framenums=[]
 with open(shotfile,"r") as f:
     for line in f:
         framenums = [ int(n) for n in line.strip().split() ]
+
+if not framenums:
+    # entire video is a single shot, just copy
+    outfilename = os.path.join(outvidfolder, "video_0." + extension)
+    print("Just copying single-shot file", outfilename)
+    shutil.copyfile(vidfile, outfilename)
+    exit(1)
+
 
 
 # every chunk has to be defined as a tuple: startTIME, durationSECOND
