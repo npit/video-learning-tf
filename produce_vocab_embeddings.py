@@ -9,6 +9,9 @@ Script to encode vocabulary contents into the embedding matrix.
 
 
 if __name__ == '__main__':
+    main()
+
+def main():
     init_file = "config.ini"
     # vocabulary and embeddings files
     vocabulary_file = None

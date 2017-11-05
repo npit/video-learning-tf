@@ -1,36 +1,6 @@
 import json, string, os, sys
 from utils_ import  init_config
 
-# do initializations
-init_file = "config.ini"
-if len(sys.argv) > 1:
-    init_file = sys.argv[1]
-print("Using initialization file : ", init_file)
-
-#########################
-# settable parameters
-# caption files to process
-caption_files = ["/home/nik/uoa/msc-thesis/dataset/coco14/annotations/captions_val2014.json"]
-# format per file
-caption_file_formats = ("coco", "flickr")
-# vocabulary file: if not None, it will produce caption encodings as per the vocabulary
-vocabulary_file = None
-# replacement file: a file containing w, [v1,v2,..]. Each occurence of w in a caption will be replaced by v1,v2,...]
-# this is so that weird slang and compositions are replaced by common words, for which pretrained embeddings exist
-vocab_replacement_file = "/home/nik/uoa/msc-thesis/dataset/glove/missing_words.txt"
-caption_max_length = 16
-word_count_thresh = 5
-########################
-
-
-if __name__ == '__main__':
-    keyvals = init_config(init_file, "captions")
-
-    for key in keyvals:
-        exec("%s=%s" % (key, keyvals[key]), )
-    print("Successfully initialized from file %s" % init_file)
-
-
 # function that replaces tokens with replacements, so as to match tokens in embeddings
 def replace_problematic_words(toklist, replacements):
 
@@ -200,6 +170,11 @@ def read_vocabulary(vocab_file):
 
 
 def main():
+
+    keyvals = init_config(init_file, "captions")
+    for key in keyvals:
+        exec("%s=%s" % (key, keyvals[key]), )
+    print("Successfully initialized from file %s" % init_file)
 
     # read caption files
     print (caption_file_formats)

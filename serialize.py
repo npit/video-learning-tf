@@ -148,7 +148,7 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
             frames =  [[] for _ in range(num_threads_in_run)]
             # start threads
             for t in range(num_threads_in_run):
-                threads[t] = threading.Thread(target=read_item_list_threaded,args=(paths_per_thread[t],frames,t))
+                threads[t] = threading.Thread(target=read_item_list_threaded, args=(paths_per_thread[t], frames, t, settings))
                 threads[t].start()
 
             # wait for threads to read
@@ -174,7 +174,7 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
 
     writer.close()
 
-def generate_frames_per_video(paths_list, mode):
+def generate_frames_per_video(paths_list, mode, settings):
     tic = time.time()
     paths_per_video = []
     info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." %
@@ -182,7 +182,7 @@ def generate_frames_per_video(paths_list, mode):
     with tqdm.tqdm(range(len(paths_list)), ascii=True, total=len(paths_list)) as pbar:
         for vid_idx in range(len(paths_list)):
             video_path = paths_list[vid_idx]
-            video_frame_paths = generate_frames_for_video(video_path)
+            video_frame_paths = generate_frames_for_video(video_path, settings)
             paths_per_video.append(video_frame_paths)
             pbar.set_description("Processing %-30s" % basename(video_path))
             pbar.update()
@@ -190,9 +190,9 @@ def generate_frames_per_video(paths_list, mode):
     info("Total generation time for a total of %d video paths: %s " % (total_num_paths, elapsed_str(tic)))
     return paths_per_video
 
-def read_item_list_threaded(paths, storage, id):
+def read_item_list_threaded(paths, storage, id, settings):
     for framepath in paths:
-        image = read_image(framepath)
+        image = read_image(framepath, settings)
         if image is None:
             return
         storage[id].append(image)
@@ -303,7 +303,7 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
         return [list(range(s,s+settings.num_frames_per_clip )) for s in start_indexes]
 
 # generate frames per video, according to the input settings 
-def generate_frames_for_video(path):
+def generate_frames_for_video(path, settings):
 
     files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
     num_frames = len(files)
@@ -329,8 +329,9 @@ def generate_frames_for_video(path):
             frame_paths.append(frame_path)
         clip_frame_paths.append(frame_paths)
     return clip_frame_paths
+
  # read image from disk
-def read_image(imagepath):
+def read_image(imagepath, settings):
     try:
         image = imread(imagepath)
         debug("Reading image %s" % imagepath)
@@ -355,7 +356,7 @@ def read_image(imagepath):
         return None
     return image
 # read from tfrecord
-def deserialize_from_tfrecord( iterator, images_per_iteration):
+def deserialize_from_tfrecord(iterator, images_per_iteration):
     # images_per_iteration :
     images = []
     labels  = []
@@ -397,7 +398,7 @@ def deserialize_from_tfrecord( iterator, images_per_iteration):
 
     return images, labels
 
-def read_file(inp):
+def read_file(inp, settings):
     mode = None
     info("Reading input file [%s] " % (inp))
     max_num_labels = -1
@@ -440,7 +441,7 @@ def shuffle_pair(*args):
     args= zip(*z)
     return args
 
-def shuffle_paths(item_paths, paths, labels, mode):
+def shuffle_paths(item_paths, paths, labels, mode, settings):
     info("Shuffling data.")
 
     if mode == defs.input_mode.image:
@@ -470,7 +471,7 @@ def write_serialization(settings):
     errors_per_input = [False for _ in settings.input_files]
     for idx in range(len(settings.input_files)):
         inp = settings.input_files[idx]
-        item_paths, item_labels, mode, max_num_labels = read_file(inp)
+        item_paths, item_labels, mode, max_num_labels = read_file(inp, settings)
 
         if mode == defs.input_mode.image:
             if settings.do_shuffle:
@@ -481,7 +482,7 @@ def write_serialization(settings):
 
         elif mode == defs.input_mode.video:
             # generate paths per video
-            paths = generate_frames_per_video(item_paths, mode)
+            paths = generate_frames_per_video(item_paths, mode, settings)
             # check generation status
             stored_log = settings.logger.get_log_storage("generation")
             if stored_log:
@@ -511,7 +512,7 @@ def write_serialization(settings):
                     error("Generated paths with errors, but error strategy is [%s]" % settings.generation_error)
 
             if settings.do_shuffle:
-                item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode)
+                item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode, settings)
             clips_per_item = [ len(vid) for vid in paths ]
 
             # flatten: frame, for video in videos for frame in video
@@ -582,7 +583,7 @@ def validate(written_data, errors, settings):
                 if not i == testidx:
                     next(iter)
                     continue
-                frame, label = read_image(paths[i]), labels[i]
+                frame, label = read_image(paths[i], settings), labels[i]
 
                 fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
                 frametf, labeltf = fframetf[0], llabeltf[0]
@@ -654,7 +655,7 @@ def write_paths_file(data, errors, settings):
             for path, label in zip(paths, labels):
                 f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))
 
-if __name__ == '__main__':
+def main():
     settings = serialization_settings()
     settings.initialize_from_file(sys.argv)
     # outpaths is either the input frame paths in image mode, or the expanded frame paths in video mode
@@ -664,5 +665,5 @@ if __name__ == '__main__':
         info("Validating serialization")
         validate(written_data, errors_per_file, settings)
 
-
-
+if __name__ == '__main__':
+    main()

@@ -66,7 +66,6 @@ class LRCN:
         self.timestamp = settings.timestamp
         self.run_id = settings.run_id
         self.run_folder = settings.run_folder
-        self.save_validation_logits = settings.save_validation_logits
         self.validation_logits_save_interval = settings.validation_logits_save_interval
 
         # create the workflows
@@ -644,18 +643,20 @@ class LRCN:
                 self.add_item_logits_labels(logits,labels)
 
     def save_validation_logits_chunk(self, save_all = False):
+        # if saving is not enabled or no logits are stored, leave
+        if self.validation_logits_save_interval is None or len(self.item_logits) == 0:
+            return
+        # if logits saving is set to once at the end
+        if self.validation_logits_save_interval <= 0:
+            # if we are at the end, save
+            if save_all:
+                # all extracted logits are in the container
+                save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.total" % (self.run_id, self.timestamp))
+                info("Saving all %d extracted validation logits to %s" % (len(self.item_logits), save_file))
+            # else, just return
+            return
 
-        if self.validation_logits_save_interval is None or not self.save_validation_logits:
-            return
-        if len(self.item_logits) == 0:
-            return
-        # if last step and no interm. saving, save all extracted logits at once
-        if save_all and  self.validation_logits_save_interval <= 0:
-            # all extracted logits are in the container
-            save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.total" % (self.run_id, self.timestamp))
-            info("Saving all %d extracted validation logits to %s" % (len(self.item_logits), save_file))
-            return
-        # else save intermmediate step if large enough, or remaining last one however large
+        # if logits saving is done in batches, save either if batch is full or if it is the last step
         if len(self.item_logits) >= self.validation_logits_save_interval or save_all:
             save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.part_%d" %
                                      ( self.run_id, self.timestamp, self.validation_logits_save_counter))

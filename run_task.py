@@ -4,6 +4,7 @@ import pickle
 from shutil import copyfile
 import sys
 import tensorflow as tf
+import argparse
 
 # project modules
 import lrcn_
@@ -36,9 +37,6 @@ class Summaries:
 class Settings:
     # user - settable parameters
     ################################
-    # initialization file
-    init_file = "config.ini"
-
     # run mode and type
     run_id = ""
     workflow = defs.workflows.acrec.singleframe
@@ -136,18 +134,18 @@ class Settings:
                 self.input_files[defs.val_idx] =  self.data_path
 
     # file initialization
-    def initialize_from_file(self):
-        if self.init_file is None:
+    def initialize_from_file(self, init_file):
+        if init_file is None:
             return
-        if not os.path.exists(self.init_file):
-            error("Unable to read initialization file [%s]." % self.init_file)
+        if not os.path.exists(init_file):
+            error("Unable to read initialization file [%s]." % init_file)
             return
 
         tag_to_read = "run"
 
-        print("Initializing from file %s" % self.init_file)
+        print("Initializing from file %s" % init_file)
         config = configparser.ConfigParser()
-        config.read(self.init_file)
+        config.read(init_file)
 
         if not config[tag_to_read]:
             error('Expected header [%s] in the configuration file!' % tag_to_read)
@@ -171,11 +169,11 @@ class Settings:
         if self.run_id:
             run_identifiers = [self.workflow ,self.run_id , trainval_str]
         else:
-            if self.init_file == "config.ini":
+            if init_file == "config.ini":
                 run_identifiers = [self.workflow, trainval_str]
             else:
                 # use the configuration file suffix
-                file_suffix = self.init_file.split(".")[-1]
+                file_suffix = init_file.split(".")[-1]
                 run_identifiers = [self.workflow, file_suffix, trainval_str]
 
         self.run_id = "_".join(run_identifiers)
@@ -186,23 +184,21 @@ class Settings:
         if self.do_validation and self.do_random_mirroring:
             warning("Disabling enabled random mirroring in validation.")
 
-        print("Initialized run [%s] from file %s" % ( self.run_id, self.init_file))
+        print("Initialized run [%s] from file %s" % ( self.run_id, init_file))
         sys.stdout.flush()
 
     # initialize stuff
-    def initialize(self, args):
-        if len(args) > 1:
-            self.init_file = args[-1]
+    def initialize(self, init_file):
 
-        self.initialize_from_file()
+        self.initialize_from_file(init_file)
         if not os.path.exists(self.data_path):
             error("Non existent data file/folder %s" % self.data_path)
         if not os.path.exists(self.run_folder):
             warning("Non existent run folder %s - creating." % self.run_folder)
             os.mkdir(self.run_folder)
         # if config file is not in the run folder, copy it there to preserve a settings log
-        if not (os.path.basename(self.init_file) == self.run_folder):
-            copyfile(self.init_file,  os.path.join(self.run_folder, os.path.basename( self.init_file)))
+        if not (os.path.basename(init_file) == self.run_folder):
+            copyfile(init_file,  os.path.join(self.run_folder, os.path.basename(init_file)))
 
         # train-val mode has become unsupported
         if self.do_training and self.do_validation:
@@ -496,12 +492,12 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     tboard_writer.flush()
     return True
 
-# the main function
-def main():
 
+# the main function
+def main(init_file):
     # create and initialize settings and dataset objects
     settings = Settings()
-    settings.initialize(sys.argv)
+    settings.initialize(init_file)
 
     # init summaries for printage
     summaries = Summaries()
@@ -540,4 +536,8 @@ def main():
     info("Run [%s] complete." % settings.run_id)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("init_file", help="Configuration .ini file for the run.")
+    args = parser.parse_args()
+
+    main(args.init_file)
