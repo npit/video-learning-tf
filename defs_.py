@@ -79,6 +79,7 @@ class defs:
         # granularity level
         class granularity:
             exp, staircase = "exp", "staircase"
+
         # drop at intervals or a total number of times
         class scheme:
             interval, total = "interval", "total"
@@ -91,9 +92,24 @@ class defs:
 
     class eval_type:
         coco = "coco"
+
     class variables:
         global_step = "global_step"
+
     class return_type:
         argmax_index, standard = "argmax_index", "standard"
+
+    class imgproc:
+        rand_mirror, rand_crop, center_crop, resize, raw_resize, sub_mean = \
+                "rand_mirror", "rand_crop", "center_crop", "resize", "raw_resize", "sub_mean"
+        def to_str(vec):
+            res = []
+            if defs.imgproc.rand_mirror in vec: res.append("rm")
+            if defs.imgproc.rand_crop in vec: res.append("rc")
+            if defs.imgproc.center_crop in vec: res.append("cc")
+            if defs.imgproc.resize in vec: res.append("rs")
+            if defs.imgproc.raw_resize in vec: res.append("rr")
+            if defs.imgproc.sub_mean in vec: res.append("sm")
+            return "-".join(res)
     train_idx, val_idx = 0, 1
     image, label = 0, 1

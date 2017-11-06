@@ -14,7 +14,7 @@ import dataset_
 from utils_ import *
 from tools.inspect_checkpoint import get_checkpoint_tensor_names
 import logging, configparser, json
-from defs_ import *
+from defs_ import defs
 
 
 # summaries for training & validation
@@ -65,8 +65,6 @@ class Settings:
     clips_per_video = 1
 
     # training settings
-    do_random_mirroring = True
-    do_random_cropping = True
     batch_size_train = 100
     do_training = False
     epochs = 15
@@ -177,22 +175,14 @@ class Settings:
                 run_identifiers = [self.workflow, file_suffix, trainval_str]
 
         self.run_id = "_".join(run_identifiers)
-
-        # fix potential inconsistencies
-        if self.do_validation and self.do_random_cropping:
-            warning("Disabling enabled random cropping in validation.")
-        if self.do_validation and self.do_random_mirroring:
-            warning("Disabling enabled random mirroring in validation.")
-
-        print("Initialized run [%s] from file %s" % ( self.run_id, init_file))
+        print("Initialized run [%s] from file %s" % (self.run_id, init_file))
         sys.stdout.flush()
 
     # initialize stuff
     def initialize(self, init_file):
 
         self.initialize_from_file(init_file)
-        if not os.path.exists(self.data_path):
-            error("Non existent data file/folder %s" % self.data_path)
+
         if not os.path.exists(self.run_folder):
             warning("Non existent run folder %s - creating." % self.run_folder)
             os.mkdir(self.run_folder)
@@ -200,16 +190,23 @@ class Settings:
         if not (os.path.basename(init_file) == self.run_folder):
             copyfile(init_file,  os.path.join(self.run_folder, os.path.basename(init_file)))
 
-        # train-val mode has become unsupported
-        if self.do_training and self.do_validation:
-            error("Cannot specify simultaneous training and validation run, for now.")
-
         # configure the logs
         self.timestamp = get_datetime_str()
         logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + self.timestamp + ".log")
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
+
+        # start checks
+        if not os.path.exists(self.data_path):
+            error("Non existent data file/folder %s" % self.data_path)
+
+        # train-val mode has become unsupported
+        if self.do_training and self.do_validation:
+            error("Cannot specify simultaneous training and validation run, for now.")
+
+
+
 
         # set the tensorboard mode-dependent folder
         mode_folder = defs.phase.train if self.do_training else defs.phase.val
@@ -233,6 +230,31 @@ class Settings:
                     warning("Starting validation-only run with an untrained network.")
                 else:
                     error("Neither training nor validation is enabled.")
+
+        # read image processing params
+        do_random_cropping = defs.imgproc.rand_crop in self.imgproc
+        do_center_cropping = defs.imgproc.center_crop in self.imgproc
+        do_resize = defs.imgproc.resize in self.imgproc
+        do_random_mirroring = defs.imgproc.rand_mirror in self.imgproc
+
+        if self.raw_image_shape is not None:
+            self.imgproc.append(defs.imgproc.raw_resize)
+        if self.mean_image is not None:
+            self.imgproc.append(defs.imgproc.sub_mean)
+
+        # fix potential inconsistencies
+        if sum([do_random_cropping, do_center_cropping, do_resize]) > 1:
+            error("Need at most one image processing parameter. Imgproc params : %s" % self.imgproc)
+        if self.do_validation:
+            if do_random_cropping or do_random_cropping:
+                if do_random_cropping:
+                    warning("Random cropping is enabled in validation mode.")
+                if do_random_mirroring:
+                    warning("Random mirroring is enabled in validation mode.")
+                ans = input("continue? (y/n)")
+                if ans != "y":
+                    error("Aborted.")
+
         info("Starting [%s] workflow on folder [%s]." % (self.workflow, self.run_folder))
         self.set_input_files()
 
@@ -411,6 +433,7 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
 
 # test the network on validation data
 def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
+    tic = time.time()
     # if testing within training, check if it should run
     if dataset.do_training:
         if not dataset.should_test_now():
@@ -487,7 +510,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
     else:
         accuracy = lrcn.get_accuracy()
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
-        info("Validation run complete, accuracy: %2.5f" % accuracy)
+        info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
         tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_batch_step())
     tboard_writer.flush()
     return True

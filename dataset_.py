@@ -38,13 +38,6 @@ class Dataset:
 
     # mean image subtraction
     mean_image = None
-    do_mean_subtraction = None
-
-    # frame processing
-    do_random_mirroring = None
-    do_random_cropping = None
-    crop_w_avail = None
-    crop_h_avail = None
 
     # epoch and phase variables
     phase = None
@@ -456,17 +449,28 @@ class Dataset:
         return frames
 
     # get a random image crop
-    def random_crop(self, image):
-        randh = choice(self.crop_h_avail)
-        randw = choice(self.crop_w_avail)
+    def crop_image(self, image, mode):
+        if not self.raw_image_shape:
+            # compute them
+            h, w = self.compute_crop(image.shape, self.image_shape, mode)
+        else:
+            h, w = self.crop_h, self.crop_w
+        if mode == defs.imgproc.rand_crop:
+            # select crop idx
+            h = choice(h)
+            w = choice(w)
+        h, w = int(h), int(w)
+
+        # apply crop
         image = image[
-                randh:randh + self.image_shape[0],
-                randw:randw + self.image_shape[1],
+                h:h + self.image_shape[0],
+                w:w + self.image_shape[1],
                 :]
         return image
 
+
     # read image from disk
-    def read_image(self,imagepath):
+    def read_image(self, imagepath):
         image = imread(imagepath)
 
         debug("Reading image %s" % imagepath)
@@ -475,39 +479,39 @@ class Dataset:
         if len(image.shape) <= 2:
             image = np.repeat(image[:, :, np.newaxis], 3, 2)
         # drop channels other than RGB
-        image = image[:,:,:3]
+        image = image[:, :, :3]
         #  convert to BGR
         image = image[:, :, ::-1]
-
         image = self.process_image(image)
-
         return image
 
     # apply image post-process
     def process_image(self, image):
-        # resize to desired raw dimensions
-        if self.raw_image_shape is not None and image.shape != self.raw_image_shape:
+        # resize to desired raw dimensions, if defined
+        if defs.imgproc.raw_resize in self.imgproc:
             image = imresize(image, self.raw_image_shape)
-        # take cropping
-        if self.do_random_cropping:
-            image = self.random_crop(image)
-        else:
+        # crop or resize to network input size
+        if defs.imgproc.rand_crop in self.imgproc:
+            image = self.crop_image(image, defs.imgproc.rand_crop)
+        elif defs.imgproc.center_crop in self.imgproc:
+            image = self.crop_image(image, defs.imgproc.center_crop)
+        elif defs.imgproc.resize in self.imgproc:
             image = imresize(image, self.image_shape)
 
-        if self.do_mean_subtraction:
+        if defs.imgproc.sub_mean in self.imgproc:
             image = image - self.mean_image
 
-        if self.do_random_mirroring:
+        if defs.imgproc.rand_mirror in self.imgproc:
             if not randrange(2):
                 image = image[:,::-1,:]
         return image
+
 
     # do preparatory work
     def initialize(self, sett):
         # transfer relevant configuration from settings
         self.workflow = sett.workflow
         self.epochs = sett.epochs
-        self.do_random_mirroring = sett.do_random_mirroring
         self.do_training = sett.do_training
         self.do_validation = sett.do_validation
         self.validation_interval = sett.validation_interval
@@ -520,8 +524,8 @@ class Dataset:
         self.mean_image = sett.mean_image
         self.raw_image_shape = sett.raw_image_shape
         self.num_classes = sett.num_classes
-        self.do_random_cropping = sett.do_random_cropping
         self.image_shape = sett.image_shape
+        self.imgproc = sett.imgproc
 
         info("Initializing dataset at [%s]" % sett.data_path)
 
@@ -556,11 +560,18 @@ class Dataset:
             self.mean_image = np.ndarray.astype(np.stack([blue, green, red]),np.float32)
             self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
 
-        if self.do_random_cropping:
+        if defs.imgproc.rand_crop in self.imgproc:
             if self.raw_image_shape is None:
-                error("Cropping without a fixed raw image shape is not supported.")
-            self.crop_h_avail = [i for i in range(0, self.raw_image_shape[0] - self.image_shape[0] - 1)]
-            self.crop_w_avail = [i for i in range(0, self.raw_image_shape[1] - self.image_shape[1] - 1)]
+                warning("Random cropping without a fixed raw image shape.")
+            else:
+                # precompute available crops
+                self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.image_shape, defs.imgproc.rand_crop)
+        elif defs.imgproc.center_crop in self.imgproc:
+            if self.raw_image_shape is None:
+                warning("Center cropping without a fixed raw image shape.")
+            else:
+                # precompute the center crop
+                self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.image_shape, defs.imgproc.center_crop)
 
         # set save interval
         if (sett.save_freq_per_epoch is not None) and (sett.do_training):
@@ -568,6 +579,16 @@ class Dataset:
             info("Computed batch save interval (from %2.4f per %d-batched epoch) to %d batches" %
                              (sett.save_freq_per_epoch, len(self.batches_train), self.save_interval))
         self.tell()
+
+    # compute horizontal and vertical crop range
+    def compute_crop(self, raw_image_shape, image_shape, mode):
+        if mode == defs.imgproc.center_crop:
+            return tuple([np.floor((x[0]-x[1])/2) for x in zip(raw_image_shape, image_shape)])[:2]
+        elif mode == defs.imgproc.rand_crop:
+            crop_h = [i for i in range(0, raw_image_shape[0] - image_shape[0] - 1)]
+            crop_w = [i for i in range(0, raw_image_shape[1] - image_shape[1] - 1)]
+        return crop_h, crop_w
+
 
     # initialize run mode specific data
     def initialize_workflow(self, settings):
@@ -792,23 +813,24 @@ class Dataset:
     # print active settings
     def tell(self):
         info("Dataset batch information per epoch:" )
-        header_fmt = "%-6s %-8s %-8s %-10s %-6s %-6s %-9s %-6s"
-        values_fmt = "%-6s %-8s %-8s %-10d %-6d %-6d %-9s %-6d"
-        info(header_fmt % ("Mode","bmode","items", "clips", "frames","b-size","b-num","b-index"))
+        header_fmt = "%-6s %-8s %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
+        values_fmt = "%-6s %-8s %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
+        info(header_fmt % ("Mode","bmode","items", "clips", "frames","b-size","b-num","b-index","imgprc"))
+        imgproc = defs.imgproc.to_str(self.imgproc)
         if self.do_training:
             items = self.num_items_train
             clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
             frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
             info(values_fmt %
                  (defs.phase.train, self.batch_item, items, clips, frames,
-                  self.batch_size_train, len(self.batches_train), self.batch_index_train))
+                  self.batch_size_train, len(self.batches_train), self.batch_index_train, imgproc))
         if self.do_validation:
             items = self.num_items_val
             clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
             frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
             info(values_fmt %
                  (defs.phase.val, self.batch_item, items, clips, frames,
-                  self.batch_size_val, len(self.batches_val),  self.batch_index_val))
+                  self.batch_size_val, len(self.batches_val),  self.batch_index_val, imgproc))
 
     # get the batch size
     def get_batch_size(self):

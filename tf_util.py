@@ -34,6 +34,7 @@ def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, p
                                                      temporal_dimension, None, defs.pooling.reshape, 0.5)
         # get the state h vector
         output = output[0].h
+        debug("Output of lstm temporal pooling [%s]" % str(output.shape))
     else:
         error("Undefined frame pooling type : %d" % pooling_type)
     return output
