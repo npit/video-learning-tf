@@ -653,6 +653,8 @@ class LRCN:
                 # all extracted logits are in the container
                 save_file = os.path.join(self.run_folder,"validation_logits_%s_%s.total" % (self.run_id, self.timestamp))
                 info("Saving all %d extracted validation logits to %s" % (len(self.item_logits), save_file))
+                with open(save_file, "wb") as ff:
+                    pickle.dump(self.item_logits, ff)
             # else, just return
             return
 
