@@ -1,0 +1,110 @@
+run:
+  # run type and an identifier for it
+  workflow: defs.workflows.imgdesc.statebias
+
+  # save / load configuration
+  resume_file: None
+
+  # data parameters; a list for multimodal settings
+  data_path: "path/to/data"
+  path_prepend_folder: ""
+  raw_image_shape: (240, 320, 3)
+  mean_image: [103.939, 116.779, 123.68]
+  data_format: defs.data_format.tfrecord
+  frame_format: "jpg"
+  imgproc: []
+
+  # folder for direct image reading
+  run_folder: "path/to/outputfolder"
+
+  # architecture settings
+  image_shape: (227, 227, 3)
+  frame_encoding_layer: "fc7"
+  lstm_num_layers: 3
+  lstm_num_hidden: 256
+  frame_pooling_type: defs.pooling.avg
+  clip_pooling_type: defs.pooling.avg
+  num_classes: 101
+
+
+  # specify what the batch size represents
+  batch_item: defs.batch_item.default
+
+  # training settings
+  do_training: True
+  batch_size_train: 100
+  epochs: 15
+
+  # training details
+  optimizer: defs.optim.sgd
+  base_lr: 0.001
+  lr_mult: 2
+  # lr_decay: (defs.decay.granularity, defs.decay.scheme, numeric_steps, decay factor)
+  lr_decay: ( defs.decay.exp, 1000, 0.96)
+  # clip options
+  clip_grads: None
+  clip_norm: 5
+  dropout_keep_prob: 0.5
+
+  # validation settings
+  do_validation: False
+  validation_interval: 1
+  batch_size_val: 88
+  # validation logits caching interval. Set to <:0 to save once at the end.
+  validation_logits_save_interval: -1
+
+  # logging
+  save_freq_per_epoch: 1
+  logging_level: logging.DEBUG
+  print_tensors: False
+  tensorboard_folder: "tensorboard_graphs"
+
+  # workflow-specific parameters
+  # description workflows
+  caption_search: defs.caption_search.max
+  eval_type: defs.eval_type.coco
+  caption_ground_truth: "path/to/ground/truth"
+  word_embeddings_file: "path/to/word/embeddings"
+
+
+serialize:
+
+  # path to prepend to each image path
+  path_prepend_folder: "path/to/images/folder"
+
+  # video / image list to serialize
+  input_files: [ "/path/to/imgfile1", "/path/to/imgfile2"]
+
+  # run type
+  do_shuffle: True
+  do_serialize: True
+  do_validate: True
+  validate_pcnt: 10
+  num_threads: 2
+  num_items_per_thread: 20
+  run_id:None
+
+  output_folder: "path/to/output/folder/" 
+  generation_error: defs.generation_error.compromise
+
+  # video frames generation parameters 
+  clip_offset_or_num: 2
+  num_frames_per_clip: 16
+  raw_image_shape: (240,320,3)
+  clipframe_mode: defs.clipframe_mode.iterative
+  frame_format: "jpg"
+
+captions:
+  # vocabulary to encode captions or produce embeddings.Set to None to generate.
+  vocabulary_file: None
+  # caption files to encode or to generate vocabulary
+  caption_files:  ["/path/to/captionfile1","/path/to/captionfile2"]
+  caption_file_formats: ["coco","flickr"]
+  vocab_replacement_file: None
+  word_count_thresh: 5
+  caption_max_length: 50
+  randomize_missing_embeddings: False
+
+  # embedding generation files
+  embeddings_file: "/path/to/embedding/matrix"
+  embeddings_file_type: "glove"

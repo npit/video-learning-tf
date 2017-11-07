@@ -13,7 +13,7 @@ import dataset_
 # utils
 from utils_ import *
 from tools.inspect_checkpoint import get_checkpoint_tensor_names
-import logging, configparser, json
+import logging, configparser, json, yaml
 from defs_ import defs
 
 
@@ -140,15 +140,16 @@ class Settings:
             return
 
         tag_to_read = "run"
-
         print("Initializing from file %s" % init_file)
-        config = configparser.ConfigParser()
-        config.read(init_file)
-
-        if not config[tag_to_read]:
-            error('Expected header [%s] in the configuration file!' % tag_to_read)
-
-        config = config[tag_to_read]
+        if init_file.endswith(".ini"):
+            config = configparser.ConfigParser()
+            config.read(init_file)
+            if not config[tag_to_read]:
+                error('Expected header [%s] in the configuration file!' % tag_to_read)
+            config = config[tag_to_read]
+        elif init_file.endswith("yml") or init_file.endswith("yaml"):
+            with open(init_file,"r") as f:
+                config = yaml.load(f)
 
         for var in config:
             exec("self.%s=%s" % (var, config[var]))
