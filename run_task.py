@@ -175,6 +175,9 @@ class Settings:
         self.network.lstm_num_hidden = config["network"]["lstm_num_hidden"]
         self.network.lstm_num_layers = config["network"]["lstm_num_layers"]
         self.network.num_classes = config["network"]["num_classes"]
+        dataset_fusion = parse_seq(config["network"]["dataset_fusion"])
+        self.network.dataset_fusion_type, self.network.dataset_fusion_method = \
+            defs.check(dataset_fusion[0], defs.fusion_type), defs.check(dataset_fusion[1], defs.fusion_method),
 
         frame_fusion = parse_seq(config["network"]["frame_fusion"])
         self.network.frame_fusion_type, self.network.frame_fusion_method = \

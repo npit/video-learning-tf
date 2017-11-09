@@ -14,15 +14,15 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
     if fusion_type == defs.fusion_method.last:
         # keep only the response at the last time step
         output = tf.slice(input_tensor, [0, temporal_dimension - 1, 0], [-1, 1, vector_dimension], name="lstm_output_reshape")
-        debug("LSTM last timestep output : %s" % str(output.shape))
+        #debug("LSTM last timestep output : %s" % str(output.shape))
         # squeeze empty dimension to get vector
         output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
-        debug("LSTM squeezed output : %s" % str(output.shape))
+        debug("Agreggated last-squeezed output : %s" % str(output.shape))
 
     elif fusion_type == defs.fusion_method.avg:
         # average per-timestep results
         output = tf.reduce_mean(input_tensor, axis=1)
-        debug("LSTM time-averaged output : %s" % str(output.shape))
+        debug("Aggregated time-averaged output : %s" % str(output.shape))
     elif fusion_type == defs.fusion_method.reshape:
         output = tf.reshape(input_tensor,[-1, vector_dimension])
     elif fusion_type == defs.fusion_method.lstm:
@@ -34,7 +34,7 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
                                                      temporal_dimension, None, defs.fusion_method.reshape, 0.5)
         # get the state h vector
         output = output[0].h
-        debug("Output of lstm temporal fusion [%s]" % str(output.shape))
+        debug("Aggregated lstm output [%s]" % str(output.shape))
     else:
         error("Undefined frame fusion type : %s" % str(fusion_type))
     return output

@@ -55,7 +55,7 @@ class defs:
         visual, labels = "visual", "labels"
 
     class dataset_tag:
-        main, misc = "main", "misc"
+        main, aux = "main", "aux"
 
     # direct reading from disk or from packed tfrecord format
     class data_format:
@@ -65,7 +65,7 @@ class defs:
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
         class acrec:
-            singleframe, lstm, audio = "acrec_singleframe", "acrec_lstm", "acrec_audio"
+            singleframe, lstm, audio, singlesingle = "acrec_singleframe", "acrec_lstm", "acrec_audio", "singlesingle"
             def is_workflow(arg):
                 return arg == defs.workflows.acrec.singleframe or \
                        arg == defs.workflows.acrec.lstm
@@ -88,7 +88,8 @@ class defs:
                    defs.workflows.acrec.lstm == arg or \
                    defs.workflows.videodesc.encdec == arg or \
                    defs.workflows.videodesc.fused == arg or \
-                   defs.workflows.acrec.audio == arg
+                   defs.workflows.acrec.audio == arg or \
+                   defs.workflows.acrec.singlesingle == arg
         def is_image(arg):
             return defs.workflows.imgdesc.statebias == arg or \
                    defs.workflows.imgdesc.inputstep == arg or \
@@ -97,7 +98,7 @@ class defs:
 
     # sequence fusion methods
     class fusion_method:
-        avg, last, reshape, lstm = "avg", "last", "reshape", "lstm"
+        avg, last, concat, reshape, lstm = "avg", "last", "concat", "reshape", "lstm"
 
     # early/late fusion
     class fusion_type:
