@@ -1,10 +1,10 @@
-
 # generic IO
 import pickle
 from shutil import copyfile
 import sys
 import tensorflow as tf
 import argparse
+from parse_opts import *
 
 # project modules
 import lrcn_
@@ -19,10 +19,11 @@ from defs_ import defs
 
 # summaries for training & validation
 class Summaries:
-    train= []
+    train = []
     val = []
     train_merged = None
     val_merged = None
+
     def merge(self):
         if self.train:
             self.train_merged = tf.summary.merge(self.train)
@@ -47,42 +48,44 @@ class Settings:
     run_folder = None
     path_prepend_folder = None
 
-    # architecture settings
-    frame_encoding_layer = "fc7"
-    lstm_num_hidden = 256
-    frame_pooling_type = defs.pooling.avg
-    clip_pooling_type = defs.pooling.avg
-    num_classes = None
-    mean_image = None
+    class network:
+        # architecture settings
+        frame_encoding_layer = "fc7"
+        lstm_num_hidden = 256
+        num_classes = None
+
 
     # data input format
     raw_image_shape = (240, 320, 3)
+    mean_image = None
     image_shape = (227, 227, 3)
     data_format = defs.data_format.tfrecord
     frame_format = "jpg"
-    input_mode = defs.input_mode.image
-    num_frames_per_clip = 16
-    clips_per_video = 1
 
-    # training settings
-    batch_size_train = 100
-    do_training = False
-    epochs = 15
-    optimizer = defs.optim.sgd
-    base_lr = 0.001
-    lr_mult = 2
-    lr_decay = (defs.decay.granularity.exp, defs.decay.scheme.interval, 1000, 0.96)
-    dropout_keep_prob = 0.5
+    class train:
+        # training settings
+        batch_size_train = 100
+        do_training = False
+        epochs = 15
+        optimizer = defs.optim.sgd
+        base_lr = 0.001
+        lr_mult = 2
+        lr_decay = (defs.decay.granularity.exp, defs.decay.scheme.interval, 1000, 0.96)
+        dropout_keep_prob = 0.5
+        batch_item = defs.batch_item.default
 
-    # validation settings
-    do_validation = False
-    validation_interval = 1
-    batch_size_val = 88
-    batch_item = defs.batch_item.default
 
-    # caption generation settings
-    caption_search = defs.caption_search.max
-    eval_type = defs.eval_type.coco
+    class val:
+        # validation settings
+        do_validation = False
+        validation_interval = 1
+        batch_size_val = 88
+        batch_item = defs.batch_item.default
+
+    class captioning:
+        # caption generation settings
+        caption_search = defs.caption_search.max
+        eval_type = defs.eval_type.coco
 
     # logging
     logging_level = logging.DEBUG
@@ -111,25 +114,138 @@ class Settings:
     # misc
     saver = None
 
+    def get_num_batches(self):
+        if not self.datasets:
+            return -1
+        return len(self.datasets[0].batches)
+
     # should resume, if set and non-empty
     def should_resume(self):
         return self.resume_file is not None and self.resume_file
 
-    # set the input files
-    def set_input_files(self):
-        # for directory run path, use default file names: data.<train|test>                                                                                                              
-        if os.path.isdir(self.data_path):
-            basefilename = "data"
-            self.input_files[defs.train_idx] = os.path.join(self.data_path, basefilename + ".train")
-            self.input_files[defs.val_idx] = os.path.join(self.data_path, basefilename + ".test")
-            # set the run path to the point to the file
-            self.data_path = self.input_files[defs.train_idx] if self.do_training else self.input_files[defs.val_idx]
-        else:
-            # run path is already the file path
-            if self.do_training:
-                self.input_files[defs.train_idx] = self.data_path
-            else:
-                self.input_files[defs.val_idx] =  self.data_path
+    def read_config(self, config):
+
+        # read global stuff
+        self.workflow = defs.check(config['workflow'], defs.workflows)
+        self.resume_file = config['resume_file']
+        self.run_folder = config["run_folder"]
+        self.run_folder = config["run_folder"]
+
+        # read phase information
+        self.phase = config["phase"]
+        if type(self.phase) != list:
+            self.phase = [self.phase]
+
+        # read network  architecture stuff
+        self.network = Settings.network()
+        self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
+        self.network.lstm_num_hidden = config["network"]["lstm_num_hidden"]
+        self.network.lstm_num_layers = config["network"]["lstm_num_layers"]
+        self.network.num_classes = config["network"]["num_classes"]
+
+        frame_fusion = parse_seq(config["network"]["frame_fusion"])
+        self.network.frame_fusion = []
+        self.network.frame_fusion_type, self.network.frame_fusion_method = \
+            defs.check(frame_fusion[0], defs.fusion_type), defs.check(frame_fusion[1], defs.fusion_method)
+
+        clip_fusion = parse_seq(config["network"]["clip_fusion"])
+        self.network.clip_fusion = []
+        self.network.clip_fusion_type, self.network.clip_fusion_method = \
+            defs.check(clip_fusion[0], defs.fusion_type), defs.check(clip_fusion[1], defs.fusion_method)
+
+        self.train, self.val = None, None
+        for phase in self.phase:
+            phase = defs.check(phase, defs.phase)
+            if phase == defs.phase.train:
+                # read training opts
+                self.train = Settings.train()
+                obj = config[phase]
+                self.train.batch_size = obj['batch_size']
+                self.train.epochs = obj['epochs']
+                self.train.base_lr = obj['base_lr']
+                self.train.lr_mult = obj['lr_mult']
+                self.train.lr_decay = obj['lr_decay']
+                self.train.clip_norm = obj['clip_norm']
+                self.train.dropout_keep_prob = obj['dropout_keep_prob']
+            if phase == defs.phase.val:
+                # read validation opts
+                self.val = Settings.val()
+                obj = config[phase]
+                self.val.batch_size = obj['batch_size']
+                self.val.logits_save_interval = obj['logits_save_interval']
+
+        # read logging information
+        self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
+        self.logging_level = eval(config['logging']['level'])
+        if self.logging_level in ['INFO','DEBUG','WARN']:
+            error("Invalid logging level: %s:" % (self.logging_level))
+        self.tensorboard_folder = config['logging']['tensorboard_folder']
+        self.print_tensors = config['logging']['print_tensors']
+
+        # read data sources
+        self.datasets = []
+        for dataid in config['data']:
+            dataobj = config['data'][dataid]
+
+            dset = dataset_.Dataset()
+            id = dataid
+            path = dataobj['data_path']
+            mean_image = parse_seq(dataobj['mean_image'])
+            batch_item = defs.check(dataobj['batch_item'], defs.batch_item)
+            prepend_folder = dataobj['prepend_folder']
+            image_shape = parse_seq(dataobj['image_shape'])
+            imgproc_raw = parse_seq(dataobj['imgproc'])
+            imgproc = []
+            for opt in imgproc_raw:
+                imgproc.append(defs.check(opt, defs.imgproc))
+            raw_image_shape = parse_seq(dataobj['mean_image'])
+            data_format = defs.check(dataobj['data_format'], defs.data_format)
+            frame_format = dataobj['frame_format']
+            # read image processing params
+
+            do_random_cropping = defs.imgproc.rand_crop in imgproc
+            do_center_cropping = defs.imgproc.center_crop in imgproc
+            do_resize = defs.imgproc.resize in imgproc
+            do_random_mirroring = defs.imgproc.rand_mirror in imgproc
+
+            if raw_image_shape is not None:
+                imgproc.append(defs.imgproc.raw_resize)
+            if mean_image is not None:
+                imgproc.append(defs.imgproc.sub_mean)
+
+            # fix potential inconsistencies
+            if sum([do_random_cropping, do_center_cropping, do_resize]) > 1:
+                error("Need at most one image processing parameter. Imgproc params : %s" % imgproc)
+            if self.val:
+                if do_random_cropping or do_random_cropping:
+                    if do_random_cropping:
+                        warning("Random cropping is enabled in validation mode.")
+                    if do_random_mirroring:
+                        warning("Random mirroring is enabled in validation mode.")
+                    ans = input("continue? (y/n)")
+                    if ans != "y":
+                        error("Aborted.")
+
+            dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format, frame_format, batch_item)
+            if self.train:
+                dset.calculate_batches(self.train.batch_size)
+            elif self.val:
+                dset.calculate_batches(self.val.batch_size)
+
+            self.datasets.append(dset)
+
+        # read captioning
+        captioning = config['captioning']
+        word_embeddings_file = captioning['word_embeddings_file']
+        ground_truth = captioning['caption_ground_truth']
+        evaluation_type = captioning['eval_type']
+        caption_search = captioning['caption_search']
+        for dset in self.datasets:
+            dset.initialize_workflow(word_embeddings_file)
+
+
+
+
 
     # file initialization
     def initialize_from_file(self, init_file):
@@ -147,17 +263,17 @@ class Settings:
             if not config[tag_to_read]:
                 error('Expected header [%s] in the configuration file!' % tag_to_read)
             config = config[tag_to_read]
+            for var in config:
+                exec("self.%s=%s" % (var, config[var]))
         elif init_file.endswith("yml") or init_file.endswith("yaml"):
             with open(init_file,"r") as f:
-                config = yaml.load(f)
-
-        for var in config:
-            exec("self.%s=%s" % (var, config[var]))
+                config = yaml.load(f)[tag_to_read]
+                self.read_config(config)
         # set append the config.ini.xxx suffix to the run id
         trainval_str = ""
-        if self.do_training:
+        if self.train:
             trainval_str = "train"
-        if self.do_validation:
+        if self.val:
             trainval_str = trainval_str + "val"
         if self.should_resume():
             trainval_str = trainval_str + "_resume"
@@ -198,67 +314,34 @@ class Settings:
         CustomLogger.instance = self.logger
         self.logger.configure_logging(logfile, self.logging_level)
 
-        # start checks
-        if not os.path.exists(self.data_path):
-            error("Non existent data file/folder %s" % self.data_path)
-
         # train-val mode has become unsupported
-        if self.do_training and self.do_validation:
+        if self.train and self.val:
             error("Cannot specify simultaneous training and validation run, for now.")
 
-
-
-
         # set the tensorboard mode-dependent folder
-        mode_folder = defs.phase.train if self.do_training else defs.phase.val
+        mode_folder = defs.phase.train if self.train else defs.phase.val
         self.tensorboard_folder = os.path.join(self.run_folder, self.tensorboard_folder, mode_folder)
 
         sys.stdout.flush(), sys.stderr.flush()
         # if not resuming, set start folder according to now()
         if  self.should_resume():
-            if self.do_training:
+            if self.train:
                 # load batch and epoch where training left off
                 info("Resuming training.")
                 # resume training metadata only in training
                 self.resume_metadata()
-            if self.do_validation:
+            if self.val:
                 info("Evaluating trained network.")
         else:
-            if self.do_training:
+            if self.train:
                 info("Starting training from scratch.")
             else:
-                if self.do_validation:
+                if self.val:
                     warning("Starting validation-only run with an untrained network.")
                 else:
                     error("Neither training nor validation is enabled.")
 
-        # read image processing params
-        do_random_cropping = defs.imgproc.rand_crop in self.imgproc
-        do_center_cropping = defs.imgproc.center_crop in self.imgproc
-        do_resize = defs.imgproc.resize in self.imgproc
-        do_random_mirroring = defs.imgproc.rand_mirror in self.imgproc
-
-        if self.raw_image_shape is not None:
-            self.imgproc.append(defs.imgproc.raw_resize)
-        if self.mean_image is not None:
-            self.imgproc.append(defs.imgproc.sub_mean)
-
-        # fix potential inconsistencies
-        if sum([do_random_cropping, do_center_cropping, do_resize]) > 1:
-            error("Need at most one image processing parameter. Imgproc params : %s" % self.imgproc)
-        if self.do_validation:
-            if do_random_cropping or do_random_cropping:
-                if do_random_cropping:
-                    warning("Random cropping is enabled in validation mode.")
-                if do_random_mirroring:
-                    warning("Random mirroring is enabled in validation mode.")
-                ans = input("continue? (y/n)")
-                if ans != "y":
-                    error("Aborted.")
-
         info("Starting [%s] workflow on folder [%s]." % (self.workflow, self.run_folder))
-        self.set_input_files()
-
 
     # restore dataset meta parameters
     def resume_metadata(self):
@@ -280,6 +363,9 @@ class Settings:
             if defs.workflows.is_description(self.workflow):
                 self.sequence_length = params[2:]
 
+            # inform datasets
+            for dset in self.datasets:
+                dset.restore(self.train_index, self.epoch_index, self.sequence_length)
             info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
 
     # restore graph variables
@@ -378,6 +464,25 @@ def get_feed_dict(lrcn, dataset, images, ground_truth):
 
     return fdict, num_labels, padding
 
+# check if we should save
+def should_save_now(self, global_step):
+    if self.save_interval == None or self.phase != defs.phase.train:
+        return False
+    return global_step % self.save_interval == 0
+
+
+# print information on current iteration
+def print_iter_info(settings, dataset,  num_images, num_labels, padding):
+    padinfo = "(%d padding)" % padding if padding > 0 else ""
+    msg = "Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images%s, %3d labels" % \
+          (dataset.batch_index, len(dataset.batches), num_images, padinfo, num_labels)
+    if settings.phase == defs.phase.train:
+        msg = "Mode: [%s], epoch: %2d/%2d, %s" % (settings.phase, settings.epoch_index + 1, settings.epochs, msg)
+    # same as train, but no epoch
+    elif settings.phase == defs.phase.val:
+        msg = "Mode: [%s], batch %4d / %4d : %3d images%s, %3d labels" % (settings.phase, dataset.batch_index,
+                                                                      len(dataset.batches), num_images, padinfo, num_labels)
+    info(msg)
 
 # train the network
 def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
@@ -385,12 +490,12 @@ def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
     run_batch_count = 0
 
     for epochIdx in range(dataset.epoch_index, dataset.epochs):
-        dataset.set_or_swap_phase(defs.phase.train)
         while dataset.loop():
             # read  batch
             images, ground_truth = dataset.get_next_batch()
             fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
-            dataset.print_iter_info( len(images), padding, num_labels)
+            print_iter_info(settings, dataset, len(images), padding, num_labels)
+
             # count batch iterations
             run_batch_count = run_batch_count + 1
             summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
@@ -523,16 +628,13 @@ def main(init_file):
     settings = Settings()
     settings.initialize(init_file)
 
+
     # init summaries for printage
     summaries = Summaries()
 
-    # initialize & pre-process dataset
-    dataset = dataset_.Dataset()
-    dataset.initialize(settings)
-
     # create and configure the nets : CNN and / or lstm
     lrcn = lrcn_.LRCN()
-    lrcn.create(settings, dataset, summaries)
+    lrcn.create(settings, summaries)
 
     # view_print_tensors(lrcn,dataset,settings,lrcn.print_tensors)
 
@@ -550,9 +652,9 @@ def main(init_file):
     # create the writer for visualizashuns
     tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
     if settings.do_training:
-        train_test(settings, dataset, lrcn,  sess, tboard_writer, summaries)
+        train_test(settings, lrcn,  sess, tboard_writer, summaries)
     elif settings.do_validation:
-        test(dataset, lrcn, settings,  sess, tboard_writer, summaries)
+        test(lrcn, settings,  sess, tboard_writer, summaries)
 
     # mop up
     tboard_writer.close()

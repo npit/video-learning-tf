@@ -31,7 +31,7 @@ class LRCN:
     item_labels = None
     clip_logits = None
     clip_labels = None
-    clip_pooling_type = None
+    clip_fusion = None
 
     current_lr = None
     dcnn_model = None
@@ -46,7 +46,7 @@ class LRCN:
     run_folder = None
 
     # let there be network
-    def create(self, settings, dataset, summaries):
+    def create(self, settings, summaries):
         # initializations
         if defs.workflows.is_description(settings.workflow) and defs.workflows.is_image(settings.workflow):
             self.item_logits = []
@@ -54,55 +54,55 @@ class LRCN:
             self.non_padding_word_idxs = tf.placeholder(tf.int32, (None))
         else:
             # items refer to the primary unit we operate one, i.e. videos or frames
-            self.item_logits = np.zeros([0, dataset.num_classes], np.float32)
-            self.item_labels = np.zeros([0, dataset.num_classes], np.float32)
+            self.item_logits = np.zeros([0, settings.network.num_classes], np.float32)
+            self.item_labels = np.zeros([0, settings.network.num_classes], np.float32)
             # clips refers to image groups that compose a video, for training with clip information
-            self.clip_logits = np.zeros([0, dataset.num_classes], np.float32)
-            self.clip_labels = np.zeros([0, dataset.num_classes], np.float32)
-            self.clip_pooling_type = settings.clip_pooling_type
+            self.clip_logits = np.zeros([0, settings.network.num_classes], np.float32)
+            self.clip_labels = np.zeros([0, settings.network.num_classes], np.float32)
+            self.clip_fusion = settings.network.clip_fusion
 
         # define network input
         self.workflow = settings.workflow
         self.timestamp = settings.timestamp
         self.run_id = settings.run_id
         self.run_folder = settings.run_folder
-        self.validation_logits_save_interval = settings.validation_logits_save_interval
+        self.validation_logits_save_interval = settings.val.logits_save_interval if settings.val else None
 
         # create the workflows
         # Activity recognition
         if self.workflow == defs.workflows.acrec.singleframe:
-           self.create_actrec_singleframe(settings, dataset)
+           self.create_actrec_singleframe(settings)
         elif self.workflow == defs.workflows.acrec.audio:
-            self.create_actrec_audio(settings, dataset)
+            self.create_actrec_audio(settings)
         elif self.workflow == defs.workflows.acrec.lstm:
-            self.create_actrec_lstm(settings, dataset)
+            self.create_actrec_lstm(settings)
         # Image description
         elif self.workflow == defs.workflows.imgdesc.inputstep:
-            self.create_imgdesc_visualinput(settings, dataset)
+            self.create_imgdesc_visualinput(settings)
         elif self.workflow == defs.workflows.imgdesc.statebias:
-            self.create_imgdesc_statebias(settings, dataset)
+            self.create_imgdesc_statebias(settings)
         elif self.workflow == defs.workflows.imgdesc.inputbias:
-            self.create_imgdesc_inputbias(settings, dataset)
+            self.create_imgdesc_inputbias(settings)
         # Video description
-        elif self.workflow == defs.workflows.videodesc.pooled:
-            self.create_videodesc_pooling(settings,dataset)
+        elif self.workflow == defs.workflows.videodesc.fused:
+            self.create_videodesc_fusion(settings)
         elif self.workflow == defs.workflows.videodesc.encdec:
-            self.create_videodesc_encdec(settings,dataset)
+            self.create_videodesc_encdec(settings)
 
         else:
             error("Unknown run mode [%s]" % self.workflow)
 
         # create the training ops
-        if settings.do_training:
-            self.create_training(settings, dataset, summaries)
+        if settings.train:
+            self.create_training(settings, summaries)
 
-    def precompute_learning_rates(self, settings, dataset):
+    def precompute_learning_rates(self, settings):
         info("Precomputing learning rates per batch")
 
-        base_lr = settings.base_lr
-        decay_params = settings.lr_decay
-        num_batches = len(dataset.batches_train)
-        total_num_batches = num_batches * dataset.epochs
+        base_lr = settings.train.base_lr
+        decay_params = settings.train.lr_decay
+        num_batches = settings.get_num_batches()
+        total_num_batches = num_batches * settings.train.epochs
         lr_per_batch = []
         if decay_params is None:
             return [base_lr for _ in range(total_num_batches)]
@@ -117,7 +117,7 @@ class LRCN:
             staircase = True
             log_message += "jaggedly "
         else:
-            error("Undefined decay strategy %s" % decay_strategy, settings.logger)
+            error("Undefined decay strategy %s" % decay_strategy)
 
         if decay_scheme == defs.decay.scheme.interval:
             # reduce every decay_freq batches
@@ -127,9 +127,9 @@ class LRCN:
             # reduce a total of decay_freq times
             decay_period = math.ceil(total_num_batches / decay_freq)
             log_message += "every ceil[(%d batches x %d epochs) / %d total steps] = %d steps" % \
-                (num_batches, dataset.epochs, decay_freq, decay_period)
+                (num_batches, settings.train.epochs, decay_freq, decay_period)
         else:
-            error("Undefined decay scheme %s" % decay_scheme, settings.logger)
+            error("Undefined decay scheme %s" % decay_scheme)
 
         idx = 0
         while len(lr_per_batch) < total_num_batches:
@@ -149,19 +149,19 @@ class LRCN:
 
         lr_schedule_file = os.path.join(settings.run_folder,settings.run_id + "_lr_decay_schedule.txt")
         with open(lr_schedule_file,"w") as f:
-            batches = [ x for _ in range(dataset.epochs) for x in range(num_batches)]
+            batches = [ x for _ in range(settings.train.epochs) for x in range(num_batches)]
             if len(batches) != total_num_batches:
-                error("Batch length precomputation mismatch",  settings.logger)
-            epochs = [ep for ep in range(dataset.epochs) for _ in dataset.batches_train]
+                error("Batch length precomputation mismatch")
+            epochs = [ep for ep in range(settings.train.epochs) for _ in range(settings.get_num_batch_batches())]
             batches_lr = list(zip(epochs, batches, lr_per_batch))
 
             for b in batches_lr:
-                f.write("Epoch %d/%d, batch %d/%d, lr %2.8f\n" % (b[0]+1,dataset.epochs,b[1]+1, num_batches,b[2]))
+                f.write("Epoch %d/%d, batch %d/%d, lr %2.8f\n" % (b[0]+1, settings.train.epochs,b[1]+1, num_batches,b[2]))
         info(log_message)
         return lr_per_batch
 
     # training ops
-    def create_training(self, settings, dataset, summaries):
+    def create_training(self, settings, summaries):
 
         self.logits = print_tensor(self.logits, "training: logits : ")
         # configure loss
@@ -172,7 +172,7 @@ class LRCN:
             summaries.train.append(add_descriptive_summary(self.loss))
 
         # configure the learning rate
-        learning_rates = self.precompute_learning_rates(settings,dataset)
+        learning_rates = self.precompute_learning_rates(settings)
         self.learning_rates = tf.constant(learning_rates,tf.float32,name="Learning_rates")
         self.global_step = tf.Variable(0, dtype = tf.int32, trainable=False,name="global_step")
         with tf.name_scope("lr"):
@@ -180,10 +180,10 @@ class LRCN:
             summaries.train.append(add_descriptive_summary(self.current_lr))
 
         # setup the training ops, with a potential lr per-layer variation
-        if settings.lr_mult is not None:
-            self.create_multi_tier_learning(settings, dataset, summaries)
+        if settings.train.lr_mult is not None:
+            self.create_multi_tier_learning(settings, summaries)
         else:
-            self.create_single_tier_learning(settings, dataset, summaries)
+            self.create_single_tier_learning(settings, summaries)
 
         # accuracies
         with tf.name_scope('training_accuracy'):
@@ -196,7 +196,7 @@ class LRCN:
         summaries.train.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
 
     # establish the training ops with slow and fast learning parameters
-    def create_multi_tier_learning(self, settings, dataset, summaries):
+    def create_multi_tier_learning(self, settings, summaries):
         with tf.name_scope("two_tier_optimizer"):
             # split tensors to slow and fast learning, as per their definition
             regular_vars, modified_vars = [], []
@@ -207,28 +207,28 @@ class LRCN:
                 regular_vars.extend(self.lstm_model.train_regular)
                 modified_vars.extend(self.lstm_model.train_modified)
             info("Setting up two-tier training with a factor of %f for the %d layer(s): %s" % (
-            settings.lr_mult, len(modified_vars), [ m.name for m in modified_vars]))
+            settings.train.lr_mult, len(modified_vars), [ m.name for m in modified_vars]))
 
             # setup the two optimizer
-            if settings.optimizer == defs.optim.sgd:
+            if settings.train.optimizer == defs.optim.sgd:
                 opt = tf.train.GradientDescentOptimizer(self.current_lr, name="sgd_base")
-            elif settings.optimizer == defs.optim.adam:
+            elif settings.train.optimizer == defs.optim.adam:
                 opt = tf.train.AdamOptimizer(self.current_lr)
             else:
-                error("Undefined optimizer %s" % settings.optimizer)
+                error("Undefined optimizer %s" % settings.train.optimizer)
 
             # computer two-tier grads
             grads = opt.compute_gradients(self.loss, var_list=regular_vars)
-            if settings.clip_grads is not None:
-                clipmin, clipmax = settings.clip_grads
+            if settings.train.clip_grads is not None:
+                clipmin, clipmax = settings.train.clip_grads
                 grads = [(tf.clip_by_global_norm(grad, clipmax), var) for grad, var in grads]
             trainer_base = opt.apply_gradients(grads)
 
-            modified_lr = self.current_lr * settings.lr_mult
+            modified_lr = self.current_lr * settings.train.lr_mult
             opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
             grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
-            if settings.clip_grads is not None:
-                clipmin, clipmax = settings.clip_grads
+            if settings.train.clip_grads is not None:
+                clipmin, clipmax = settings.train.clip_grads
                 grads_mod = [(tf.clip_by_global_norm(grad_mod, clipmax), var_mod) for grad_mod, var_mod in
                              grads_mod]
             trainer_modified = opt.apply_gradients(grads_mod, global_step=self.global_step)
@@ -243,7 +243,7 @@ class LRCN:
             grads_mod_norm = tf.reduce_mean(list(map(tf.norm, grads_mod)))
             summaries.train.append(add_descriptive_summary(grads_mod_norm))
 
-    def create_single_tier_learning(self, settings, dataset, summaries):
+    def create_single_tier_learning(self, settings, summaries):
         # single lr for all
         info("Setting up training with a global learning rate.")
         with tf.name_scope("single_tier_optimizer"):
@@ -260,8 +260,8 @@ class LRCN:
                 info("Setting gradient clipping to a global norm of %d" % settings.clip_norm)
                 #clipmin, clipmax = settings.clip_grads
                 #max_norm = settings.clip_norm
-                grads,_ = tf.clip_by_global_norm(grads, settings.clip_norm)
-                grads_vars = zip(grads, [v for _,v in grads_vars])
+                grads, _ = tf.clip_by_global_norm(grads, settings.clip_norm)
+                grads_vars = zip(grads, [v for _, v in grads_vars])
             self.optimizer = opt.apply_gradients(grads_vars, global_step=self.global_step)
 
         with tf.name_scope('grads_norm'):
@@ -272,38 +272,61 @@ class LRCN:
     # workflows
 
     # Activity recognition
-    def create_actrec_singleframe(self, settings, dataset):
+    def create_actrec_singleframe(self, settings):
         # define label inputs
-        batchLabelsShape = [None, dataset.num_classes]
+        batchLabelsShape = [None, settings.network.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
 
         settings.frame_encoding_layer = None
         # create the singleframe workflow
-        with tf.name_scope("dcnn_workflow"):
-            info("Dcnn workflow")
-            # single DCNN, classifying individual frames
-            self.inputData, self.logits = self.make_dcnn(dataset,settings)
-        # reshape to num_items x num_frames_per_item x dimension
-        self.logits = tf.reshape(self.logits, (-1, dataset.num_frames_per_clip, dataset.num_classes),
-                                 name="reshape_framelogits_pervideo")
+        info("Dcnn workflow %s" % str(settings.network.frame_fusion_method))
+        if settings.network.frame_fusion_type == defs.fusion_type.late:
+            # frames - encode to vectors - logit per frame - pool to clip level
+            with tf.name_scope("dcnn_workflow"):
+                # single DCNN, encoding and classifying individual frames
+                self.inputData, self.logits = self.make_dcnn(settings)
+                # output is one logit per frame
+                # reshape to num_items x num_frames_per_item x dimension
+                self.logits = tf.reshape(self.logits, (-1, settings.datasets[0].num_frames_per_clip, settings.network.num_classes),
+                                         name="reshape_framelogits_pervideo")
 
-        if dataset.input_mode == defs.input_mode.image or dataset.num_frames_per_clip == 1:
-            return
+            # if we have no clips, we're done
+            if settings.datasets[0].input_mode == defs.input_mode.image or settings.datasets[0].num_frames_per_clip == 1:
+                return
 
-        # pool the logits on the temporal dimension
-        if settings.frame_pooling_type == defs.pooling.lstm:
-            encoder = lstm.lstm()
-        else:
-            encoder = None
+            # apply late fusion, pooling the logits on the temporal dimension
+            if settings.network.frame_fusion_method== defs.fusion_method.lstm:
+                encoder = lstm.lstm()
+            else:
+                encoder = None
+            self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.datasets[0].num_frames_per_clip,
+                                                 settings.network.frame_fusion_method, lstm_encoder=encoder)
 
-        self.logits = apply_temporal_pooling(self.logits, dataset.num_classes, dataset.num_frames_per_clip,
-                                             settings.frame_pooling_type, lstm_encoder=encoder)
+        elif settings.network.frame_fusion_type == defs.fusion_type.early:
+            # frames - encode to vectors - pool to clips - logit per clip
+            with tf.name_scope("dcnn_workflow"):
+                # single DCNN, encoding individual frames to the encoding dim
+                self.inputData, self.encoded_frames = self.make_dcnn(settings)
+                # reshape from batch_size * cpv * fpc x encoding dim to batch_size * cpv x fpc x encoding_dim
+                encoded_dim = int(tf.shape(self.encoded_frames))
+                self.encoded_frames_reshaped = tf.reshape(self.encoded_frames, [-1, settings.datasets[0].num_frames_per_clip, encoded_dim])
+                # fuse to one vector per clip  
+                # apply late fusion, pooling the logits on the temporal dimension
+                if settings.network.frame_fusion_method== defs.fusion_method.lstm:
+                    encoder = lstm.lstm()
+                else:
+                    encoder = None
+                clip_vectors = apply_temporal_fusion(self.encoded_frames_reshaped, encoded_dim, settings.datasets[0].num_frames_per_clip,
+                                                 settings.network.frame_fusion_method, lstm_encoder=encoder)
+                # classify to the desired dimension
+                self.logits = convert_dim_fc(clip_vectors, settings.network.num_classes)
 
         info("logits out : [%s]" % self.logits.shape)
 
+
     def create_actrec_lstm(self, settings, dataset):
         # define label inputs
-        batchLabelsShape = [None, dataset.num_classes]
+        batchLabelsShape = [None, settings.network.num_classes]
         settings.frame_encoding_layer = None
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
         # create the lstm workflow
@@ -319,15 +342,15 @@ class LRCN:
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
             self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.lstm_num_layers,
-                                        settings.lstm_num_hidden, dataset.num_classes, dataset.num_frames_per_clip,
-                                                           None,  settings.frame_pooling_type, settings.dropout_keep_prob)
+                                        settings.lstm_num_hidden, settings.network.num_classes, settings.datasets[0].num_frames_per_clip,
+                                                           None,  settings.network.frame_fusion_method, settings.dropout_keep_prob)
             # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
             # self.logits = self.lstm_model.get_output()
             info("logits : [%s]" % self.logits.shape)
 
     def create_actrec_audio(self, settings,dataset):
         # define label inputs
-        batchLabelsShape = [None, dataset.num_classes]
+        batchLabelsShape = [None, settings.network.num_classes]
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
 
         settings.frame_encoding_layer = None
@@ -336,17 +359,17 @@ class LRCN:
             info("Audionet workflow")
             # single DCNN, classifying individual frames
             self.dcnn_model = audionet.audionet()
-            self.dcnn_model.create(dataset.image_shape, dataset.num_classes)
+            self.dcnn_model.create(dataset.image_shape, settings.network.num_classes)
             self.inputData, self.logits = self.dcnn_model.get_io()
         # reshape to num_items x num_frames_per_item x dimension
-        self.logits = tf.reshape(self.logits, (-1, dataset.num_frames_per_clip, dataset.num_classes),
+        self.logits = tf.reshape(self.logits, (-1, settings.datasets[0].num_frames_per_clip, settings.network.num_classes),
                                  name="reshape_framelogits_pervideo")
 
-        if dataset.input_mode == defs.input_mode.image or dataset.num_frames_per_clip == 1:
+        if dataset.input_mode == defs.input_mode.image or settings.datasets[0].num_frames_per_clip == 1:
             return
 
-        # pool the logits on the temporal dimension
-        self.logits = apply_temporal_pooling(self.logits, dataset.num_classes, dataset.num_frames_per_clip, settings.frame_pooling_type)
+        # fuse the logits on the temporal dimension
+        self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.datasets[0].num_frames_per_clip, settings.network.frame_fusion_method)
 
         info("logits out : [%s]" % self.logits.shape)
 
@@ -373,8 +396,8 @@ class LRCN:
                 frames_words = tf.concat([encodedFrames, self.word_embeddings], axis=1)
 
                 self.logits, _ = self.lstm_model.forward_pass_sequence(frames_words, None, embedding_dim + visual_dim, settings.lstm_num_layers,
-                                                      settings.lstm_num_hidden, dataset.num_classes, dataset.max_sequence_length,
-                                                      self.caption_lengths, defs.pooling.reshape, settings.dropout_keep_prob)
+                                                      settings.lstm_num_hidden, settings.network.num_classes, dataset.max_sequence_length,
+                                                      self.caption_lengths, defs.fusion.reshape, settings.dropout_keep_prob)
 
                 # remove the logits corresponding to padding
                 self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
@@ -384,7 +407,7 @@ class LRCN:
 
             else:
                 vinput_mode = defs.rnn_visual_mode.input_concat
-                self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val, dataset.num_classes,
+                self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val, settings.network.num_classes,
                                                                          dataset.max_sequence_length, settings.lstm_num_hidden, settings.lstm_num_layers,
                                                                          dataset.embedding_matrix[dataset.vocabulary.index("BOS"), :], dataset.embedding_matrix, vinput_mode)
                 self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
@@ -423,9 +446,9 @@ class LRCN:
                 self.logits, _ = self.lstm_model.forward_pass_sequence(input_biased_embeddings, None,
                                                                        int(dataset.embedding_matrix.shape[1]),
                                                                        settings.lstm_num_layers,
-                                                                       settings.lstm_num_hidden, dataset.num_classes,
+                                                                       settings.lstm_num_hidden, settings.network.num_classes,
                                                                        augmented_sequence_length,
-                                                                       self.caption_lengths, defs.pooling.reshape,
+                                                                       self.caption_lengths, defs.fusion_method.reshape,
                                                                        settings.dropout_keep_prob)
                 # remove the logits corresponding to padding
                 self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
@@ -439,7 +462,7 @@ class LRCN:
                 info("Incrementing sequence length to %d for the input bias step" % (augmented_sequence_length))
                 vinput_mode = defs.rnn_visual_mode.input_bias
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
-                                                                         dataset.num_classes,
+                                                                         settings.network.num_classes,
                                                                          augmented_sequence_length,
                                                                          settings.lstm_num_hidden,
                                                                          settings.lstm_num_layers,
@@ -462,8 +485,8 @@ class LRCN:
             self.lstm_model = lstm.lstm()
             if settings.do_training:
                 self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames, int(dataset.embedding_matrix.shape[1]),
-                                                      settings.lstm_num_layers, settings.lstm_num_hidden, dataset.num_classes,
-                                                      dataset.max_sequence_length, self.caption_lengths, defs.pooling.reshape, settings.dropout_keep_prob )
+                                                      settings.lstm_num_layers, settings.lstm_num_hidden, settings.network.num_classes,
+                                                      dataset.max_sequence_length, self.caption_lengths, defs.fusion_method.reshape, settings.dropout_keep_prob )
                 # remove the logits corresponding to padding
                 self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
                 # re-merge the tensor list into a tensor
@@ -473,7 +496,7 @@ class LRCN:
             else:
                 vinput_mode = defs.rnn_visual_mode.state_bias
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
-                                                           dataset.num_classes, dataset.max_sequence_length, settings.lstm_num_hidden,
+                                                           settings.network.num_classes, dataset.max_sequence_length, settings.lstm_num_hidden,
                                                            settings.lstm_num_layers, dataset.embedding_matrix[dataset.vocabulary.index("BOS"),:],
                                                            dataset.embedding_matrix, vinput_mode)
                 # output is a sequence length * batchsize vector
@@ -484,13 +507,13 @@ class LRCN:
     def make_description_placeholders(self, settings, dataset):
         # set up placeholders
         self.caption_lengths = tf.placeholder(tf.int32, shape=(None), name="words_per_item")
-        self.inputLabels = tf.placeholder(tf.int32, [None, dataset.num_classes], name="input_labels")
+        self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
         self.word_embeddings = tf.placeholder(tf.float32, shape=(None, dataset.embedding_matrix.shape[1]),
                                               name="word_embeddings")
         debug("input labels : [%s]" % self.inputLabels)
 
     # make then dcnn network
-    def make_dcnn(self, dataset, settings):
+    def make_dcnn(self, settings, output_layer = None):
 
         # make sure dcnn weights are good2go
         self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
@@ -499,8 +522,7 @@ class LRCN:
 
         # DCNN for frame encoding
         self.dcnn_model = alexnet.dcnn()
-        self.dcnn_model.create(dataset.image_shape, self.dcnn_weights_file, dataset.num_classes,
-                               settings.frame_encoding_layer)
+        self.dcnn_model.create(settings.datasets[0].desired_image_shape, self.dcnn_weights_file, settings.network.num_classes, output_layer)
         inputData, outputData = self.dcnn_model.get_io()
         debug("dcnn input : [%s]" % inputData.shape)
         debug("dcnn output : [%s]" % outputData.shape)
@@ -508,26 +530,24 @@ class LRCN:
         return inputData, outputData
 
     # video description
-    def create_videodesc_pooling(self, settings, dataset):
-        # Venugopalan et al. 2015 : pool video frames, do img desc.
+    def create_videodesc_fusion(self, settings, dataset):
+        # Venugopalan et al. 2015 : fuse video frames, do img desc.
 
         # get dcnn encodings for each frame
         self.inputData, encoded_frames = self.make_dcnn(dataset, settings)
 
-        # pool video frames to a single vector
-        if settings.frame_pooling_type == defs.pooling.avg:
-            pooled_frames = tf.reduce_mean(encoded_frames, 0)
-        else:
-            error("Undefined pooling type %s" % settings.frame_pooling_type)
+        # fuse video frames to a single vector
+        if settings.network.frame_fusion_method == defs.fusion_method.avg:
+            fused_frames = tf.reduce_mean(encoded_frames, 0)
 
         self.make_description_placeholders(settings, dataset)
         if settings.do_training:
-            self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, pooled_frames,
+            self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, fused_frames,
                                                                    int(dataset.embedding_matrix.shape[1]),
                                                                    settings.lstm_num_layers, settings.lstm_num_hidden,
-                                                                   dataset.num_classes,
+                                                                   settings.network.num_classes,
                                                                    dataset.max_sequence_length, self.caption_lengths,
-                                                                   defs.pooling.reshape, settings.dropout_keep_prob)
+                                                                   defs.fusion_method.reshape, settings.dropout_keep_prob)
             # remove the logits corresponding to padding
             self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
             # re-merge the tensor list into a tensor
@@ -606,7 +626,7 @@ class LRCN:
             while dataset.video_index < len(dataset.clips_per_video) and cpv <= len(self.clip_logits):
 
                 # aggregate the logits and add to video logits accumulation
-                self.apply_clip_pooling(self.clip_logits, cpv, self.clip_labels)
+                self.apply_clip_fusion(self.clip_logits, cpv, self.clip_labels)
                 # delete them from the accumulation
                 self.clip_logits = self.clip_logits[cpv:,:]
                 self.clip_labels = self.clip_labels[cpv:,:]
@@ -622,16 +642,16 @@ class LRCN:
         else:
             # batch items are whole items of data
             if dataset.input_mode == defs.input_mode.video:
-                # can directly pool and append to video accumulators
+                # can directly fuse and append to video accumulators
                 maxvid = dataset.batch_index * dataset.batch_size
                 minvid = maxvid - dataset.batch_size
 
                 for vidx in range(minvid, maxvid):
-                    if vidx >= dataset.get_num_items():
+                    if vidx >= dataset.num_items:
                         break
                     cpv = dataset.clips_per_video[vidx]
                     debug("Aggregating %d clips for video %d in video batch mode" % (cpv, vidx + 1))
-                    self.apply_clip_pooling(logits,cpv,labels)
+                    self.apply_clip_fusion(logits,cpv,labels)
                     logits = logits[cpv:,:]
                     labels = labels[cpv:,:]
                 if not (len(logits) == 0 and len(labels) == 0):
@@ -685,13 +705,13 @@ class LRCN:
             logits_chunk = pickle.load(f)
         return logits_chunk
 
-    def apply_clip_pooling(self, clips_logits, cpv, video_labels):
+    def apply_clip_fusion(self, clips_logits, cpv, video_labels):
         curr_clips = clips_logits[0:cpv,:]
         video_label = video_labels[0,:]
-        if self.clip_pooling_type == defs.pooling.avg:
-            video_logits = np.mean(curr_clips , axis=0)
-        elif self.clip_pooling_type == defs.pooling.last:
-            video_logits = curr_clips [-1, :]
+        if self.clip_fusion == defs.fusion_method.avg:
+            video_logits = np.mean(curr_clips, axis=0)
+        elif self.clip_fusion == defs.fusion_method.last:
+            video_logits = curr_clips[-1, :]
         # add logits, label to the video accumulation
         self.add_item_logits_labels(video_logits, video_label)
 

@@ -5,15 +5,20 @@ run:
   # save / load configuration
   resume_file: None
 
-  # data parameters; a list for multimodal settings
-  data_path: "path/to/data"
-  path_prepend_folder: ""
-  raw_image_shape: (240, 320, 3)
-  mean_image: [103.939, 116.779, 123.68]
-  data_format: defs.data_format.tfrecord
-  frame_format: "jpg"
-  imgproc: []
-
+  # data parameters; a list of input data 
+  data:
+    data_source_1:
+      data_path: "path/to/data"
+      path_prepend_folder: ""
+      raw_image_shape: (240, 320, 3)
+      mean_image: [103.939, 116.779, 123.68]
+      data_format: defs.data_format.tfrecord
+      frame_format: "jpg"
+      imgproc: []
+    data_source_2:
+      data_path: "path/to/data"
+      # ...
+  
   # folder for direct image reading
   run_folder: "path/to/outputfolder"
 
@@ -22,10 +27,9 @@ run:
   frame_encoding_layer: "fc7"
   lstm_num_layers: 3
   lstm_num_hidden: 256
-  frame_pooling_type: defs.pooling.avg
-  clip_pooling_type: defs.pooling.avg
+  frame_pooling: (defs.fusion_type.late, defs.fusion_method.avg)
+  clip_pooling: (defs.fusion_type.late, defs.fusion_method.avg)
   num_classes: 101
-
 
   # specify what the batch size represents
   batch_item: defs.batch_item.default

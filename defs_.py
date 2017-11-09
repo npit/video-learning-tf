@@ -1,6 +1,39 @@
 from utils_ import error
+import inspect
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
+    # checks non full def names
+    def check(arg, should_belong_to):
+        parts = arg.split(".")
+        belongs_ok = False
+        if not parts[0] == "defs":
+            error("Invalid def : %s" % arg)
+        else:
+            curr_class = defs
+            parts = parts[1:]
+        for part in parts:
+            if not belongs_ok:
+                belongs_ok = should_belong_to == curr_class
+            fields = inspect.getmembers(curr_class,  lambda a:not(inspect.isroutine(a)))
+            fields = [v[0] for v in fields if not(v[0].startswith('__') or v[0].endswith('__'))]
+            if not part in fields:
+                error('Parameter [%s] is not defined for [%s]' % (part, curr_class))
+            else:
+                curr_class = getattr(curr_class, part)
+        if not belongs_ok:
+            error("Supplied parameter [%s] should be a child of def [%s]" % (arg, should_belong_to))
+        return curr_class
+
+    # checks full def names
+    def check_full(self,arg):
+        parts = arg.split(".")
+        if not parts[0] == "defs":
+            error("Invalid def : %s" % arg)
+        curr_class = defs
+        for part in parts[1:]:
+            curr_class = defs.check_part(part, curr_class)
+        return curr_class
+
 
     # run phase
     class phase:
@@ -37,9 +70,9 @@ class defs:
                        arg == defs.workflows.imgdesc.inputstep or \
                        arg == defs.workflows.imgdesc.inputbias
         class videodesc:
-            pooled, encdec = "videodesc_pooled", "videodesc_encdec"
+            fused, encdec = "videodesc_fused", "videodesc_encdec"
             def is_workflow(arg):
-                return arg == defs.workflows.videodesc.pooled or \
+                return arg == defs.workflows.videodesc.fused or \
                        arg == defs.workflows.videodesc.encdec
         def is_description(arg):
             return defs.workflows.imgdesc.is_workflow(arg) or \
@@ -48,7 +81,7 @@ class defs:
             return defs.workflows.acrec.singleframe == arg or \
                    defs.workflows.acrec.lstm == arg or \
                    defs.workflows.videodesc.encdec == arg or \
-                   defs.workflows.videodesc.pooled == arg or \
+                   defs.workflows.videodesc.fused == arg or \
                    defs.workflows.acrec.audio == arg
         def is_image(arg):
             return defs.workflows.imgdesc.statebias == arg or \
@@ -56,9 +89,13 @@ class defs:
                    defs.workflows.imgdesc.inputbias == arg
                 #lstm, singleframe, imgdesc, videodesc = "lstm","singleframe", "imgdesc", "videodesc"
 
-    # video pooling methods
-    class pooling:
+    # sequence fusion methods
+    class fusion_method:
         avg, last, reshape, lstm = "avg", "last", "reshape", "lstm"
+
+    # early/late fusion
+    class fusion_type:
+        early, late = "early", "late"
 
     # how the video's frames are structured
     class clipframe_mode:

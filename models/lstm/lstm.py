@@ -60,7 +60,7 @@ class lstm(Trainable):
 
     # basic, abstract lstm functions
     def forward_pass_sequence(self, input_tensor, input_state, input_dim, num_layers, num_hidden, output_dim,
-                              sequence_length, nonzero_sequence, pooling_type, dropout_prob=0.0):
+                              sequence_length, nonzero_sequence, fusion_type, dropout_prob=0.0):
         '''
         Pass an input sequence through the lstm, returning the output sequence state vector.
         :return: output and state
@@ -77,7 +77,7 @@ class lstm(Trainable):
             output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length, nonzero_sequence, input_state)
 
             # pool output batch to a vector
-            output = apply_temporal_pooling(output, num_hidden, sequence_length, pooling_type)
+            output = apply_temporal_fusion(output, num_hidden, sequence_length, fusion_type)
 
             # add dropout
             output = self.apply_dropout(output, dropout_prob)
@@ -307,7 +307,7 @@ class lstm(Trainable):
             num_hidden = settings.lstm_num_hidden
             num_classes = dataset.num_classes
             sequence_len = dataset.num_frames_per_clip
-            frame_pooling_type = settings.frame_pooling_type
+            frame_fusion_type = settings.frame_fusion
             dropout_keep_prob = settings.dropout_keep_prob
 
             # LSTM basic cell
@@ -322,7 +322,7 @@ class lstm(Trainable):
             output, _ = self.rnn_dynamic(inputTensor,cell,sequence_len, num_hidden)
             debug("LSTM raw output : %s" % str(output.shape))
 
-            if frame_pooling_type == defs.pooling.last:
+            if frame_fusion_type == defs.fusion_method.last:
                 # keep only the response at the last time step
                 output = tf.slice(output,[0,sequence_len-1,0],[-1,1,num_hidden],name="lstm_output_reshape")
                 debug("LSTM last timestep output : %s" % str(output.shape))
@@ -330,12 +330,12 @@ class lstm(Trainable):
                 output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
                 debug("LSTM squeezed output : %s" % str(output.shape))
 
-            elif frame_pooling_type == defs.pooling.avg:
+            elif frame_fusion_type == defs.fusion_method.avg:
                 # average per-timestep results
                 output = tf.reduce_mean(output, axis=1)
                 debug("LSTM time-averaged output : %s" % str(output.shape))
             else:
-                error("Undefined frame pooling type : %d" % frame_pooling_type)
+                error("Undefined frame fusion type : %d" % frame_fusion_type)
 
 
             # add dropout

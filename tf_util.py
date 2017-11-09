@@ -1,17 +1,17 @@
 from utils_ import  *
 from defs_ import *
 
-def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, pooling_type=defs.pooling.reshape, name="temporal_pooling", lstm_encoder = None ):
+def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fusion_type=defs.fusion_method.reshape, name="temporal_fusion", lstm_encoder = None ):
     '''
-    Apply pooling over the temporal (column) dimension of the input tensor
+    Apply fusion over the temporal (column) dimension of the input tensor
     :param self:
     :param input_tensor:
     :param vector_dimension:
     :param temporal_dimension:
-    :param pooling_type:
+    :param fusion_type:
     :return:
     '''
-    if pooling_type == defs.pooling.last:
+    if fusion_type == defs.fusion_method.last:
         # keep only the response at the last time step
         output = tf.slice(input_tensor, [0, temporal_dimension - 1, 0], [-1, 1, vector_dimension], name="lstm_output_reshape")
         debug("LSTM last timestep output : %s" % str(output.shape))
@@ -19,24 +19,24 @@ def apply_temporal_pooling(input_tensor, vector_dimension, temporal_dimension, p
         output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
         debug("LSTM squeezed output : %s" % str(output.shape))
 
-    elif pooling_type == defs.pooling.avg:
+    elif fusion_type == defs.fusion_method.avg:
         # average per-timestep results
         output = tf.reduce_mean(input_tensor, axis=1)
         debug("LSTM time-averaged output : %s" % str(output.shape))
-    elif pooling_type == defs.pooling.reshape:
+    elif fusion_type == defs.fusion_method.reshape:
         output = tf.reshape(input_tensor,[-1, vector_dimension])
-    elif pooling_type == defs.pooling.lstm:
+    elif fusion_type == defs.fusion_method.lstm:
         if lstm_encoder == None:
-            error("Did not provide an lstm encoder for pooling.")
-        # pool via lstm encoding; simplest lstm setting: 1 layer, statedim = inputdim, outputdim = 8
+            error("Did not provide an lstm encoder for fusion.")
+        # fuse via lstm encoding; simplest lstm setting: 1 layer, statedim = inputdim, outputdim = 8
         # setting output dim to a dummy dim of 8, since we'll get the state
         _, output = lstm_encoder.forward_pass_sequence(input_tensor, None, vector_dimension, 1, vector_dimension, 8,
-                                                     temporal_dimension, None, defs.pooling.reshape, 0.5)
+                                                     temporal_dimension, None, defs.fusion_method.reshape, 0.5)
         # get the state h vector
         output = output[0].h
-        debug("Output of lstm temporal pooling [%s]" % str(output.shape))
+        debug("Output of lstm temporal fusion [%s]" % str(output.shape))
     else:
-        error("Undefined frame pooling type : %d" % pooling_type)
+        error("Undefined frame fusion type : %s" % str(fusion_type))
     return output
 
 def convert_dim_fc(input_tensor, output_dim, name="fc_convert", reuse = False):
@@ -71,7 +71,7 @@ def convert_dim_fc(input_tensor, output_dim, name="fc_convert", reuse = False):
 def vectorize(input_tensor, depth_dim):
     return tf.reshape(input_tensor, [ -1, depth_dim])
 
-def make_pool(input_tensor, window, strides, padding, name):
+def make_fusion(input_tensor, window, strides, padding, name):
     """
     Pooling definition helper function
     :param input_tensor:

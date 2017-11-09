@@ -13,16 +13,13 @@ from defs_ import *
 
 # Dataset class
 class Dataset:
+
     workflow = None
     num_classes = None
 
-    # input file names
-    input_source_files = [[], []]  # train,test
-
     # single frame paths and classes, for raw input mode
-    frame_paths = []
-    frame_classes = []
-
+    frames = []
+    labels = []
 
     # run settings
     run_folder = None
@@ -30,10 +27,12 @@ class Dataset:
     num_frames_per_clip = None
     frame_format = None
     data_format = None
+    include_labels = False
+    do_padding = False
 
     # input frames settings
     raw_image_shape = None
-    image_shape = None
+    desired_image_shape = None
     input_mode = None
 
     # mean image subtraction
@@ -50,23 +49,8 @@ class Dataset:
     batch_size = None
     batches = None
     iterator = None
+    num_items = 0
 
-    # training variables
-    do_training = None
-    batch_size_train = None
-    batches_train = []
-    batch_index_train = None
-    train_iterator = None
-    num_items_train = 0
-
-    # validation variables
-    do_validation = False
-    validation_interval = None
-    batch_size_val = None
-    batches_val = []
-    batch_index_val = None
-    val_iterator = None
-    num_items_val = 0
     batch_item = None
 
     # variables for validation clip batches
@@ -77,7 +61,6 @@ class Dataset:
     vocabulary = None
     max_caption_length = None
     max_sequence_length = None
-
     save_interval = None
 
     # mean subtraction
@@ -86,29 +69,19 @@ class Dataset:
 
     # read paths to images
     def read_frames_metadata(self):
-        # store train and test in same variable
-        self.frame_paths.extend([[],[]])
-        self.frame_classes.extend([[], []])
+        # read paths and labels
+        self.frames = []
+        self.labels = []
+        with open(self.path, 'r') as f:
+            for path_label_str in f:
+                path_labels = path_label_str.split()
+                item_path = path_labels[0]
+                item_labels = path_labels[1:]
+                if self.prepend_folder is not None:
+                    item_path = os.path.join(self.prepend_folder, item_path)
+                self.frames.append(item_path)
+                self.labels.append(item_labels)
 
-        if self.do_training:
-            with open(self.input_source_files[defs.train_idx], 'r') as f:
-                for path_label_str in f:
-                    path_labels = path_label_str.split()
-                    item_path = path_labels[0]
-                    item_labels = path_labels[1:]
-                    if self.path_prepend_folder is not None:
-                        item_path = os.path.join(self.path_prepend_folder, item_path)
-                    self.frame_paths[defs.train_idx].append(item_path)
-                    self.frame_classes[defs.train_idx].append(item_labels)
-
-        if self.do_validation:
-            with open(self.input_source_files[defs.val_idx], 'r') as f:
-                for path_label_str in f:
-                    path_labels = path_label_str.split()
-                    item_path = path_labels[0]
-                    item_labels = path_labels[1:]
-                    self.frame_paths[defs.val_idx].append(item_path)
-                    self.frame_classes[defs.val_idx].append(item_labels)
 
     # display image
     def display_image(self,image,label=None):
@@ -173,60 +146,14 @@ class Dataset:
     # fallback when tfrecord image reads fail
     def manually_read_image(self, idx_in_batch):
         global_image_index = self.batch_index * self.batch_size + idx_in_batch
-        phase = defs.train_idx if self.phase == defs.phase.train else defs.val_idx
-        impath = self.frame_paths[phase][global_image_index]
+        impath = self.frames[global_image_index]
         info("Attempting to manually read global image index %d : %s" % (global_image_index, impath))
         image = self.read_image(impath)
         image = imresize(image, self.raw_image_shape)
-        label = self.frame_classes[phase][global_image_index]
+        label = self.labels[global_image_index]
         label = list(map(int,label))
         return image,label
 
-    # set dataset phase, but keep track of potential current
-    def set_or_swap_phase(self, phase):
-        # if phase already set, done
-        if self.phase == phase:
-            return
-        # if the network is switching phases, store the index
-        # to continue later
-        if self.phase is not None:
-            info("Suspending phase [%s] @ batch [%d]" % (self.phase, self.batch_index))
-            if self.phase == defs.phase.train:
-                self.batch_index_train = self.batch_index
-            else:
-                self.batch_index_val = self.batch_index
-        self.set_current_phase(phase)
-
-    # assign the current phase variables to the argument phase
-    def set_current_phase(self, phase, is_new_phase = True):
-
-        # update phase variables
-        self.phase = phase
-        if self.phase == defs.phase.train:
-            self.batches = self.batches_train
-            self.batch_index = self.batch_index_train
-            self.iterator = self.train_iterator
-            self.batch_size = self.batch_size_train
-        else:
-            self.batches = self.batches_val
-            self.batch_index = self.batch_index_val
-            self.iterator = self.val_iterator
-            self.batch_size = self.batch_size_val
-        if is_new_phase:
-            info("Starting phase [%s] @ batch [%d]." % (phase, self.batch_index))
-
-    # reset data reading params for phase
-    def reset_phase(self, phase):
-        info("Reseting phase [%s]." % phase)
-        if phase == defs.phase.train:
-            self.batch_index_train = 0
-            self.reset_iterator(defs.phase.train)
-        else:
-            self.batch_index_val = 0
-            self.reset_iterator(defs.phase.val)
-        # if argument phase is the current one, also update current phase variables
-        if phase == self.phase:
-            self.set_current_phase(phase, is_new_phase=False)
 
     # read next batch
     def get_next_batch(self):
@@ -267,10 +194,8 @@ class Dataset:
         else:
             ground_truth = labels_to_one_hot(labels, self.num_classes)
 
-        self.advance_batch_indexes()
+        self.advance_batch_index()
         return images, ground_truth
-
-
 
     # get captions from logit vectors
     def validation_logits_to_captions(self, logits, start_index = 0):
@@ -324,7 +249,7 @@ class Dataset:
         return return_data
 
     def apply_caption_padding(self, word_vectors, curr_caption_length, batch_index):
-        # for training, pad to the max number of words with zero vectors. Also keep track of non-pad entries
+        # pad to the max number of words with zero vectors. Also keep track of non-pad entries
         num_left_to_max = self.max_sequence_length - curr_caption_length
         local_indexes, offset = list(range(curr_caption_length)), batch_index * (self.max_sequence_length)
         no_pad_index = [offset + elem for elem in  local_indexes]
@@ -352,19 +277,19 @@ class Dataset:
             # get caption word embedding vectors - set BOS as first input token
             word_vectors = self.embedding_matrix[bos_index, :]
             # if training, put the caption word vectors after the BOS in the input, else leave just BOS
-            if self.do_training:
+            if self.include_labels:
                 word_vectors = np.vstack((word_vectors, self.embedding_matrix[item_labels, :]))
 
             # get labels needed for training loss / validation accuracy
             # there is no need to onehot-encode in the validation case, but it's done to get uniform-length labels
             labels = np.asarray(labels_to_one_hot(item_labels, self.num_classes))
-            if self.do_training:
+            if self.include_labels:
                 # in training mode, append with EOS
                 eos_onehot = labels_to_one_hot(eos_index, self.num_classes)
                 labels = np.vstack((labels, eos_onehot))
 
             # pad the input caption to the maximum caption length.
-            if self.do_training:
+            if self.do_padding:
                 no_pad_index, word_vectors = self.apply_caption_padding(word_vectors, len(input_labels), batch_index)
                 batch_no_pad_index.extend(no_pad_index)
 
@@ -420,22 +345,8 @@ class Dataset:
             labels = [labels[l] for l in range(0, len(labels), self.num_frames_per_clip)]
         return images,labels
 
-    def advance_batch_indexes(self):
+    def advance_batch_index(self):
         self.batch_index = self.batch_index + 1
-        if self.phase == defs.phase.train:
-            self.batch_index_train = self.batch_index_train + 1
-        else:
-            self.batch_index_val = self.batch_index_val + 1
-
-    def get_num_items(self, *varargs):
-        if len(varargs) > 0:
-            phase = varargs[0]
-        else:
-            phase = self.phase
-        if phase == defs.phase.train:
-            return self.num_items_train
-        elif phase == defs.phase.val:
-            return self.num_items_val
 
     # read all frames for a video
     def get_video_frames(self,videopath):
@@ -506,9 +417,69 @@ class Dataset:
                 image = image[:,::-1,:]
         return image
 
+    def initialize(self, id, path, mean_image, prepend_folder, desired_image_shape, imgproc, raw_image_shape, data_format, frame_format, batch_item):
+        info("Initializing dataset [%s]" % id)
+        self.id = id
+        self.path = path
+        self.data_format = data_format
+        self.frame_format = frame_format
+        self.prepend_folder = prepend_folder
+        self.mean_image = mean_image
+        self.desired_image_shape = desired_image_shape
+        self.imgproc = imgproc
+        self.batch_item = batch_item
+
+        # read the data
+        if not os.path.exists(self.path):
+            error("Dataset path does not exist: %s" % self.path)
+        self.read_frames_metadata()
+        if self.data_format == defs.data_format.tfrecord:
+            # update data path
+            self.path += ".tfrecord"
+            if not os.path.exists(self.path):
+                error("TFRecord file path does not exist: %s" % self.path)
+            # reset iterator
+            self.reset_iterator()
+        # read frames, classes, metadata
+        self.get_input_data_count()
+        self.initialize_imgproc()
+
+    def build_mean_image(self):
+        if defs.imgproc.sub_mean in self.imgproc:
+            # build the mean image
+            height = self.desired_image_shape[0]
+            width = self.desired_image_shape[1]
+            blue = np.full((height, width), self.mean_image[0])
+            green = np.full((height, width), self.mean_image[1])
+            red = np.full((height, width), self.mean_image[2])
+            self.mean_image = np.ndarray.astype(np.stack([blue, green, red]),np.float32)
+            self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
+
+    def restore(self, batch_index, epoch_index, sequence_length):
+        self.batch_index = batch_index
+        self.epoch_index = epoch_index
+        self.sequence_length = sequence_length
+        self.fast_forward_iter()
+
+    def initialize_imgproc(self):
+        self.build_mean_image()
+
+        if defs.imgproc.rand_crop in self.imgproc:
+            if self.raw_image_shape is None:
+                warning("Random cropping without a fixed raw image shape.")
+            else:
+                # precompute available crops
+                self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.image_shape, defs.imgproc.rand_crop)
+        elif defs.imgproc.center_crop in self.imgproc:
+            if self.raw_image_shape is None:
+                warning("Center cropping without a fixed raw image shape.")
+            else:
+                # precompute the center crop
+                self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.image_shape, defs.imgproc.center_crop)
+
 
     # do preparatory work
-    def initialize(self, sett):
+    def initialize_old(self, sett):
         # transfer relevant configuration from settings
         self.workflow = sett.workflow
         self.epochs = sett.epochs
@@ -548,37 +519,15 @@ class Dataset:
 
         # perform run mode - specific initializations
         self.initialize_workflow(sett)
+        self.initialize_imgproc()
 
-        self.do_mean_subtraction = (self.mean_image is not None)
-        if self.do_mean_subtraction:
-            # build the mean image
-            height = self.image_shape[0]
-            width = self.image_shape[1]
-            blue = np.full((height, width), self.mean_image[0])
-            green = np.full((height, width), self.mean_image[1])
-            red = np.full((height, width), self.mean_image[2])
-            self.mean_image = np.ndarray.astype(np.stack([blue, green, red]),np.float32)
-            self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
-
-        if defs.imgproc.rand_crop in self.imgproc:
-            if self.raw_image_shape is None:
-                warning("Random cropping without a fixed raw image shape.")
-            else:
-                # precompute available crops
-                self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.image_shape, defs.imgproc.rand_crop)
-        elif defs.imgproc.center_crop in self.imgproc:
-            if self.raw_image_shape is None:
-                warning("Center cropping without a fixed raw image shape.")
-            else:
-                # precompute the center crop
-                self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.image_shape, defs.imgproc.center_crop)
-
-        # set save interval
-        if (sett.save_freq_per_epoch is not None) and (sett.do_training):
-            self.save_interval = math.ceil(len(self.batches_train) / sett.save_freq_per_epoch)
-            info("Computed batch save interval (from %2.4f per %d-batched epoch) to %d batches" %
-                             (sett.save_freq_per_epoch, len(self.batches_train), self.save_interval))
         self.tell()
+
+    def compute_dataset_portion(self, freq_per_epoch):
+        # set save interval
+        self.save_interval = math.ceil(len(self.batches_train) / freq_per_epoch)
+        info("Computed batch save interval (from %2.4f per %d-batched epoch) to %d batches" %
+             (freq_per_epoch, len(self.batches), self.save_interval))
 
     # compute horizontal and vertical crop range
     def compute_crop(self, raw_image_shape, image_shape, mode):
@@ -591,13 +540,13 @@ class Dataset:
 
 
     # initialize run mode specific data
-    def initialize_workflow(self, settings):
+    def initialize_workflow(self, word_embeddings_file):
         if defs.workflows.is_description(self.workflow):
             # read embedding matrix
-            info("Reading embedding matrix from file [%s]" % settings.word_embeddings_file)
+            info("Reading embedding matrix from file [%s]" % word_embeddings_file)
             self.vocabulary = []
             vectors = []
-            with open(settings.word_embeddings_file,"r") as f:
+            with open(word_embeddings_file,"r") as f:
                 for line in f:
                     token, vector = line.strip().split("\t")
                     # add to vocabulary checking for duplicates
@@ -619,13 +568,26 @@ class Dataset:
             # classes are all tokens minus the BOS
             self.num_classes = len(self.vocabulary) - 1
             # if a max caption length is read, assign it
-            if settings.sequence_length is not None:
+            if self.sequence_length is not None:
                 info("Restricting to a caption length of", self.max_caption_length)
-                self.max_caption_length = settings.sequence_length
+                self.max_caption_length = self.sequence_length
 
     def get_embedding_dim(self):
         return int(self.embedding_matrix.shape[-1])
 
+    def calculate_batches(self, batch_size):
+        self.batch_size = batch_size
+        # calculate batches
+        if self.batch_item == defs.batch_item.default:
+            num_whole_batches = self.num_items // self.batch_size
+            items_left = self.num_items - num_whole_batches * self.batch_size
+        elif self.batch_item == defs.batch_item.clip:
+            num_whole_batches = sum(self.clips_per_video) // self.batch_size
+            items_left = sum(self.clips_per_video) - num_whole_batches * self.batch_size
+
+        self.batches = [self.batch_size for _ in range(num_whole_batches)]
+        if items_left:
+            self.batches.append(items_left)
 
     # run data-related initialization pre-run
     def initialize_data(self, sett):
@@ -715,25 +677,18 @@ class Dataset:
             error("Undefined data format [%s]" % self.data_format)
 
     # read or count how many data items are in training / validation
-    def get_input_data_count(self,phase):
-
-        idx = defs.train_idx if phase == defs.phase.train else defs.val_idx
-        input_file = self.input_source_files[idx]
+    def get_input_data_count(self):
         # check if a .size file exists
-        size_file = input_file + ".size"
+        size_file = self.path + ".size"
         if not os.path.exists(size_file):
             # unsupported
             error("Could not file data size file: ",size_file)
 
         # read the data
         datainfo = read_file_dict(size_file)
-        num_items = eval(datainfo['items'])
-        if phase == defs.phase.train:
-            self.num_items_train = num_items
-        elif phase == defs.phase.val:
-            self.num_items_val = num_items
+        self.num_items = eval(datainfo['items'])
 
-        if datainfo['type'] != self.input_mode:
+        if self.input_mode is not None and (datainfo['type'] != self.input_mode):
             error("Specified input mode %s but the size file contains %s" % (self.input_mode, datainfo['type']))
 
         cpv = eval(datainfo['cpi'])
@@ -749,12 +704,12 @@ class Dataset:
         if type(cpv)==list:
             # read RLC-encoded cpv, if applicable
             if type(cpv[0]) == tuple:
-                cpv= [item for num, item in cpv for _ in range(num)] 
+                cpv= [item for num, item in cpv for _ in range(num)]
             # else, the list contains 1 cpv entry per item
             # check consistency
             else:
-                if len(cpv) != num_items:
-                    error("Read %d items but got cpv list of size %d" % (num_items, len(cpv)))
+                if len(cpv) != self.num_items:
+                    error("Read %d items but got cpv list of size %d" % (self.num_items, len(cpv)))
 
             # and len(self.clips_per_video) > 12:
             # if it's large, make it small and printable
@@ -777,86 +732,56 @@ class Dataset:
         self.max_sequence_length = self.max_caption_length + 1
 
         info("Read [%s] data, count: %d, cpv: %s, fpc: %s, type: %s, lblcount: %d" %
-             (phase, num_items, cpv_str, str(self.num_frames_per_clip), self.input_mode, self.max_caption_length))
+             (str(self.id), self.num_items, cpv_str, str(self.num_frames_per_clip), self.input_mode, self.max_caption_length))
 
     # set iterator to point to the beginning of the tfrecord file, per phase
-    def reset_iterator(self,phase):
+    def reset_iterator(self):
         if not self.data_format == defs.data_format.tfrecord:
             return
-        if phase == defs.phase.train:
-            self.train_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.train_idx])
-        else:
-            self.val_iterator = tf.python_io.tf_record_iterator(path=self.input_source_files[defs.val_idx])
+        self.iterator = tf.python_io.tf_record_iterator(path=self.path)
 
     # move up an iterator
     def fast_forward_iter(self):
-
         # fast forward to batch index
         num_forward = self.batch_index
         if self.input_mode == defs.input_mode.image:
             info("Fast forwarding to the batch # %d ( image # %d)" % (self.batch_index+1, num_forward+1))
         elif self.input_mode == defs.input_mode.video:
-            num_forward = num_forward * self.num_frames_per_clip
+            # get how many items we have to move up to
+            item_index = self.batch_index * self.batch_size
+            if self.batch_item == defs.batch_item.default:
+                # if the batch size refers to whole items, gotta count the clips
+                # up to the restoration point (for variable cpv cases)
+                num_clips = 0
+                for i in range(len(self.clips_per_video)):
+                    num_clips += self.clips_per_video[i]
+                    if i == item_index:
+                        break
+                num_forward = num_clips * self.num_frames_per_clip
+            elif self.batch_item == defs.batch_item.clip:
+                # if it refers to clips, it's straightforward
+                num_forward = self.num_frames_per_clip * item_index
             info("Fast forwarding to the batch # %d ( image # %d )" % (self.batch_index + 1, num_forward + 1))
-
-
         for _ in range(num_forward):
             next(self.iterator)
-
-    # load saved parameters
-    def load_metaparams(self, params):
-        i = 0
-        self.batch_index_train = params[i]; i+=1
-        self.epoch_index = params[i]; i+=1
-        self.set_file_paths()
 
     # print active settings
     def tell(self):
         info("Dataset batch information per epoch:" )
-        header_fmt = "%-6s %-8s %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
-        values_fmt = "%-6s %-8s %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
-        info(header_fmt % ("Mode","bmode","items", "clips", "frames","b-size","b-num","b-index","imgprc"))
+        header_fmt = "%-8s %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
+        values_fmt = "%-8s %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
+        info(header_fmt % ("bmode","items", "clips", "frames","b-size","b-num","b-index","imgprc"))
         imgproc = defs.imgproc.to_str(self.imgproc)
-        if self.do_training:
-            items = self.num_items_train
-            clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
-            frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
-            info(values_fmt %
-                 (defs.phase.train, self.batch_item, items, clips, frames,
-                  self.batch_size_train, len(self.batches_train), self.batch_index_train, imgproc))
-        if self.do_validation:
-            items = self.num_items_val
-            clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
-            frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
-            info(values_fmt %
-                 (defs.phase.val, self.batch_item, items, clips, frames,
-                  self.batch_size_val, len(self.batches_val),  self.batch_index_val, imgproc))
-
-    # get the batch size
-    def get_batch_size(self):
-        if self.do_training:
-            return self.batch_size_train
-        else:
-            return self.batch_size_val
+        items = self.num_items
+        clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
+        frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
+        info(values_fmt %
+             ( self.batch_item, items, clips, frames,
+              self.batch_size, len(self.batches), self.batch_index, imgproc))
 
     # get the global step
     def get_global_batch_step(self):
         return self.epoch_index * len(self.batches) + self.batch_index
-
-    # print iteration information
-    def print_iter_info(self, num_images, num_pad, num_labels):
-
-        padinfo = "(%d padding)" % num_pad if num_pad > 0 else ""
-        if self.phase == defs.phase.train:
-            msg = "Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images%s, %3d labels" % (self.phase,
-                            self.epoch_index + 1, self.epochs, self.batch_index, len(self.batches),
-                          num_images, padinfo, num_labels)
-            info(msg)
-        # same as train, but no epoch
-        elif self.phase == defs.phase.val:
-            msg = "Mode: [%s], batch %4d / %4d : %3d images%s, %3d labels" % (self.phase, self.batch_index,
-                         len(self.batches), num_images, padinfo, num_labels)
-            info(msg)
 
     # specify valid loop iteration
     def loop(self):
@@ -874,8 +799,3 @@ class Dataset:
             return self.clips_per_video == 1
         return False
 
-    # check if we should save
-    def should_save_now(self, global_step):
-        if self.save_interval == None or self.phase != defs.phase.train:
-            return False
-        return global_step % self.save_interval == 0
