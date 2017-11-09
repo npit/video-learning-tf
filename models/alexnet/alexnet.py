@@ -37,12 +37,12 @@ class dcnn(Trainable):
         return self.output
 
         # specify the layers
-    def create(self, xdim, weightsFile, num_classes, final_layer ="prob"):
+    def create(self, input, weightsFile, num_classes, final_layer ="prob"):
         net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
         if final_layer is None:
             final_layer = "prob"
         #net_data = load("bvlc_alexnet.npy").item()
-        self.input = tf.placeholder(tf.float32, (None,) + xdim, name='input_frames')
+        self.input = input
 
         with tf.name_scope("dcnn") as scope:
             # conv1

@@ -48,6 +48,7 @@ class serialization_settings:
         if self.init_file is None:
             return
         if not os.path.exists(self.init_file):
+            error("Initialization file does not exist")
             return
         tag_to_read = "serialize"
         print("Initializing from file %s" % self.init_file)
@@ -475,7 +476,7 @@ def write_serialization(settings):
 
         if mode == defs.input_mode.image:
             if settings.do_shuffle:
-                item_paths, item_labels = shuffle_paths(item_paths, None, item_labels, mode)
+                item_paths, item_labels = shuffle_paths(item_paths, None, item_labels, mode, settings)
             paths_to_serialize, labels_to_serialize = item_paths, item_labels
             clips_per_item = None
             framepaths_per_input.append([item_paths, item_labels, None, None, mode])

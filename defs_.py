@@ -51,6 +51,12 @@ class defs:
                 error("No input mode discernible from workflow %s" % arg)
                 return None
 
+    class net_input:
+        visual, labels = "visual", "labels"
+
+    class dataset_tag:
+        main, misc = "main", "misc"
+
     # direct reading from disk or from packed tfrecord format
     class data_format:
         raw, tfrecord = "raw", "tfrecord"

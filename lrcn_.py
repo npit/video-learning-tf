@@ -45,6 +45,9 @@ class LRCN:
     run_id = None
     run_folder = None
 
+    # input
+    input = []
+
     # let there be network
     def create(self, settings, summaries):
         # initializations
@@ -59,7 +62,6 @@ class LRCN:
             # clips refers to image groups that compose a video, for training with clip information
             self.clip_logits = np.zeros([0, settings.network.num_classes], np.float32)
             self.clip_labels = np.zeros([0, settings.network.num_classes], np.float32)
-            self.clip_fusion = settings.network.clip_fusion
 
         # define network input
         self.workflow = settings.workflow
@@ -106,7 +108,7 @@ class LRCN:
         lr_per_batch = []
         if decay_params is None:
             return [base_lr for _ in range(total_num_batches)]
-        log_message = "Dropping LR "
+        log_message = "Dropping LR of %2.5f " % base_lr
         lr_drop_offset = 0 if len(tuple(decay_params)) == 4 else decay_params[-1]
         decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params[:4])
 
@@ -152,7 +154,7 @@ class LRCN:
             batches = [ x for _ in range(settings.train.epochs) for x in range(num_batches)]
             if len(batches) != total_num_batches:
                 error("Batch length precomputation mismatch")
-            epochs = [ep for ep in range(settings.train.epochs) for _ in range(settings.get_num_batch_batches())]
+            epochs = [ep for ep in range(settings.train.epochs) for _ in range(settings.get_num_batches())]
             batches_lr = list(zip(epochs, batches, lr_per_batch))
 
             for b in batches_lr:
@@ -247,20 +249,20 @@ class LRCN:
         # single lr for all
         info("Setting up training with a global learning rate.")
         with tf.name_scope("single_tier_optimizer"):
-            if settings.optimizer == defs.optim.sgd:
+            if settings.train.optimizer == defs.optim.sgd:
                 opt = tf.train.GradientDescentOptimizer(self.current_lr)
-            elif settings.optimizer == defs.optim.adam:
+            elif settings.train.optimizer == defs.optim.adam:
                 opt = tf.train.AdamOptimizer(self.current_lr)
             else:
-                error("Undefined optimizer %s" % settings.optimizer)
+                error("Undefined optimizer %s" % settings.train.optimizer)
 
             grads_vars = opt.compute_gradients(self.loss)
             grads = [grad for grad, _ in grads_vars]
-            if settings.clip_norm:
-                info("Setting gradient clipping to a global norm of %d" % settings.clip_norm)
+            if settings.train.clip_norm:
+                info("Setting gradient clipping to a global norm of %d" % settings.train.clip_norm)
                 #clipmin, clipmax = settings.clip_grads
                 #max_norm = settings.clip_norm
-                grads, _ = tf.clip_by_global_norm(grads, settings.clip_norm)
+                grads, _ = tf.clip_by_global_norm(grads, settings.train.clip_norm)
                 grads_vars = zip(grads, [v for _, v in grads_vars])
             self.optimizer = opt.apply_gradients(grads_vars, global_step=self.global_step)
 
@@ -274,24 +276,27 @@ class LRCN:
     # Activity recognition
     def create_actrec_singleframe(self, settings):
         # define label inputs
-        batchLabelsShape = [None, settings.network.num_classes]
-        self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
+        self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
+        self.inputData = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames')
+        self.input.append((self.inputData, defs.net_input.visual, defs.dataset_tag.main))
+        self.input.append((self.inputLabels, defs.net_input.labels, defs.dataset_tag.main))
 
-        settings.frame_encoding_layer = None
         # create the singleframe workflow
-        info("Dcnn workflow %s" % str(settings.network.frame_fusion_method))
+        info("Dcnn workflow %s" % str(settings.network.frame_fusion_type))
         if settings.network.frame_fusion_type == defs.fusion_type.late:
             # frames - encode to vectors - logit per frame - pool to clip level
             with tf.name_scope("dcnn_workflow"):
                 # single DCNN, encoding and classifying individual frames
-                self.inputData, self.logits = self.make_dcnn(settings)
+                self.logits = self.make_dcnn(settings)
+                self.logits = print_tensor(self.logits, "logits")
                 # output is one logit per frame
                 # reshape to num_items x num_frames_per_item x dimension
-                self.logits = tf.reshape(self.logits, (-1, settings.datasets[0].num_frames_per_clip, settings.network.num_classes),
+                self.logits = tf.reshape(self.logits, (-1, settings.get_datasets()[0].num_frames_per_clip, settings.network.num_classes),
                                          name="reshape_framelogits_pervideo")
+                debug("reshaped dcnn output: %s" % str(self.logits.shape))
 
             # if we have no clips, we're done
-            if settings.datasets[0].input_mode == defs.input_mode.image or settings.datasets[0].num_frames_per_clip == 1:
+            if settings.get_datasets()[0].input_mode == defs.input_mode.image or settings.get_datasets()[0].num_frames_per_clip == 1:
                 return
 
             # apply late fusion, pooling the logits on the temporal dimension
@@ -299,24 +304,25 @@ class LRCN:
                 encoder = lstm.lstm()
             else:
                 encoder = None
-            self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.datasets[0].num_frames_per_clip,
+            self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip,
                                                  settings.network.frame_fusion_method, lstm_encoder=encoder)
 
         elif settings.network.frame_fusion_type == defs.fusion_type.early:
             # frames - encode to vectors - pool to clips - logit per clip
             with tf.name_scope("dcnn_workflow"):
                 # single DCNN, encoding individual frames to the encoding dim
-                self.inputData, self.encoded_frames = self.make_dcnn(settings)
+                self.encoded_frames = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer)
                 # reshape from batch_size * cpv * fpc x encoding dim to batch_size * cpv x fpc x encoding_dim
-                encoded_dim = int(tf.shape(self.encoded_frames))
-                self.encoded_frames_reshaped = tf.reshape(self.encoded_frames, [-1, settings.datasets[0].num_frames_per_clip, encoded_dim])
+                encoded_dim = int(self.encoded_frames.shape[-1])
+                self.encoded_frames_reshaped = tf.reshape(self.encoded_frames, [-1, settings.get_datasets()[0].num_frames_per_clip, encoded_dim])
+                debug("Early fusion with [%s] of vectors: %s" % (settings.network.frame_fusion_method, self.encoded_frames_reshaped.shape))
                 # fuse to one vector per clip  
                 # apply late fusion, pooling the logits on the temporal dimension
-                if settings.network.frame_fusion_method== defs.fusion_method.lstm:
+                if settings.network.frame_fusion_method == defs.fusion_method.lstm:
                     encoder = lstm.lstm()
                 else:
                     encoder = None
-                clip_vectors = apply_temporal_fusion(self.encoded_frames_reshaped, encoded_dim, settings.datasets[0].num_frames_per_clip,
+                clip_vectors = apply_temporal_fusion(self.encoded_frames_reshaped, encoded_dim, settings.get_datasets()[0].num_frames_per_clip,
                                                  settings.network.frame_fusion_method, lstm_encoder=encoder)
                 # classify to the desired dimension
                 self.logits = convert_dim_fc(clip_vectors, settings.network.num_classes)
@@ -324,26 +330,31 @@ class LRCN:
         info("logits out : [%s]" % self.logits.shape)
 
 
-    def create_actrec_lstm(self, settings, dataset):
+    def create_actrec_lstm(self, settings):
         # define label inputs
         batchLabelsShape = [None, settings.network.num_classes]
         settings.frame_encoding_layer = None
         self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
+        self.inputData = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames')
+        self.input.append((self.inputData, defs.net_input.visual, defs.dataset_tag.main))
+        self.input.append((self.inputLabels, defs.net_input.labels, defs.dataset_tag.main))
+
         # create the lstm workflow
         with tf.name_scope("lstm_workflow"):
-            if dataset.input_mode != defs.input_mode.video:
-                error("LSTM workflow only available for video input mode")
+            if settings.input_mode != defs.input_mode.video:
+                error("The LSTM workflow only available for video input mode")
+            if settings.network.frame_fusion_type == defs.fusion_type.early:
+                error("The LSTM workflow is incompatible with fusion mode %s" % defs.fusion_type.early)
 
             # DCNN for frame encoding
-            self.inputData, encodedFrames = self.make_dcnn(settings, dataset)
-
+            self.inputData, encodedFrames = self.make_dcnn(settings)
 
             # LSTM for frame sequence classification for frame encoding
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
-            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.lstm_num_layers,
-                                        settings.lstm_num_hidden, settings.network.num_classes, settings.datasets[0].num_frames_per_clip,
-                                                           None,  settings.network.frame_fusion_method, settings.dropout_keep_prob)
+            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.network.lstm_num_layers,
+                                        settings.network.lstm_num_hidden, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip,
+                                                           None,  settings.network.frame_fusion_method, settings.train.dropout_keep_prob)
             # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
             # self.logits = self.lstm_model.get_output()
             info("logits : [%s]" % self.logits.shape)
@@ -362,14 +373,14 @@ class LRCN:
             self.dcnn_model.create(dataset.image_shape, settings.network.num_classes)
             self.inputData, self.logits = self.dcnn_model.get_io()
         # reshape to num_items x num_frames_per_item x dimension
-        self.logits = tf.reshape(self.logits, (-1, settings.datasets[0].num_frames_per_clip, settings.network.num_classes),
+        self.logits = tf.reshape(self.logits, (-1, settings.get_datasets()[0].num_frames_per_clip, settings.network.num_classes),
                                  name="reshape_framelogits_pervideo")
 
-        if dataset.input_mode == defs.input_mode.image or settings.datasets[0].num_frames_per_clip == 1:
+        if dataset.input_mode == defs.input_mode.image or settings.get_datasets()[0].num_frames_per_clip == 1:
             return
 
         # fuse the logits on the temporal dimension
-        self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.datasets[0].num_frames_per_clip, settings.network.frame_fusion_method)
+        self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip, settings.network.frame_fusion_method)
 
         info("logits out : [%s]" % self.logits.shape)
 
@@ -386,7 +397,7 @@ class LRCN:
 
             self.lstm_model = lstm.lstm()
             visual_dim, embedding_dim = int(encodedFrames.shape[-1]), int(dataset.embedding_matrix.shape[-1])
-            if settings.do_training:
+            if settings.train:
                 # repeat the images in the batch seqlength times horizontally (batchsize x (dim * seq))
                 encodedFrames = tf.tile(encodedFrames, [1, dataset.max_sequence_length])
                 # restore to 'one image per column', i.e. (batchsize * seq x dim)
@@ -395,9 +406,9 @@ class LRCN:
                 # horizontal concat the images to the words
                 frames_words = tf.concat([encodedFrames, self.word_embeddings], axis=1)
 
-                self.logits, _ = self.lstm_model.forward_pass_sequence(frames_words, None, embedding_dim + visual_dim, settings.lstm_num_layers,
-                                                      settings.lstm_num_hidden, settings.network.num_classes, dataset.max_sequence_length,
-                                                      self.caption_lengths, defs.fusion.reshape, settings.dropout_keep_prob)
+                self.logits, _ = self.lstm_model.forward_pass_sequence(frames_words, None, embedding_dim + visual_dim, settings.network.lstm_num_layers,
+                                                      settings.network.lstm_num_hidden, settings.network.num_classes, dataset.max_sequence_length,
+                                                      self.caption_lengths, defs.fusion.reshape, settings.train.dropout_keep_prob)
 
                 # remove the logits corresponding to padding
                 self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
@@ -408,7 +419,7 @@ class LRCN:
             else:
                 vinput_mode = defs.rnn_visual_mode.input_concat
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val, settings.network.num_classes,
-                                                                         dataset.max_sequence_length, settings.lstm_num_hidden, settings.lstm_num_layers,
+                                                                         dataset.max_sequence_length, settings.network.lstm_num_hidden, settings.network.lstm_num_layers,
                                                                          dataset.embedding_matrix[dataset.vocabulary.index("BOS"), :], dataset.embedding_matrix, vinput_mode)
                 self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
 
@@ -425,7 +436,7 @@ class LRCN:
             # map the images to the embedding input
             encodedFrames = convert_dim_fc(encodedFrames, dataset.get_embedding_dim(), "visual_embedding_fc")
 
-            if settings.do_training:
+            if settings.train:
                 batch_size_train = tf.shape(encodedFrames)[0]
                 # reshape the embeddings to batch_size x seq_len x embedding_dim
                 reshaped_word_embeddings = tf.reshape(self.word_embeddings,
@@ -445,11 +456,11 @@ class LRCN:
                 info("Incrementing sequence length to %d for the input bias step" % (augmented_sequence_length))
                 self.logits, _ = self.lstm_model.forward_pass_sequence(input_biased_embeddings, None,
                                                                        int(dataset.embedding_matrix.shape[1]),
-                                                                       settings.lstm_num_layers,
-                                                                       settings.lstm_num_hidden, settings.network.num_classes,
+                                                                       settings.network.lstm_num_layers,
+                                                                       settings.network.lstm_num_hidden, settings.network.num_classes,
                                                                        augmented_sequence_length,
                                                                        self.caption_lengths, defs.fusion_method.reshape,
-                                                                       settings.dropout_keep_prob)
+                                                                       settings.train.dropout_keep_prob)
                 # remove the logits corresponding to padding
                 self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
                 # re-merge the tensor list into a tensor
@@ -464,8 +475,8 @@ class LRCN:
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
                                                                          settings.network.num_classes,
                                                                          augmented_sequence_length,
-                                                                         settings.lstm_num_hidden,
-                                                                         settings.lstm_num_layers,
+                                                                         settings.network.lstm_num_hidden,
+                                                                         settings.network.lstm_num_layers,
                                                                          dataset.embedding_matrix[
                                                                          dataset.vocabulary.index("BOS"), :],
                                                                          dataset.embedding_matrix, vinput_mode)
@@ -483,10 +494,10 @@ class LRCN:
             self.inputData, encodedFrames = self.make_dcnn(dataset,settings)
             # make recurrent network
             self.lstm_model = lstm.lstm()
-            if settings.do_training:
+            if settings.train:
                 self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, encodedFrames, int(dataset.embedding_matrix.shape[1]),
-                                                      settings.lstm_num_layers, settings.lstm_num_hidden, settings.network.num_classes,
-                                                      dataset.max_sequence_length, self.caption_lengths, defs.fusion_method.reshape, settings.dropout_keep_prob )
+                                                      settings.network.lstm_num_layers, settings.network.lstm_num_hidden, settings.network.num_classes,
+                                                      dataset.max_sequence_length, self.caption_lengths, defs.fusion_method.reshape, settings.train.dropout_keep_prob )
                 # remove the logits corresponding to padding
                 self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
                 # re-merge the tensor list into a tensor
@@ -496,8 +507,8 @@ class LRCN:
             else:
                 vinput_mode = defs.rnn_visual_mode.state_bias
                 self.logits = self.lstm_model.generate_feedback_sequence(encodedFrames, dataset.batch_size_val,
-                                                           settings.network.num_classes, dataset.max_sequence_length, settings.lstm_num_hidden,
-                                                           settings.lstm_num_layers, dataset.embedding_matrix[dataset.vocabulary.index("BOS"),:],
+                                                           settings.network.num_classes, dataset.max_sequence_length, settings.network.lstm_num_hidden,
+                                                           settings.network.lstm_num_layers, dataset.embedding_matrix[dataset.vocabulary.index("BOS"),:],
                                                            dataset.embedding_matrix, vinput_mode)
                 # output is a sequence length * batchsize vector
                 self.logits = tf.reshape(self.logits,[-1, dataset.max_sequence_length])
@@ -522,32 +533,33 @@ class LRCN:
 
         # DCNN for frame encoding
         self.dcnn_model = alexnet.dcnn()
-        self.dcnn_model.create(settings.datasets[0].desired_image_shape, self.dcnn_weights_file, settings.network.num_classes, output_layer)
-        inputData, outputData = self.dcnn_model.get_io()
-        debug("dcnn input : [%s]" % inputData.shape)
+        # get the first dataset through the DCNN
+        self.dcnn_model.create(self.inputData, self.dcnn_weights_file, settings.network.num_classes, output_layer)
+        outputData = self.dcnn_model.get_output()
+        debug("dcnn input : [%s]" % self.inputData.shape)
         debug("dcnn output : [%s]" % outputData.shape)
         outputData = print_tensor(outputData, "encoded frames")
-        return inputData, outputData
+        return outputData
 
     # video description
-    def create_videodesc_fusion(self, settings, dataset):
+    def create_videodesc_fusion(self, settings):
         # Venugopalan et al. 2015 : fuse video frames, do img desc.
 
         # get dcnn encodings for each frame
-        self.inputData, encoded_frames = self.make_dcnn(dataset, settings)
+        self.inputData, encoded_frames = self.make_dcnn(settings)
 
         # fuse video frames to a single vector
         if settings.network.frame_fusion_method == defs.fusion_method.avg:
             fused_frames = tf.reduce_mean(encoded_frames, 0)
 
-        self.make_description_placeholders(settings, dataset)
-        if settings.do_training:
+        self.make_description_placeholders(settings)
+        if settings.train:
             self.logits, _ = self.lstm_model.forward_pass_sequence(self.word_embeddings, fused_frames,
-                                                                   int(dataset.embedding_matrix.shape[1]),
-                                                                   settings.lstm_num_layers, settings.lstm_num_hidden,
+                                                                   int(settings.get_datasets().embedding_matrix.shape[1]),
+                                                                   settings.network.lstm_num_layers, settings.network.lstm_num_hidden,
                                                                    settings.network.num_classes,
-                                                                   dataset.max_sequence_length, self.caption_lengths,
-                                                                   defs.fusion_method.reshape, settings.dropout_keep_prob)
+                                                                   settings.dataset.max_sequence_length, self.caption_lengths,
+                                                                   defs.fusion_method.reshape, settings.train.dropout_keep_prob)
             # remove the logits corresponding to padding
             self.logits = tf.gather(self.logits, self.non_padding_word_idxs)
             # re-merge the tensor list into a tensor
@@ -606,8 +618,9 @@ class LRCN:
             cumulative_offset = cumulative_offset + cap_len
 
     # validation accuracy computation
-    def process_validation_logits(self, logits, dataset, fdict, padding):
+    def process_validation_logits(self, tag, settings, logits, fdict, padding):
         labels = fdict[self.inputLabels]
+        dataset = settings.get_dataset_by_tag(tag)[0]
         # processing for image description
         if defs.workflows.is_description(self.workflow):
             self.process_description_validation_logits(logits, labels, dataset, fdict, padding)
@@ -651,7 +664,7 @@ class LRCN:
                         break
                     cpv = dataset.clips_per_video[vidx]
                     debug("Aggregating %d clips for video %d in video batch mode" % (cpv, vidx + 1))
-                    self.apply_clip_fusion(logits,cpv,labels)
+                    self.apply_clip_fusion(logits, cpv, labels, settings.network.clip_fusion_method)
                     logits = logits[cpv:,:]
                     labels = labels[cpv:,:]
                 if not (len(logits) == 0 and len(labels) == 0):
@@ -705,13 +718,14 @@ class LRCN:
             logits_chunk = pickle.load(f)
         return logits_chunk
 
-    def apply_clip_fusion(self, clips_logits, cpv, video_labels):
+    def apply_clip_fusion(self, clips_logits, cpv, video_labels, clip_fusion):
         curr_clips = clips_logits[0:cpv,:]
         video_label = video_labels[0,:]
-        if self.clip_fusion == defs.fusion_method.avg:
+        if clip_fusion == defs.fusion_method.avg:
             video_logits = np.mean(curr_clips, axis=0)
-        elif self.clip_fusion == defs.fusion_method.last:
+        elif clip_fusion == defs.fusion_method.last:
             video_logits = curr_clips[-1, :]
+            #elif clip_fusion == defs.fusion_method.
         # add logits, label to the video accumulation
         self.add_item_logits_labels(video_logits, video_label)
 

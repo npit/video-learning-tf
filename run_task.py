@@ -47,6 +47,7 @@ class Settings:
     data_path = None
     run_folder = None
     path_prepend_folder = None
+    dataset_per_phase = {}
 
     class network:
         # architecture settings
@@ -54,19 +55,11 @@ class Settings:
         lstm_num_hidden = 256
         num_classes = None
 
-
-    # data input format
-    raw_image_shape = (240, 320, 3)
-    mean_image = None
-    image_shape = (227, 227, 3)
-    data_format = defs.data_format.tfrecord
-    frame_format = "jpg"
-
     class train:
         # training settings
         batch_size_train = 100
-        do_training = False
         epochs = 15
+        epoch_index = 0
         optimizer = defs.optim.sgd
         base_lr = 0.001
         lr_mult = 2
@@ -74,10 +67,8 @@ class Settings:
         dropout_keep_prob = 0.5
         batch_item = defs.batch_item.default
 
-
     class val:
         # validation settings
-        do_validation = False
         validation_interval = 1
         batch_size_val = 88
         batch_item = defs.batch_item.default
@@ -114,10 +105,51 @@ class Settings:
     # misc
     saver = None
 
+
+    def validation_logits_to_captions(self, logits_chunk, num_processed_logits):
+        return self.datasets[self.phase].validation_logits_to_captions(logits_chunk, num_processed_logits)
+
+    def get_batch_sizes(self):
+        batch_sizes = []
+        for dset in self.datasets[self.phase]:
+            batch_sizes.append(dset.batch_size)
+        return  batch_sizes
+
+    def compute_save_interval(self):
+        # just check the first
+        for dset in self.datasets[self.phase]:
+            return dset.compute_dataset_portion(self.save_freq_per_epoch)
+
+    def get_batch_index(self):
+        return self.datasets[self.phase][0].batch_index
+
+    def rewind_datasets(self):
+        for dset in self.datasets[self.phase]:
+            dset.rewind()
+    def get_datasets(self):
+        return self.datasets[self.phase]
+
+    def get_next_batch(self):
+        images, ground_truth, ids = [],[],[]
+        for dset in self.datasets[self.phase]:
+            im, g = dset.get_next_batch()
+            images.append(im)
+            ground_truth.append(g)
+            ids.append(dset.id)
+        return images, ground_truth, ids
+
+    def loop(self):
+        # it is assumed that all datasets are loop-synchronized
+        return self.datasets[self.phase][0].loop()
+
+    def get_dataset_by_tag(self, tag):
+        dsets = [dset for dset in self.datasets[self.phase] if dset.tag == tag]
+        return dsets
+
     def get_num_batches(self):
         if not self.datasets:
             return -1
-        return len(self.datasets[0].batches)
+        return len(self.datasets[self.phase][0].batches)
 
     # should resume, if set and non-empty
     def should_resume(self):
@@ -129,50 +161,54 @@ class Settings:
         self.workflow = defs.check(config['workflow'], defs.workflows)
         self.resume_file = config['resume_file']
         self.run_folder = config["run_folder"]
-        self.run_folder = config["run_folder"]
 
         # read phase information
-        self.phase = config["phase"]
-        if type(self.phase) != list:
-            self.phase = [self.phase]
+        self.phases = defs.check(config["phase"], defs.phase)
+        if type(self.phases) != list:
+            self.phases = [self.phases]
+        self.phase = self.phases[0]
 
         # read network  architecture stuff
         self.network = Settings.network()
+        self.network.image_shape = parse_seq(config["network"]["image_shape"])
         self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
         self.network.lstm_num_hidden = config["network"]["lstm_num_hidden"]
         self.network.lstm_num_layers = config["network"]["lstm_num_layers"]
         self.network.num_classes = config["network"]["num_classes"]
 
         frame_fusion = parse_seq(config["network"]["frame_fusion"])
-        self.network.frame_fusion = []
         self.network.frame_fusion_type, self.network.frame_fusion_method = \
             defs.check(frame_fusion[0], defs.fusion_type), defs.check(frame_fusion[1], defs.fusion_method)
 
         clip_fusion = parse_seq(config["network"]["clip_fusion"])
-        self.network.clip_fusion = []
         self.network.clip_fusion_type, self.network.clip_fusion_method = \
             defs.check(clip_fusion[0], defs.fusion_type), defs.check(clip_fusion[1], defs.fusion_method)
 
         self.train, self.val = None, None
-        for phase in self.phase:
-            phase = defs.check(phase, defs.phase)
+        for phase in self.phases:
             if phase == defs.phase.train:
                 # read training opts
                 self.train = Settings.train()
                 obj = config[phase]
-                self.train.batch_size = obj['batch_size']
-                self.train.epochs = obj['epochs']
-                self.train.base_lr = obj['base_lr']
-                self.train.lr_mult = obj['lr_mult']
-                self.train.lr_decay = obj['lr_decay']
-                self.train.clip_norm = obj['clip_norm']
-                self.train.dropout_keep_prob = obj['dropout_keep_prob']
+                self.train.batch_size = int(obj['batch_size'])
+                self.train.epochs = int(obj['epochs'])
+                self.train.optimizer = defs.check(obj['optimizer'], defs.optim)
+                self.train.base_lr = float(obj['base_lr'])
+                self.train.lr_mult = float(obj['lr_mult']) if obj['lr_mult'] != 'None' else None
+                lr_decay = parse_seq(obj['lr_decay'])
+                self.train.lr_decay = []
+                self.train.lr_decay.append(defs.check(lr_decay[0],defs.decay.granularity))
+                self.train.lr_decay.append(defs.check(lr_decay[1],defs.decay.scheme))
+                self.train.lr_decay.append(int(lr_decay[2]))
+                self.train.lr_decay.append(float(lr_decay[3]))
+                self.train.clip_norm = int(obj['clip_norm'])
+                self.train.dropout_keep_prob = float(obj['dropout_keep_prob'])
             if phase == defs.phase.val:
                 # read validation opts
                 self.val = Settings.val()
                 obj = config[phase]
-                self.val.batch_size = obj['batch_size']
-                self.val.logits_save_interval = obj['logits_save_interval']
+                self.val.batch_size = int(obj['batch_size'])
+                self.val.logits_save_interval = int(obj['logits_save_interval'])
 
         # read logging information
         self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
@@ -183,12 +219,23 @@ class Settings:
         self.print_tensors = config['logging']['print_tensors']
 
         # read data sources
-        self.datasets = []
+        self.datasets = {}
         for dataid in config['data']:
             dataobj = config['data'][dataid]
 
             dset = dataset_.Dataset()
             id = dataid
+            # phase to run the dataset in
+            dataset_phase = defs.check(dataobj['phase'], defs.phase)
+            if not dataset_phase in self.phases:
+                info("Omitting dataset [%s] due to its phase [%s]" % (id, dataset_phase))
+                continue
+
+            if not dataset_phase in self.datasets:
+                self.datasets[dataset_phase] = []
+            self.datasets[dataset_phase].append(dset)
+
+            # imgproc options
             path = dataobj['data_path']
             mean_image = parse_seq(dataobj['mean_image'])
             batch_item = defs.check(dataobj['batch_item'], defs.batch_item)
@@ -198,11 +245,14 @@ class Settings:
             imgproc = []
             for opt in imgproc_raw:
                 imgproc.append(defs.check(opt, defs.imgproc))
-            raw_image_shape = parse_seq(dataobj['mean_image'])
+            if defs.imgproc.raw_resize in imgproc and not mean_image:
+                error("[%s] option requires a supplied mean image intensity." % defs.imgproc.raw_resize)
+            raw_image_shape = parse_seq(dataobj['raw_image_shape'])
             data_format = defs.check(dataobj['data_format'], defs.data_format)
             frame_format = dataobj['frame_format']
-            # read image processing params
+            tag = defs.check(dataobj['tag'], defs.dataset_tag)
 
+            # read image processing params
             do_random_cropping = defs.imgproc.rand_crop in imgproc
             do_center_cropping = defs.imgproc.center_crop in imgproc
             do_resize = defs.imgproc.resize in imgproc
@@ -222,31 +272,31 @@ class Settings:
                         warning("Random cropping is enabled in validation mode.")
                     if do_random_mirroring:
                         warning("Random mirroring is enabled in validation mode.")
-                    ans = input("continue? (y/n)")
+                    ans = input("continue? (y/n) : ")
                     if ans != "y":
                         error("Aborted.")
+            dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
+                                frame_format, batch_item, self.network.num_classes, tag)
 
-            dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format, frame_format, batch_item)
-            if self.train:
-                dset.calculate_batches(self.train.batch_size)
-            elif self.val:
-                dset.calculate_batches(self.val.batch_size)
+            # read captioning - it's dataset-dependent
+            if 'captioning' in dataobj:
+                captioning = dataobj['captioning']
+                word_embeddings_file = captioning['word_embeddings_file']
+                ground_truth = captioning['caption_ground_truth']
+                evaluation_type = captioning['eval_type']
+                caption_search = captioning['caption_search']
+                dset.initialize_workflow(word_embeddings_file)
 
-            self.datasets.append(dset)
-
-        # read captioning
-        captioning = config['captioning']
-        word_embeddings_file = captioning['word_embeddings_file']
-        ground_truth = captioning['caption_ground_truth']
-        evaluation_type = captioning['eval_type']
-        caption_search = captioning['caption_search']
-        for dset in self.datasets:
-            dset.initialize_workflow(word_embeddings_file)
-
-
-
-
-
+    def initialize_datasets(self):
+        if not self.datasets:
+            error("No dataset configured to active phase [%s]" % self.phase)
+        self.input_mode = defs.input_mode.get_from_workflow(self.workflow)
+        for phase in self.phases:
+            for dset in self.datasets[phase]:
+                if self.train:
+                    dset.calculate_batches(self.train.batch_size, self.input_mode)
+                elif self.val:
+                    dset.calculate_batches(self.val.batch_size, self.input_mode)
     # file initialization
     def initialize_from_file(self, init_file):
         if init_file is None:
@@ -323,6 +373,10 @@ class Settings:
         self.tensorboard_folder = os.path.join(self.run_folder, self.tensorboard_folder, mode_folder)
 
         sys.stdout.flush(), sys.stderr.flush()
+
+        # initialize datasets
+        self.initialize_datasets()
+
         # if not resuming, set start folder according to now()
         if  self.should_resume():
             if self.train:
@@ -346,9 +400,9 @@ class Settings:
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
-            savefile_metapars = os.path.join(self.run_folder,"checkpoints", self.resume_file + ".snap")
+            savefile_metapars = self.resume_file + ".snap"
             if not os.path.exists(savefile_metapars):
-                error("Graph savefile does not exist: %s" %  savefile_metapars)
+                error("Metaparameters savefile does not exist: %s" %  savefile_metapars)
             info("Resuming metadata from file:" + savefile_metapars)
 
             try:
@@ -364,7 +418,7 @@ class Settings:
                 self.sequence_length = params[2:]
 
             # inform datasets
-            for dset in self.datasets:
+            for dset in self.get_datasets():
                 dset.restore(self.train_index, self.epoch_index, self.sequence_length)
             info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
 
@@ -381,7 +435,7 @@ class Settings:
 
             try:
                 # if we are in validation mode, the 'global_step' training variable is discardable
-                if self.do_validation:
+                if self.val:
                     ignorable_variable_names.append(defs.variables.global_step)
 
                 chkpt_names = get_checkpoint_tensor_names(savefile_graph)
@@ -413,7 +467,7 @@ class Settings:
                 error("Failed to load checkpoint!")
 
     # save graph and dataset stuff
-    def save(self, sess, dataset, progress, global_step):
+    def save(self, sess, progress, global_step):
         try:
             if self.saver is None:
                 self.saver = tf.train.Saver()
@@ -433,34 +487,44 @@ class Settings:
 
             info("Saving params to [%s]" % savefile_metapars)
             info("Saving params for epoch index %d, train index %d" %
-                (dataset.epoch_index, dataset.batch_index_train))
+                (self.train.epoch_index, self.get_batch_index()))
 
-            params2save = [dataset.batch_index_train, dataset.epoch_index]
+            params2save = [self.get_batch_index(), self.train.epoch_index]
             if defs.workflows.is_description(self.workflow):
-                params2save += [dataset.max_caption_length]
+                params2save += [ dat.max_caption_length for dat in self.get_datasets()]
 
             with open(savefile_metapars,'wb') as f:
                 pickle.dump(params2save,f)
         except Exception as ex:
             error(ex)
 
-def get_feed_dict(lrcn, dataset, images, ground_truth):
+def get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids):
     fdict = {}
+    for required_input in lrcn.input:
+        i_tens, i_type, i_datatag = required_input
+        dataset_id = [ dset.id for dset in settings.get_datasets() if dset.tag == i_datatag]
+        if not (len(dataset_id) == 1):
+            error("%d datasets satisfy the following network input requirement, but exactly one must. %s." % (len(dataset_id), str(required_input)))
+        dataset_idx = dataset_ids.index(dataset_id[0])
+        if i_type == defs.net_input.visual:
+            fdict[i_tens] = images[dataset_idx]
+        elif i_type == defs.net_input.labels:
+            fdict[i_tens] = ground_truth[dataset_idx]
+            num_labels = len(ground_truth[dataset_idx])
+
     padding = 0
-    # supply the images
-    fdict[lrcn.inputData] = images
 
     # for description workflows, supply wordvectors and caption lengths
-    if defs.workflows.is_description(dataset.workflow):
+    if defs.workflows.is_description(settings.workflow):
         # get words per caption, onehot labels, embeddings
         fdict[lrcn.inputLabels] = ground_truth["onehot_labels"]
         fdict[lrcn.caption_lengths] = ground_truth['caption_lengths']
         fdict[lrcn.word_embeddings] = ground_truth['word_embeddings']
         fdict[lrcn.non_padding_word_idxs] = ground_truth['non_padding_index']
         num_labels = len(ground_truth["onehot_labels"])
-    else:
-        fdict[lrcn.inputLabels] = ground_truth
-        num_labels = len(ground_truth)
+    #else:
+    #    fdict[lrcn.inputLabels] = ground_truth
+    #    num_labels = len(ground_truth)
 
     return fdict, num_labels, padding
 
@@ -470,97 +534,80 @@ def should_save_now(self, global_step):
         return False
     return global_step % self.save_interval == 0
 
-
 # print information on current iteration
-def print_iter_info(settings, dataset,  num_images, num_labels, padding):
+def print_iter_info(settings, num_images, num_labels, padding):
+    dataset = settings.datasets[settings.phase][0]
     padinfo = "(%d padding)" % padding if padding > 0 else ""
-    msg = "Mode: [%s], epoch: %2d/%2d, batch %4d / %4d : %3d images%s, %3d labels" % \
-          (dataset.batch_index, len(dataset.batches), num_images, padinfo, num_labels)
-    if settings.phase == defs.phase.train:
-        msg = "Mode: [%s], epoch: %2d/%2d, %s" % (settings.phase, settings.epoch_index + 1, settings.epochs, msg)
-    # same as train, but no epoch
-    elif settings.phase == defs.phase.val:
-        msg = "Mode: [%s], batch %4d / %4d : %3d images%s, %3d labels" % (settings.phase, dataset.batch_index,
-                                                                      len(dataset.batches), num_images, padinfo, num_labels)
+    epoch_str = "" if settings.val else "epoch: %2d/%2d," % (settings.train.epoch_index+1, settings.train.epochs)
+    msg = "Mode: [%s], %s batch %4d / %4d : %s images%s, %3d labels" % \
+          (settings.phase, epoch_str , dataset.batch_index, len(dataset.batches), str(num_images), padinfo, num_labels)
     info(msg)
 
 # train the network
-def train_test(settings, dataset, lrcn, sess, tboard_writer, summaries):
-    info("Starting train/test")
+def train_test(settings, lrcn, sess, tboard_writer, summaries):
     run_batch_count = 0
 
-    for epochIdx in range(dataset.epoch_index, dataset.epochs):
-        while dataset.loop():
+    save_interval = settings.compute_save_interval()
+    info("Starting train")
+    for _ in range(settings.train.epoch_index, settings.train.epochs):
+        while settings.loop():
             # read  batch
-            images, ground_truth = dataset.get_next_batch()
-            fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
-            print_iter_info(settings, dataset, len(images), padding, num_labels)
+            images, ground_truth, dataset_ids = settings.get_next_batch()
+            fdict, num_labels, padding = get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids)
+            print_iter_info(settings, [len(im) for im in images], num_labels, padding)
 
             # count batch iterations
             run_batch_count = run_batch_count + 1
             summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.global_step, lrcn.optimizer],feed_dict=fdict)
             # calcluate the number of bits
-            nats = batch_loss / math.log(dataset.num_classes)
+            nats = batch_loss / math.log(settings.network.num_classes)
             info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f / %2.3f " % (learning_rate, global_step, batch_loss, nats))
-            info("Dataset global step %d, epoch index %d, batch size train %d, batch index train %d" %
-                                 (dataset.get_global_batch_step(), dataset.epoch_index, dataset.batch_size_train, dataset.batch_index_train))
+            info("Dataset global step %d, epoch index %d, batch sizes %s, batch index train %d" %
+                                 (global_step, settings.train.epoch_index, str(settings.get_batch_sizes()), settings.get_batch_index()))
 
-            tboard_writer.add_summary(summaries_train, global_step=dataset.get_global_batch_step())
+            tboard_writer.add_summary(summaries_train, global_step=global_step)
             tboard_writer.flush()
 
-            if settings.do_validation:
-                test_ran = test(dataset, lrcn, settings, sess, tboard_writer, summaries)
-                if test_ran:
-                    dataset.set_or_swap_phase(defs.phase.train)
-
             # check if we need to save
-            if dataset.should_save_now(global_step):
+            if global_step and global_step % save_interval == 0:
                 # save a checkpoint if needed
-                settings.save(sess, dataset, progress="ep_%d_btch_%d_gs_%d" % (1 + epochIdx, dataset.batch_index, global_step),
-                              global_step=dataset.get_global_batch_step())
+                settings.save(sess, progress="ep_%d_btch_%d_gs_%d" % (1 + settings.train.epoch_index, settings.get_batch_index(), global_step),
+                              global_step=global_step)
         # if an epoch was completed (and not just loaded, do saving and logging)
         if run_batch_count > 0:
-            info("Epoch [%d] training run complete." % (1+epochIdx))
+            info("Epoch [%d] training run complete." % (1+settings.train.epoch_index))
         else:
-            info("Resumed epoch [%d] is already complete." % (1+epochIdx))
+            info("Resumed epoch [%d] is already complete." % (1+settings.train.epoch_index))
 
-        dataset.epoch_index = dataset.epoch_index + 1
+        settings.train.epoch_index = settings.train.epoch_index + 1
         # reset phase
-        dataset.reset_phase(defs.phase.train)
+        settings.rewind_datasets()
 
     # if we did not save already, do it now at the end of training
-    if run_batch_count and not dataset.should_save_now(global_step):
+    if run_batch_count and global_step and not (global_step % save_interval == 0):
         info("Saving model checkpoint out of turn, since training's finished.")
-        settings.save(sess, dataset, progress="ep_%d_btch_%d_gs_%d" % (1 + epochIdx, len(dataset.batches), global_step),
-                      global_step=dataset.get_global_batch_step())
+        settings.save(sess,  progress="ep_%d_btch_%d_gs_%d" %
+                (1 + settings.train.epoch_index, settings.get_num_batches(), global_step), global_step=global_step)
 
 
 
 # test the network on validation data
-def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
+def test(lrcn, settings, sess, tboard_writer, summaries):
     tic = time.time()
-    # if testing within training, check if it should run
-    if dataset.do_training:
-        if not dataset.should_test_now():
-            return False
-        else:
-            dataset.set_or_swap_phase(defs.phase.val)
-    else:
-        dataset.set_current_phase(defs.phase.val)
 
-    # reset validation phase indexes
-    dataset.reset_phase(dataset.phase)
+    settings.global_step = 0
 
     # validation
-    while dataset.loop():
+    while settings.loop():
         # get images and labels
-        images, ground_truth = dataset.get_next_batch()
-        fdict, num_labels, padding = get_feed_dict(lrcn, dataset, images, ground_truth)
-        dataset.print_iter_info(len(images), padding, num_labels)
+        images, ground_truth, dataset_ids = settings.get_next_batch()
+        fdict, num_labels, padding = get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids)
+        print_iter_info(settings, [len(im) for im in images], num_labels, padding)
         logits = sess.run(lrcn.logits, feed_dict=fdict)
-        lrcn.process_validation_logits(logits, dataset, fdict, padding)
+        lrcn.process_validation_logits( defs.dataset_tag.main, settings, logits, fdict, padding)
         lrcn.save_validation_logits_chunk()
+        settings.global_step += 0
     # save the complete output logits
     lrcn.save_validation_logits_chunk(save_all = True)
 
@@ -582,14 +629,14 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
 
             for idx in range(lrcn.validation_logits_save_counter):
                 logits_chunk = lrcn.load_validation_logits_chunk(idx)
-                ids_captions_chunk = dataset.validation_logits_to_captions(logits_chunk, num_processed_logits)
+                ids_captions_chunk = settings.validation_logits_to_captions(logits_chunk, num_processed_logits)
                 ids_captions.extend(ids_captions_chunk)
                 num_processed_logits  += len(logits_chunk)
                 info("Processed saved chunk %d/%d containing %d items - item total: %d" %
                     (idx+1,lrcn.validation_logits_save_counter, len(logits_chunk), num_processed_logits))
             if len(lrcn.item_logits) > 0:
                 error("Should never get item logits last chunk in runtask!!")
-                ids_captions_chunk = dataset.validation_logits_to_captions(lrcn.item_logits, num_processed_logits)
+                ids_captions_chunk = settings.validation_logits_to_captions(lrcn.item_logits, num_processed_logits)
                 ids_captions.extend(ids_captions_chunk)
                 info("Processed existing chunk containing %d items - item total: %d" % (len(lrcn.item_logits), len(ids_captions)))
 
@@ -599,7 +646,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
                 error("Duplicate image ids in coco validation: %s" % str(dupl))
 
             # write results
-            results_file = dataset.input_source_files[defs.val_idx] + ".coco.results.json"
+            results_file = os.path.join(settings.run_folder, "coco.results.json")
             info("Writing captioning results to %s" % results_file)
             with open(results_file , "w") as fp:
                 json.dump(ids_captions, fp)
@@ -617,7 +664,7 @@ def test(dataset, lrcn, settings, sess, tboard_writer, summaries):
         accuracy = lrcn.get_accuracy()
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
         info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
-        tboard_writer.add_summary(summaries.val_merged, global_step=dataset.get_global_batch_step())
+        tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
     tboard_writer.flush()
     return True
 
@@ -651,9 +698,9 @@ def main(init_file):
 
     # create the writer for visualizashuns
     tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
-    if settings.do_training:
+    if settings.train:
         train_test(settings, lrcn,  sess, tboard_writer, summaries)
-    elif settings.do_validation:
+    elif settings.val:
         test(lrcn, settings,  sess, tboard_writer, summaries)
 
     # mop up
