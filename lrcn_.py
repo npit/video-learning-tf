@@ -79,7 +79,7 @@ class LRCN:
         elif self.workflow == defs.workflows.acrec.lstm:
             self.create_actrec_lstm(settings)
         elif self.workflow == defs.workflows.acrec.singlesingle:
-            self.create_actrec_singlesingle(settings)
+            self.create_actrec_dual(settings)
         # Image description
         elif self.workflow == defs.workflows.imgdesc.inputstep:
             self.create_imgdesc_visualinput(settings)
@@ -386,7 +386,11 @@ class LRCN:
 
         info("logits out : [%s]" % self.logits.shape)
 
-    def create_actrec_singlesingle(self, settings):
+    def create_actrec_dual(self, settings):
+        # workflow that encodes images from two datasets to vectors, which are fused as specififed by the
+        # dataset and frame fusion parameters. The classification itself is determined by the multi_workflow network
+        # parameter
+
         # a dcnn for each dataset, mapping an image to a vector.
         self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
         self.input.append((self.inputLabels, defs.net_input.labels, defs.dataset_tag.main))
@@ -449,7 +453,12 @@ class LRCN:
             fused = apply_temporal_fusion(fused, fused_dim, fpc1, settings.network.frame_fusion_method)
             debug("Late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
 
-        self.logits = convert_dim_fc(fused, settings.network.num_classes)
+        # classify
+        if self.worfklow == defs.workflows.multi.fc:
+            self.logits = convert_dim_fc(fused, settings.network.num_classes)
+        elif self.worfklow == defs.workflows.multi.lstm:
+            # check if not fused fpc
+        ...
         debug("Logits: %s" % str(self.logits.shape))
 
 

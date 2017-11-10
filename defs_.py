@@ -64,6 +64,8 @@ class defs:
         state_bias, input_bias, input_concat = "state_bias", "input_bias", "input_concat"
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
+        class multi:
+            fc, lstm, lstm_sbias, lstm_ibias, lstm_conc = "fc", "lstm", "lstm_sbias", "lstm_ibias", "lstm_conc"
         class acrec:
             singleframe, lstm, audio, singlesingle = "acrec_singleframe", "acrec_lstm", "acrec_audio", "singlesingle"
             def is_workflow(arg):
