@@ -1,75 +1,74 @@
 run:
   # run type and an identifier for it
   workflow: defs.workflows.imgdesc.statebias
-
   # save / load configuration
   resume_file: None
+  # folder to store run data
+  run_folder: "path/to/outputfolder"
+  phase : defs.phase.val
 
   # data parameters; a list of input data 
   data:
     data_source_1:
       data_path: "path/to/data"
-      path_prepend_folder: ""
+      prepend_folder: ""
       raw_image_shape: (240, 320, 3)
+      image_shape: (227, 227, 3)
       mean_image: [103.939, 116.779, 123.68]
       data_format: defs.data_format.tfrecord
       frame_format: "jpg"
       imgproc: []
-    data_source_2:
-      data_path: "path/to/data"
-      # ...
-  
-  # folder for direct image reading
-  run_folder: "path/to/outputfolder"
+      batch_item: defs.batch_item.default
+      phase: defs.phase.train
+      tag: defs.dataset_tag.main
+    # similarly, can defined additional datasets
 
-  # architecture settings
-  image_shape: (227, 227, 3)
-  frame_encoding_layer: "fc7"
-  lstm_num_layers: 3
-  lstm_num_hidden: 256
-  frame_pooling: (defs.fusion_type.late, defs.fusion_method.avg)
-  clip_pooling: (defs.fusion_type.late, defs.fusion_method.avg)
-  num_classes: 101
+  network:
+    # architecture settings
+    image_shape: (227, 227, 3)
+    frame_encoding_layer: "fc7"
+    lstm_params: [200, 3, defs.fusion_method.last]
+    frame_fusion : [defs.fusion_type.early, defs.fusion_method.last]
+    clip_fusion : [defs.fusion_type.late, defs.fusion_method.last]
+    num_classes : 101
+    dataset_fusion: [defs.fusion_type.late, defs.fusion_method.avg]
+    multi_workflow: defs.workflow.lstm
 
-  # specify what the batch size represents
-  batch_item: defs.batch_item.default
+  # phase settings
+  train:
+    # training settings
+    batch_size: 1
+    epochs : 2
+    optimizer : defs.optim.sgd
+    base_lr: 0.1
+    lr_mult : None
+    lr_decay : [ defs.decay.granularity.exp, defs.decay.scheme.interval, 8, 0.96 ]
+    #clip_grads : (-1.,1.)
+    clip_grads : None
+    clip_norm : 5
+    #clip_grads : None
+    dropout_keep_prob : 0.5
 
-  # training settings
-  do_training: True
-  batch_size_train: 100
-  epochs: 15
+  val:
+    # validation settings
+    batch_size: 2
+    logits_save_interval : -1
 
-  # training details
-  optimizer: defs.optim.sgd
-  base_lr: 0.001
-  lr_mult: 2
-  # lr_decay: (defs.decay.granularity, defs.decay.scheme, numeric_steps, decay factor)
-  lr_decay: ( defs.decay.exp, 1000, 0.96)
-  # clip options
-  clip_grads: None
-  clip_norm: 5
-  dropout_keep_prob: 0.5
+  logging:
+    # logging
+    save_freq_per_epoch : 0.5
+    level : logging.DEBUG
+    print_tensors : False
+    tensorboard_folder : "tensorboard"
 
-  # validation settings
-  do_validation: False
-  validation_interval: 1
-  batch_size_val: 88
-  # validation logits caching interval. Set to <:0 to save once at the end.
-  validation_logits_save_interval: -1
 
-  # logging
-  save_freq_per_epoch: 1
-  logging_level: logging.DEBUG
-  print_tensors: False
-  tensorboard_folder: "tensorboard_graphs"
 
-  # workflow-specific parameters
-  # description workflows
-  caption_search: defs.caption_search.max
-  eval_type: defs.eval_type.coco
-  caption_ground_truth: "path/to/ground/truth"
-  word_embeddings_file: "path/to/word/embeddings"
-
+  # imgdesc vars
+  captioning:
+    caption_search : defs.caption_search.max
+    eval_type : defs.eval_type.coco
+    caption_ground_truth : "path/to/caption/gt"
+    word_embeddings_file : "path/to/embeddings"
 
 serialize:
 
@@ -86,7 +85,7 @@ serialize:
   validate_pcnt: 10
   num_threads: 2
   num_items_per_thread: 20
-  run_id:None
+  run_id: None
 
   output_folder: "path/to/output/folder/" 
   generation_error: defs.generation_error.compromise
