@@ -1,17 +1,17 @@
 from utils_ import  *
 from defs_ import *
 
-def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fusion_type=defs.fusion_method.reshape, name="temporal_fusion", lstm_encoder = None ):
+def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fusion_method=defs.fusion_method.reshape, name="temporal_fusion", lstm_encoder = None ):
     '''
     Apply fusion over the temporal (column) dimension of the input tensor
     :param self:
     :param input_tensor:
     :param vector_dimension:
     :param temporal_dimension:
-    :param fusion_type:
+    :param fusion_method:
     :return:
     '''
-    if fusion_type == defs.fusion_method.last:
+    if fusion_method == defs.fusion_method.last:
         # keep only the response at the last time step
         output = tf.slice(input_tensor, [0, temporal_dimension - 1, 0], [-1, 1, vector_dimension], name="lstm_output_reshape")
         #debug("LSTM last timestep output : %s" % str(output.shape))
@@ -19,13 +19,13 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
         output = tf.squeeze(output, axis=1, name="lstm_output_squeeze")
         debug("Agreggated last-squeezed output : %s" % str(output.shape))
 
-    elif fusion_type == defs.fusion_method.avg:
+    elif fusion_method == defs.fusion_method.avg:
         # average per-timestep results
         output = tf.reduce_mean(input_tensor, axis=1)
         debug("Aggregated time-averaged output : %s" % str(output.shape))
-    elif fusion_type == defs.fusion_method.reshape:
+    elif fusion_method == defs.fusion_method.reshape:
         output = tf.reshape(input_tensor,[-1, vector_dimension])
-    elif fusion_type == defs.fusion_method.lstm:
+    elif fusion_method == defs.fusion_method.lstm:
         if lstm_encoder == None:
             error("Did not provide an lstm encoder for fusion.")
         # fuse via lstm encoding; simplest lstm setting: 1 layer, statedim = inputdim, outputdim = 8
@@ -36,7 +36,7 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
         output = output[0].h
         debug("Aggregated lstm output [%s]" % str(output.shape))
     else:
-        error("Undefined frame fusion type : %s" % str(fusion_type))
+        error("Undefined frame fusion type : %s" % str(fusion_method))
     return output
 
 def convert_dim_fc(input_tensor, output_dim, name="fc_convert", reuse = False):
@@ -103,3 +103,17 @@ def make_conv(input_tensor, kernel_params, strides, scopename, init_w=(0.0, 0.1)
     value = tf.nn.bias_add(conv, biases)
     debug("C [%s]: %s c %s + %s = %s" % (scopename,str(input_tensor.shape), str(weights.shape), str(biases.shape), str(value.shape)))
     return tf.nn.relu(value, name = scopename)
+
+def vec_seq_concat(seq_tensor, vec_tensor, sequence_length, order = 'vecfirst'):
+    vec_dim = int(vec_tensor.shape[-1])
+    # repeat the vec tensor to the sequence length
+    vec_tensor = tf.tile(vec_tensor, [1, sequence_length])
+    # restore to one image per column
+    vec_tensor = tf.reshape(vec_tensor, [-1, vec_dim])
+    # hor. concat with the seq_tensor
+    if order == 'vecfirst':
+        res = tf.concat([vec_tensor, seq_tensor],axis=0)
+    else:
+        res = tf.concat([seq_tensor, vec_tensor],axis=0)
+    return res
+

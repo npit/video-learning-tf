@@ -172,8 +172,10 @@ class Settings:
         self.network = Settings.network()
         self.network.image_shape = parse_seq(config["network"]["image_shape"])
         self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
-        self.network.lstm_num_hidden = config["network"]["lstm_num_hidden"]
-        self.network.lstm_num_layers = config["network"]["lstm_num_layers"]
+        lstm_params = parse_seq(config['network']['lstm'])
+        self.network.lstm_num_hidden = int(lstm_params[0])
+        self.network.lstm_num_layers = int(lstm_params[1])
+        self.network.lstm_fusion = defs.check(lstm_params[2], defs.fusion_method)
         self.network.num_classes = config["network"]["num_classes"]
         dataset_fusion = parse_seq(config["network"]["dataset_fusion"])
         self.network.dataset_fusion_type, self.network.dataset_fusion_method = \
@@ -215,9 +217,10 @@ class Settings:
 
         # read logging information
         self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
+        loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
+        if not self.logging_level in loglevels:
+            error("Invalid logging level: %s" % (self.logging_level))
         self.logging_level = eval(config['logging']['level'])
-        if self.logging_level in ['INFO','DEBUG','WARN']:
-            error("Invalid logging level: %s:" % (self.logging_level))
         self.tensorboard_folder = config['logging']['tensorboard_folder']
         self.print_tensors = config['logging']['print_tensors']
 

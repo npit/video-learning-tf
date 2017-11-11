@@ -11,6 +11,8 @@ from utils_ import *
 import tqdm
 from defs_ import *
 import pickle
+import yaml
+from parse_opts import *
 '''
 Script for production of training / testing data collections and serialization to tf.record files.
 '''
@@ -52,13 +54,38 @@ class serialization_settings:
             return
         tag_to_read = "serialize"
         print("Initializing from file %s" % self.init_file)
-        config = configparser.ConfigParser()
-        config.read(self.init_file)
-        if not config[tag_to_read]:
-            error('Expected header [%s] in the configuration file!' % tag_to_read)
-        config = config[tag_to_read]
-        for key in config:
-            exec("self.%s=%s" % (key, config[key]))
+        if self.init_file.endswith(".ini"):
+            config = configparser.ConfigParser()
+            config.read(self.init_file)
+            if not config[tag_to_read]:
+                error('Expected header [%s] in the configuration file!' % tag_to_read)
+            config = config[tag_to_read]
+            for key in config:
+                exec("self.%s=%s" % (key, config[key]))
+        elif self.init_file.endswith(".yml"):
+            with open(self.init_file,"r") as f:
+                config = yaml.load(f)[tag_to_read]
+            self.output_folder = config['output_folder']
+            self.path_prepend_folder = config['path_prepend_folder']
+            self.input_files = parse_seq(config['input_files'])
+            self.run_id = config['run_id']
+            self.num_threads = int(config['num_threads'])
+            self.num_items_per_thread = int(config['num_items_per_thread'])
+            self.raw_image_shape = parse_seq(config['raw_image_shape'])
+            self.clip_offset_or_num = int(config['clip_offset_or_num'])
+            self.num_frames_per_clip = int(config['num_frames_per_clip'])
+            self.clipframe_mode = defs.check(config['clipframe_mode'], defs.clipframe_mode)
+            self.generation_error = defs.check(config['generation_error'], defs.generation_error)
+            self.do_shuffle = config['do_shuffle']
+            self.do_serialize = config['do_serialize']
+            self.do_validate = config['do_validate']
+            self.frame_format = config['frame_format'].strip()
+            self.logging_level = config['logging_level'].strip()
+            loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
+            if not self.logging_level in loglevels:
+                error("Invalid logging level: [%s]" % (self.logging_level))
+            self.logging_level = eval(self.logging_level)
+
 
         if self.run_id is None:
             self.run_id = "serialize_%s" % (get_datetime_str())
@@ -188,7 +215,7 @@ def generate_frames_per_video(paths_list, mode, settings):
             pbar.set_description("Processing %-30s" % basename(video_path))
             pbar.update()
     total_num_paths = int(sum([len(p) for p in paths_per_video]))
-    info("Total generation time for a total of %d video paths: %s " % (total_num_paths, elapsed_str(tic)))
+    info("Total generation time for a total of %d clips: %s " % (total_num_paths, elapsed_str(tic)))
     return paths_per_video
 
 def read_item_list_threaded(paths, storage, id, settings):
@@ -620,14 +647,13 @@ def write_paths_file(data, errors, settings):
             continue
 
         item_paths, item_labels, paths, labels, mode = data[i]
+        if settings.output_folder is not None:
+            output_file = os.path.join(settings.output_folder, basename(inp))
+        else:
+            output_file = inp
 
         if settings.do_shuffle:
             # re-write paths, if they got shuffled, renaming the original
-            if settings.output_folder is not None:
-                output_file = os.path.join(settings.output_folder,
-                                           basename(inp))
-            else:
-                output_file = inp
 
             copyfile(inp, output_file + ".unshuffled")
             shuffled_paths_file= output_file + ".shuffled"
