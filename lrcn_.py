@@ -419,8 +419,9 @@ class LRCN:
         # instead here early (resp. late) refers to fusing the dataset before (resp. after) fusing the frames
         # available modes are early fusion and lstm bias.
         fused_fpc = False
-        if settings.network.dataset_fusion_type == defs.fusion_type.early:
-            # fuse frames now - main
+        # early fusion: fuse before dataset fusion
+        if settings.network.frame_fusion_type == defs.fusion_type.early:
+            # fuse frames now, before dataset fusion
             encoded1 = tf.reshape(encoded1, [ -1, fpc1, dim1])
             encoded1 = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
             debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded1.shape)))
@@ -431,7 +432,7 @@ class LRCN:
             debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded2.shape)))
         else:
             if fpc1 != fpc2:
-                error("Late dataset fusion requires same fpc across datasets")
+                error("Non-early dataset fusion requires same fpc across datasets")
 
         # fuse across datasets
         if settings.network.dataset_fusion_method == defs.fusion_method.avg:
@@ -447,10 +448,10 @@ class LRCN:
 
         debug("Fused dataset vectors via %s: %s" % (settings.network.dataset_fusion_method, str(fused.shape)))
 
-        if not fused_fpc:
-            fused_dim = int(fused.shape[-1])
-            fused = tf.reshape(encoded1, [ -1, fpc1, fused_dim])
-            fused = apply_temporal_fusion(fused, fused_dim, fpc1, settings.network.frame_fusion_method)
+        if settings.network.frame_fusion.type == defs.fusion_type.late:
+            dataset_fused_dim = int(fused.shape[-1])
+            fused = tf.reshape(encoded1, [ -1, fpc1, dataset_fused_dim])
+            fused = apply_temporal_fusion(fused, dataset_fused_dim, fpc1, settings.network.frame_fusion_method)
             debug("Late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
 
         # classify
@@ -458,7 +459,32 @@ class LRCN:
             self.logits = convert_dim_fc(fused, settings.network.num_classes)
         elif self.worfklow == defs.workflows.multi.lstm:
             # check if not fused fpc
-        ...
+            if not settings.network.frame_fusion_type == defs.fusion_type.none:
+                error("LSTM fused workflow requires frame fusion type to be",defs.fusion_type.none)
+
+            self.lstm_model = lstm.lstm()
+            dataset_fused_dim = int(fused.shape[-1])
+            self.logits, _ = self.lstm_model.forward_pass_sequence(fused, None, dataset_fused_dim , settings.network.lstm_num_layers,
+                                        settings.network.lstm_num_hidden, settings.network.num_classes, fpc1, None,
+                                        settings.network.frame_fusion_method, settings.train.dropout_keep_prob)
+        else:
+            # these workflows require only the one dataset to be frame-fused
+            if settings.network.dataset_fusion_type == defs.fusion_type.main:
+                # fuse the main dataset
+                encoded1 = tf.reshape(encoded1, [ -1, fpc1, dim1])
+                fused_dset = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
+                seq_dset = encoded2
+                debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded1.shape)))
+            if settings.network.dataset_fusion_type == defs.fusion_type.aux:
+                # fuse the aux dataset
+                encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
+                fused_dset = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
+                seq_dset = encoded1
+                debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded2.shape)))
+
+            if settings.workflow == defs.workflows.multi.lstm_conc:
+
+
         debug("Logits: %s" % str(self.logits.shape))
 
 

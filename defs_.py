@@ -104,7 +104,7 @@ class defs:
 
     # early/late fusion
     class fusion_type:
-        early, late = "early", "late"
+        early, late, none, main, aux  = "early", "late", "none", "main", "aux"
 
     # how the video's frames are structured
     class clipframe_mode:
