@@ -170,9 +170,10 @@ class Settings:
 
         # read network  architecture stuff
         self.network = Settings.network()
+        self.network.load_weights = config['network']['load_weights']
         self.network.image_shape = parse_seq(config["network"]["image_shape"])
         self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
-        lstm_params = parse_seq(config['network']['lstm'])
+        lstm_params = parse_seq(config['network']['lstm_params'])
         self.network.lstm_num_hidden = int(lstm_params[0])
         self.network.lstm_num_layers = int(lstm_params[1])
         self.network.lstm_fusion = defs.check(lstm_params[2], defs.fusion_method)
@@ -217,10 +218,11 @@ class Settings:
 
         # read logging information
         self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
+        self.logging_level = config['logging']['level']
         loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
         if not self.logging_level in loglevels:
             error("Invalid logging level: %s" % (self.logging_level))
-        self.logging_level = eval(config['logging']['level'])
+        self.logging_level = eval(self.logging_level)
         self.tensorboard_folder = config['logging']['tensorboard_folder']
         self.print_tensors = config['logging']['print_tensors']
 

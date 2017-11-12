@@ -278,7 +278,7 @@ class LRCN:
     # Activity recognition
     def create_actrec_singleframe(self, settings, inputData = None, inputLabels = None):
         if inputData is None:
-            info("Dcnn workflow [%s]" % str(settings.network.frame_fusion_type))
+            info("Dcnn workflow [%s][%s]" % (settings.network.frame_fusion_type, settings.network.frame_fusion_method))
             # define label inputs
             self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
             self.inputData = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames')
@@ -696,7 +696,7 @@ class LRCN:
         # DCNN for frame encoding
         self.dcnn_model = alexnet.dcnn()
         # get the first dataset through the DCNN
-        self.dcnn_model.create(self.inputData, self.dcnn_weights_file, settings.network.num_classes, output_layer)
+        self.dcnn_model.create(self.inputData, self.dcnn_weights_file, settings.network.num_classes, output_layer, settings.network.load_weights)
         outputData = self.dcnn_model.get_output()
         debug("dcnn input : [%s]" % self.inputData.shape)
         debug("dcnn output : [%s]" % outputData.shape)

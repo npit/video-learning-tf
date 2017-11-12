@@ -36,8 +36,16 @@ class dcnn(Trainable):
     def get_output(self):
         return self.output
 
-        # specify the layers
-    def create(self, input, weightsFile, num_classes, final_layer ="prob"):
+    def make_w_b(self, shape, w_stdev = 0.05, bias = 0.1, name = "fc"):
+        w_init = tf.truncated_normal((shape[0], shape[1]), stddev=0.05, name=name + "_init")
+        b_init = tf.constant(bias, shape =(shape[1],), name = name + "_bias")
+
+        W = tf.Variable(w_init, name=name+"W")
+        b = tf.Variable(b_init, name=name+"b")
+        return W,b
+
+    # specify the layers
+    def create(self, input, weightsFile, num_classes, final_layer ="prob", load_weights = True):
         net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
         if final_layer is None:
             final_layer = "prob"
@@ -52,8 +60,14 @@ class dcnn(Trainable):
             c_o = 96;
             s_h = 4;
             s_w = 4
-            conv1W = tf.Variable(net_data["conv1"][0],name="conv1W")
-            conv1b = tf.Variable(net_data["conv1"][1],name="conv1b")
+
+            name = "conv1"
+            if load_weights:
+                conv1W = tf.Variable(net_data[name][0],name=name+"W")
+                conv1b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                conv1W, conv1b = self.make_w_b(net_data[name].shape,name=name)
+
             conv1_in = self.conv(self.input, conv1W, conv1b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=1,name="conv1")
             conv1 = tf.nn.relu(conv1_in,name="relu1")
 
@@ -86,8 +100,14 @@ class dcnn(Trainable):
             s_h = 1;
             s_w = 1;
             group = 2
-            conv2W = tf.Variable(net_data["conv2"][0],name="conv2W")
-            conv2b = tf.Variable(net_data["conv2"][1],name="conv2b")
+            name = "conv2"
+            if load_weights:
+                conv2W = tf.Variable(net_data[name][0],name=name+"W")
+                conv2b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                conv2W, conv2b = self.make_w_b(net_data[name].shape,name=name)
+            #conv2W = tf.Variable(net_data["conv2"][0],name="conv2W")
+            #conv2b = tf.Variable(net_data["conv2"][1],name="conv2b")
             conv2_in = self.conv(maxpool1, conv2W, conv2b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group,name="conv2")
             conv2 = tf.nn.relu(conv2_in,name="relu_2")
 
@@ -120,8 +140,15 @@ class dcnn(Trainable):
             s_h = 1;
             s_w = 1;
             group = 1
-            conv3W = tf.Variable(net_data["conv3"][0],name="conv3W")
-            conv3b = tf.Variable(net_data["conv3"][1],name="conv3b")
+            name = "conv3"
+            if load_weights:
+                conv3W = tf.Variable(net_data[name][0],name=name+"W")
+                conv3b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                conv3W, conv3b = self.make_w_b(net_data[name].shape,name=name)
+
+            #conv3W = tf.Variable(net_data["conv3"][0],name="conv3W")
+            #conv3b = tf.Variable(net_data["conv3"][1],name="conv3b")
             conv3_in = self.conv(maxpool2, conv3W, conv3b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group,name="conv3")
             conv3 = tf.nn.relu(conv3_in,name="relu3")
 
@@ -133,8 +160,15 @@ class dcnn(Trainable):
             s_h = 1;
             s_w = 1;
             group = 2
-            conv4W = tf.Variable(net_data["conv4"][0],name="conv4W")
-            conv4b = tf.Variable(net_data["conv4"][1],name="conv3b")
+            name = "conv4"
+            if load_weights:
+                conv4W = tf.Variable(net_data[name][0],name=name+"W")
+                conv4b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                conv4W, conv4b = self.make_w_b(net_data[name].shape,name=name)
+
+            #conv4W = tf.Variable(net_data["conv4"][0],name="conv4W")
+            #conv4b = tf.Variable(net_data["conv4"][1],name="conv3b")
             conv4_in = self.conv(conv3, conv4W, conv4b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group,name="conv4")
             conv4 = tf.nn.relu(conv4_in,name="relu4")
 
@@ -146,8 +180,15 @@ class dcnn(Trainable):
             s_h = 1;
             s_w = 1;
             group = 2
-            conv5W = tf.Variable(net_data["conv5"][0],name="conv5W")
-            conv5b = tf.Variable(net_data["conv5"][1],name="conv5b")
+            name = "conv5"
+            if load_weights:
+                conv5W = tf.Variable(net_data[name][0],name=name+"W")
+                conv5b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                conv5W, conv5b = self.make_w_b(net_data[name].shape,name=name)
+
+            #conv5W = tf.Variable(net_data["conv5"][0],name="conv5W")
+            #conv5b = tf.Variable(net_data["conv5"][1],name="conv5b")
             conv5_in = self.conv(conv4, conv5W, conv5b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group,name="conv5")
             conv5 = tf.nn.relu(conv5_in,name="relu5")
 
@@ -165,8 +206,14 @@ class dcnn(Trainable):
 
             # fc6
             # fc(4096, name='fc6')
-            fc6W = tf.Variable(net_data["fc6"][0],name="fc6W")
-            fc6b = tf.Variable(net_data["fc6"][1],name="fc6b")
+            name = "fc6"
+            if load_weights:
+                fc6W = tf.Variable(net_data[name][0],name=name+"W")
+                fc6b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                fc6W, fc6b = self.make_w_b(net_data[name].shape,name=name)
+            #fc6W = tf.Variable(net_data["fc6"][0],name="fc6W")
+            #fc6b = tf.Variable(net_data["fc6"][1],name="fc6b")
             fc6 = tf.nn.relu_layer(tf.reshape(maxpool5, [-1, int(prod(maxpool5.get_shape()[1:]))],name="fc6_relu_reshape"), fc6W, fc6b,name="fc6")
 
             # add fc6
@@ -177,8 +224,14 @@ class dcnn(Trainable):
                 return
             # fc7
             # fc(4096, name='fc7')
-            fc7W = tf.Variable(net_data["fc7"][0],name="fc7W")
-            fc7b = tf.Variable(net_data["fc7"][1],name="fc7b")
+            name = "fc7"
+            if load_weights:
+                fc7W = tf.Variable(net_data[name][0],name=name+"W")
+                fc7b = tf.Variable(net_data[name][1],name=name+"b")
+            else:
+                fc7W, fc7b = self.make_w_b(net_data[name].shape,name=name)
+            #fc7W = tf.Variable(net_data["fc7"][0],name="fc7W")
+            #fc7b = tf.Variable(net_data["fc7"][1],name="fc7b")
             fc7 = tf.nn.relu_layer(fc6, fc7W, fc7b,name="fc7")
 
             # add fc6
@@ -201,11 +254,11 @@ class dcnn(Trainable):
             # fc8
             # stdev of 0.05 seems to work s.t. loss does not diverge to hell
 
-            w_init = tf.truncated_normal((4096 , num_classes), stddev=0.05, name="fc8_init")
-            b_init = tf.constant(0.1, shape =(num_classes,), name = "fc8_bias")
+            #w_init = tf.truncated_normal((4096 , num_classes), stddev=0.05, name="fc8_init")
+            #b_init = tf.constant(0.1, shape =(num_classes,), name = "fc8_bias")
 
-            fc8W = tf.Variable(w_init, name="fc8W")
-            fc8b = tf.Variable(b_init, name="fc8b")
+            name = "fc8"
+            fc8W, fc8b = self.make_w_b([4096, num_classes], name=name)
             self.output = tf.nn.xw_plus_b(fc7, fc8W, fc8b,name="fc8")
 
 
