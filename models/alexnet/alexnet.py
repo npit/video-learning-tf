@@ -36,9 +36,9 @@ class dcnn(Trainable):
     def get_output(self):
         return self.output
 
-    def make_w_b(self, shape, w_stdev = 0.05, bias = 0.1, name = "fc"):
-        w_init = tf.truncated_normal((shape[0], shape[1]), stddev=0.05, name=name + "_init")
-        b_init = tf.constant(bias, shape =(shape[1],), name = name + "_bias")
+    def make_w_b(self, shapew, shapeb, w_stdev = 0.05, bias = 0.1, name = "fc"):
+        w_init = tf.truncated_normal((shapew), stddev=0.05, name=name + "_init")
+        b_init = tf.constant(bias, shape =(shapeb), name = name + "_bias")
 
         W = tf.Variable(w_init, name=name+"W")
         b = tf.Variable(b_init, name=name+"b")
@@ -66,7 +66,7 @@ class dcnn(Trainable):
                 conv1W = tf.Variable(net_data[name][0],name=name+"W")
                 conv1b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                conv1W, conv1b = self.make_w_b(net_data[name].shape,name=name)
+                conv1W, conv1b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
 
             conv1_in = self.conv(self.input, conv1W, conv1b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=1,name="conv1")
             conv1 = tf.nn.relu(conv1_in,name="relu1")
@@ -105,7 +105,7 @@ class dcnn(Trainable):
                 conv2W = tf.Variable(net_data[name][0],name=name+"W")
                 conv2b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                conv2W, conv2b = self.make_w_b(net_data[name].shape,name=name)
+                conv2W, conv2b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
             #conv2W = tf.Variable(net_data["conv2"][0],name="conv2W")
             #conv2b = tf.Variable(net_data["conv2"][1],name="conv2b")
             conv2_in = self.conv(maxpool1, conv2W, conv2b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group,name="conv2")
@@ -145,7 +145,7 @@ class dcnn(Trainable):
                 conv3W = tf.Variable(net_data[name][0],name=name+"W")
                 conv3b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                conv3W, conv3b = self.make_w_b(net_data[name].shape,name=name)
+                conv3W, conv3b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
 
             #conv3W = tf.Variable(net_data["conv3"][0],name="conv3W")
             #conv3b = tf.Variable(net_data["conv3"][1],name="conv3b")
@@ -165,7 +165,7 @@ class dcnn(Trainable):
                 conv4W = tf.Variable(net_data[name][0],name=name+"W")
                 conv4b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                conv4W, conv4b = self.make_w_b(net_data[name].shape,name=name)
+                conv4W, conv4b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
 
             #conv4W = tf.Variable(net_data["conv4"][0],name="conv4W")
             #conv4b = tf.Variable(net_data["conv4"][1],name="conv3b")
@@ -185,7 +185,7 @@ class dcnn(Trainable):
                 conv5W = tf.Variable(net_data[name][0],name=name+"W")
                 conv5b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                conv5W, conv5b = self.make_w_b(net_data[name].shape,name=name)
+                conv5W, conv5b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
 
             #conv5W = tf.Variable(net_data["conv5"][0],name="conv5W")
             #conv5b = tf.Variable(net_data["conv5"][1],name="conv5b")
@@ -211,7 +211,7 @@ class dcnn(Trainable):
                 fc6W = tf.Variable(net_data[name][0],name=name+"W")
                 fc6b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                fc6W, fc6b = self.make_w_b(net_data[name].shape,name=name)
+                fc6W, fc6b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
             #fc6W = tf.Variable(net_data["fc6"][0],name="fc6W")
             #fc6b = tf.Variable(net_data["fc6"][1],name="fc6b")
             fc6 = tf.nn.relu_layer(tf.reshape(maxpool5, [-1, int(prod(maxpool5.get_shape()[1:]))],name="fc6_relu_reshape"), fc6W, fc6b,name="fc6")
@@ -229,7 +229,7 @@ class dcnn(Trainable):
                 fc7W = tf.Variable(net_data[name][0],name=name+"W")
                 fc7b = tf.Variable(net_data[name][1],name=name+"b")
             else:
-                fc7W, fc7b = self.make_w_b(net_data[name].shape,name=name)
+                fc7W, fc7b = self.make_w_b(net_data[name][0].shape,net_data[name][1].shape,name=name)
             #fc7W = tf.Variable(net_data["fc7"][0],name="fc7W")
             #fc7b = tf.Variable(net_data["fc7"][1],name="fc7b")
             fc7 = tf.nn.relu_layer(fc6, fc7W, fc7b,name="fc7")
@@ -258,7 +258,7 @@ class dcnn(Trainable):
             #b_init = tf.constant(0.1, shape =(num_classes,), name = "fc8_bias")
 
             name = "fc8"
-            fc8W, fc8b = self.make_w_b([4096, num_classes], name=name)
+            fc8W, fc8b = self.make_w_b([4096, num_classes],[num_classes], name=name)
             self.output = tf.nn.xw_plus_b(fc7, fc8W, fc8b,name="fc8")
 
 

@@ -95,10 +95,6 @@ class Settings:
     # input data files
     input_files = [[], []]
 
-    # training settings
-    epoch_index = 0
-    train_index = 0
-
     # logging
     logger = None
 
@@ -420,15 +416,23 @@ class Settings:
             except Exception as ex:
                 error(ex)
 
+            print("Loaded params:", params)
             # set run options from loaded stuff
-            self.train_index, self.epoch_index = params[:2]
+            batch_info, self.train.epoch_index = params[:2]
             if defs.workflows.is_description(self.workflow):
                 self.sequence_length = params[2:]
 
-            # inform datasets
+            # inform datasets - if batch index info is paired with a dataset id, inform that dataset. Else, inform the 1st
             for dset in self.get_datasets():
-                dset.restore(self.train_index, self.epoch_index, self.sequence_length)
-            info("Restored training snapshot of epoch %d, train index %d" % (self.epoch_index+1, self.train_index))
+                idx = 0
+                if type(batch_info) == dict:
+                    if dset.tag in batch_info:
+                        idx = batch_info[dset.tag]
+                else:
+                    # an int - update it regardless
+                    idx = batch_info
+                dset.restore(idx, self.train.epoch_index, self.sequence_length)
+            info("Restored training snapshot of epoch %d, train index %s" % (self.train.epoch_index+1, str(batch_info)))
 
     # restore graph variables
     def resume_graph(self, sess, ignorable_variable_names):
@@ -572,7 +576,7 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
             nats = batch_loss / math.log(settings.network.num_classes)
             info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f / %2.3f " % (learning_rate, global_step, batch_loss, nats))
             info("Dataset global step %d, epoch index %d, batch sizes %s, batch index train %d" %
-                                 (global_step, settings.train.epoch_index, str(settings.get_batch_sizes()), settings.get_batch_index()))
+                                 (global_step, settings.train.epoch_index + 1, str(settings.get_batch_sizes()), settings.get_batch_index()))
 
             tboard_writer.add_summary(summaries_train, global_step=global_step)
             tboard_writer.flush()
