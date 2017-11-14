@@ -356,7 +356,7 @@ class LRCN:
                 error("The LSTM workflow is incompatible with fusion mode %s" % defs.fusion_type.early)
 
             # DCNN for frame encoding
-            self.inputData, encodedFrames = self.make_dcnn(settings)
+            encodedFrames = self.make_dcnn(settings)
 
             # LSTM for frame sequence classification for frame encoding
             self.lstm_model = lstm.lstm()
