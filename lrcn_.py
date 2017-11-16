@@ -178,7 +178,7 @@ class LRCN:
         # configure the learning rate
         learning_rates = self.precompute_learning_rates(settings)
         self.learning_rates = tf.constant(learning_rates,tf.float32,name="Learning_rates")
-        self.global_step = tf.Variable(0, dtype = tf.int32, trainable=False,name="global_step")
+        self.global_step = tf.Variable(settings.global_step, dtype = tf.int32, trainable=False,name="global_step")
         with tf.name_scope("lr"):
             self.current_lr = self.learning_rates[self.global_step ]
             summaries.train.append(add_descriptive_summary(self.current_lr))

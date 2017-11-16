@@ -48,6 +48,7 @@ class Settings:
     run_folder = None
     path_prepend_folder = None
     dataset_per_phase = {}
+    global_step = 0
 
     class network:
         # architecture settings
@@ -416,7 +417,6 @@ class Settings:
             except Exception as ex:
                 error(ex)
 
-            print("Loaded params:", params)
             # set run options from loaded stuff
             batch_info, self.train.epoch_index = params[:2]
             if defs.workflows.is_description(self.workflow):
@@ -432,7 +432,11 @@ class Settings:
                     # an int - update it regardless
                     idx = batch_info
                 dset.restore(idx, self.train.epoch_index, self.sequence_length)
-            info("Restored training snapshot of epoch %d, train index %s" % (self.train.epoch_index+1, str(batch_info)))
+                # inform the global step from the first dataset
+                if self.global_step == None:
+                    self.global_step =  idx
+
+            info("Restored training snapshot of epoch %d, train index %s, global step %d" % (self.train.epoch_index+1, str(batch_info), self.global_step))
 
     # restore graph variables
     def resume_graph(self, sess, ignorable_variable_names):
@@ -525,7 +529,6 @@ def get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids):
             num_labels = len(ground_truth[dataset_idx])
 
     padding = 0
-
     # for description workflows, supply wordvectors and caption lengths
     if defs.workflows.is_description(settings.workflow):
         # get words per caption, onehot labels, embeddings

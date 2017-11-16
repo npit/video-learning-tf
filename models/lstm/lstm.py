@@ -60,7 +60,7 @@ class lstm(Trainable):
 
     # basic, abstract lstm functions
     def forward_pass_sequence(self, input_tensor, input_state, input_dim, num_layers, num_hidden, output_dim,
-                              sequence_length, nonzero_sequence, fusion_type, dropout_prob=0.0):
+                              sequence_length, nonzero_sequence, fusion_type, dropout_prob=0.0, omit_output_fc = False):
         '''
         Pass an input sequence through the lstm, returning the output sequence state vector.
         :return: output and state
@@ -82,8 +82,9 @@ class lstm(Trainable):
             # add dropout
             output = self.apply_dropout(output, dropout_prob)
 
-            # map to match the output dimension
-            output = convert_dim_fc(output, output_dim, "output_fc")
+            if not omit_output_fc:
+                # map to match the output dimension
+                output = convert_dim_fc(output, output_dim, "output_fc")
 
             # get trainable layers
             self.manage_trainables(namescope)
