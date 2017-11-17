@@ -2,7 +2,7 @@ run:
   # run type and an identifier for it
   workflow: defs.workflows.imgdesc.statebias
   # save / load configuration
-  resume_file: None
+  resume_file: 
   # folder to store run data
   run_folder: "path/to/outputfolder"
   phase : defs.phase.val
@@ -33,6 +33,7 @@ run:
     num_classes : 101
     dataset_fusion: [defs.fusion_type.late, defs.fusion_method.avg]
     multi_workflow: defs.workflow.lstm
+    load_weights: True
 
   # phase settings
   train:
