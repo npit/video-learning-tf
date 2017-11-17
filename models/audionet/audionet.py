@@ -15,7 +15,7 @@ class audionet(Trainable):
         :param settings:
         :return:
         """
-        self.input = tf.placeholder(tf.float32, [None, *input_shape])
+        self.input = tf.placeholder(tf.float32, [None] + list(input_shape))
 
         with tf.variable_scope("conv1") as scope:
             # conv params

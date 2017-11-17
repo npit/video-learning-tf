@@ -317,7 +317,7 @@ class Dataset:
             # limit to <numclips> labels per video.
             fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
             fpv = np.cumsum(fpv)
-            first_videoframe_idx = [0, *fpv[:-1] ]
+            first_videoframe_idx = [0] + fpv[:-1]
             labels = []
             for vidx in range(len(curr_cpv)):
                 fvi = first_videoframe_idx [vidx]

@@ -419,6 +419,14 @@ class Settings:
 
             # set run options from loaded stuff
             batch_info, self.train.epoch_index = params[:2]
+            # assign global step
+            try:
+                self.global_step = params[2]
+            except:
+                # parse from filename
+                global_step_str = os.path.basename(savefile_metapars).split(".")[-2].split("-")[-1]
+                self.global_step = int(global_step_str)
+
             if defs.workflows.is_description(self.workflow):
                 self.sequence_length = params[2:]
 
@@ -432,9 +440,6 @@ class Settings:
                     # an int - update it regardless
                     idx = batch_info
                 dset.restore(idx, self.train.epoch_index, self.sequence_length)
-                # inform the global step from the first dataset
-                if self.global_step == None:
-                    self.global_step =  idx
 
             info("Restored training snapshot of epoch %d, train index %s, global step %d" % (self.train.epoch_index+1, str(batch_info), self.global_step))
 
@@ -483,7 +488,7 @@ class Settings:
                 error("Failed to load checkpoint!")
 
     # save graph and dataset stuff
-    def save(self, sess, progress, global_step):
+    def save(self, sess, progress):
         try:
             if self.saver is None:
                 self.saver = tf.train.Saver()
@@ -496,7 +501,7 @@ class Settings:
             savefile_graph = basename + ".graph"
 
             info("Saving graph  to [%s]" % savefile_graph)
-            saved_instance_name = self.saver.save(sess, savefile_graph, global_step=global_step)
+            saved_instance_name = self.saver.save(sess, savefile_graph, global_step=self.global_step)
 
             # save dataset metaparams
             savefile_metapars = saved_instance_name + ".snap"
@@ -505,7 +510,7 @@ class Settings:
             info("Saving params for epoch index %d, train index %d" %
                 (self.train.epoch_index, self.get_batch_index()))
 
-            params2save = [self.get_batch_index(), self.train.epoch_index]
+            params2save = [self.get_batch_index(), self.train.epoch_index, self.global_step]
             if defs.workflows.is_description(self.workflow):
                 params2save += [ dat.max_caption_length for dat in self.get_datasets()]
 
@@ -572,24 +577,26 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
             print_iter_info(settings, [len(im) for im in images], num_labels, padding)
 
             # count batch iterations
-            run_batch_count = run_batch_count + 1
-            summaries_train, batch_loss, learning_rate, global_step, _ = sess.run(
+            run_batch_count += 1
+            summaries_train, batch_loss, learning_rate, settings.global_step, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.global_step, lrcn.optimizer],feed_dict=fdict)
             # calcluate the number of bits
             nats = batch_loss / math.log(settings.network.num_classes)
-            info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f / %2.3f " % (learning_rate, global_step, batch_loss, nats))
+            info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f / %2.3f " % \
+                 (learning_rate, settings.global_step, batch_loss, nats))
             info("Dataset global step %d, epoch index %d, batch sizes %s, batch index train %d" %
-                                 (global_step, settings.train.epoch_index + 1, str(settings.get_batch_sizes()), settings.get_batch_index()))
+                                 (settings.global_step, settings.train.epoch_index + 1, str(settings.get_batch_sizes()),
+                                  settings.get_batch_index()))
 
-            tboard_writer.add_summary(summaries_train, global_step=global_step)
+            tboard_writer.add_summary(summaries_train, global_step=settings.global_step)
             tboard_writer.flush()
 
             # check if we need to save
-            if global_step and global_step % save_interval == 0:
+            if run_batch_count % save_interval == 0:
                 # save a checkpoint if needed
-                settings.save(sess, progress="ep_%d_btch_%d_gs_%d" % (1 + settings.train.epoch_index, settings.get_batch_index(), global_step),
-                              global_step=global_step)
-        # if an epoch was completed (and not just loaded, do saving and logging)
+                settings.save(sess, progress="ep_%d_btch_%d_gs_%d" % (1 + settings.train.epoch_index,
+                                                                      settings.get_batch_index(), settings.global_step))
+        # print finished epoch information
         if run_batch_count > 0:
             info("Epoch [%d] training run complete." % (1+settings.train.epoch_index))
         else:
@@ -599,11 +606,11 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
         # reset phase
         settings.rewind_datasets()
 
-    # if we did not save already, do it now at the end of training
-    if run_batch_count and global_step and not (global_step % save_interval == 0):
+    # if we did not save already at the just completed batch, do it now at the end of training
+    if run_batch_count > 0 and not (run_batch_count %  save_interval == 0):
         info("Saving model checkpoint out of turn, since training's finished.")
         settings.save(sess,  progress="ep_%d_btch_%d_gs_%d" %
-                (1 + settings.train.epoch_index, settings.get_num_batches(), global_step), global_step=global_step)
+                (1 + settings.train.epoch_index, settings.get_num_batches(), settings.global_step))
 
 
 

@@ -34,7 +34,7 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
                                                      temporal_dimension, None, defs.fusion_method.reshape, 0.5, omit_output_fc=True)
         # get the state h vector
         output = output[0].h
-        debug("Aggregated lstm output [%s]" % str(output.shape))
+        info("Aggregated lstm output [%s]" % str(output.shape))
     else:
         error("Undefined frame fusion type : %s" % str(fusion_method))
     return output
