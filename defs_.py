@@ -139,8 +139,9 @@ class defs:
     class eval_type:
         coco = "coco"
 
-    class variables:
-        global_step = "global_step"
+
+    class names:
+        global_step, latest_savefile = "global_step", "latest"
 
     class return_type:
         argmax_index, standard = "argmax_index", "standard"

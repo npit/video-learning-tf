@@ -307,7 +307,7 @@ class LRCN:
                 return
 
             # apply late fusion, pooling the logits on the temporal dimension
-            if settings.network.frame_fusion_method== defs.fusion_method.lstm:
+            if settings.network.frame_fusion_method == defs.fusion_method.lstm:
                 encoder = lstm.lstm()
             else:
                 encoder = None

@@ -767,9 +767,9 @@ class Dataset:
                 # up to the restoration point (for variable cpv cases)
                 num_clips = 0
                 for i in range(len(self.clips_per_video)):
-                    num_clips += self.clips_per_video[i]
                     if i == item_index:
                         break
+                    num_clips += self.clips_per_video[i]
                 num_forward = num_clips * self.num_frames_per_clip
             elif self.batch_item == defs.batch_item.clip:
                 # if it refers to clips, it's straightforward

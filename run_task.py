@@ -15,6 +15,7 @@ from utils_ import *
 from tools.inspect_checkpoint import get_checkpoint_tensor_names
 import logging, configparser, json, yaml
 from defs_ import defs
+import matplotlib.pyplot as plt
 
 
 # summaries for training & validation
@@ -405,11 +406,22 @@ class Settings:
     # restore dataset meta parameters
     def resume_metadata(self):
         if self.should_resume():
-            savefile_metapars = self.resume_file + ".snap"
+
+            if self.resume_file == defs.names.latest_savefile:
+                with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
+                    for line in f:
+                        savefile_graph = line.strip().split()[-1].strip()
+                        if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
+                        savefile_metapars = savefile_graph + ".snap"
+                        msg = "Resuming latest tf metadata: [%s]" % savefile_metapars
+                        break
+            else:
+                savefile_metapars = self.resume_file
+                msg = "Resuming specified tf metadata: [%s]" % savefile_metapars
+
+            info(msg)
             if not os.path.exists(savefile_metapars):
                 error("Metaparameters savefile does not exist: %s" %  savefile_metapars)
-            info("Resuming metadata from file:" + savefile_metapars)
-
             try:
                 # load saved parameters pickle
                 with open(savefile_metapars, 'rb') as f:
@@ -449,15 +461,27 @@ class Settings:
             if self.saver is None:
                 self.saver = tf.train.Saver()
 
-            savefile_graph = os.path.join(self.run_folder,"checkpoints", self.resume_file)
-            info("Resuming tf graph from file:" + savefile_graph)
-            if not (os.path.exists(savefile_graph + ".meta") or os.path.exists(savefile_graph + ".index")):
-                error("Missing meta or index part from graph savefile: %s" % savefile_graph)
+            if self.resume_file == defs.names.latest_savefile:
+                with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
+                    for line in f:
+                        savefile_graph = line.strip().split()[-1].strip()
+                        if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
+                        msg = "Resuming latest tf graph: [%s]" % savefile_graph
+                        break
+            else:
+                savefile_graph = os.path.join(self.resume_file)
+                msg = "Resuming specified tf graph: [%s]" % savefile_graph
+
+            info(msg)
+            if not (os.path.exists(savefile_graph + ".meta")
+                    and os.path.exists(savefile_graph + ".index")
+                    and os.path.exists(savefile_graph + ".snap")):
+                error("Missing meta, snap or index part from graph savefile: %s" % savefile_graph)
 
             try:
                 # if we are in validation mode, the 'global_step' training variable is discardable
                 if self.val:
-                    ignorable_variable_names.append(defs.variables.global_step)
+                    ignorable_variable_names.append(defs.names.global_step)
 
                 chkpt_names = get_checkpoint_tensor_names(savefile_graph)
                 # get all variables the project, omitting the :<num> appendices
