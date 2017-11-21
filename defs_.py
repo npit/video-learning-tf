@@ -139,7 +139,6 @@ class defs:
     class eval_type:
         coco = "coco"
 
-
     class names:
         global_step, latest_savefile = "global_step", "latest"
 

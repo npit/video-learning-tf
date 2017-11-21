@@ -309,6 +309,7 @@ class LRCN:
             # apply late fusion, pooling the logits on the temporal dimension
             if settings.network.frame_fusion_method == defs.fusion_method.lstm:
                 encoder = lstm.lstm()
+                encoder.params = settings.network.lstm_params
             else:
                 encoder = None
             self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip,
@@ -327,6 +328,7 @@ class LRCN:
                 # apply late fusion, pooling the logits on the temporal dimension
                 if settings.network.frame_fusion_method == defs.fusion_method.lstm:
                     encoder = lstm.lstm()
+                    encoder.params = settings.network.lstm_params
                 else:
                     encoder = None
                 clip_vectors = apply_temporal_fusion(self.encoded_frames_reshaped, encoded_dim, settings.get_datasets()[0].num_frames_per_clip,
@@ -362,9 +364,8 @@ class LRCN:
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
             dropout = settings.train.dropout_keep_prob if settings.train else 0.0
-            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.network.lstm_num_layers,
-                                        settings.network.lstm_num_hidden, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip,
-                                                           None,  settings.network.frame_fusion_method, dropout)
+            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.network.lstm_params,
+                                settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip, None, dropout)
             # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
             # self.logits = self.lstm_model.get_output()
             info("logits : [%s]" % self.logits.shape)

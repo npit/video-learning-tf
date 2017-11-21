@@ -30,9 +30,8 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
             error("Did not provide an lstm encoder for fusion.")
         # fuse via lstm encoding; simplest lstm setting: 1 layer, statedim = inputdim, outputdim = 8
         # setting output dim to a dummy dim of 8, since we'll get the state
-        state_dim = 256
-        _, output = lstm_encoder.forward_pass_sequence(input_tensor, None, vector_dimension, 1, state_dim, 8,
-                                                     temporal_dimension, None, defs.fusion_method.reshape, 0.5, omit_output_fc=True)
+        lstm_params = lstm_encoder.params
+        _, output = lstm_encoder.forward_pass_sequence(input_tensor, None, vector_dimension, lstm_params, 8, temporal_dimension, None, 0.5, omit_output_fc=True)
         # get the state h vector
         output = output[0].h
         info("Aggregated lstm output [%s]" % str(output.shape))

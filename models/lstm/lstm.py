@@ -19,7 +19,6 @@ class lstm(Trainable):
             cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
         return cell
 
-
     def get_zero_state(self, batch_size, num_hidden, cells):
         """
         Creates and returs a zero state vector wrt to input cells
@@ -31,7 +30,6 @@ class lstm(Trainable):
         zeros = tf.zeros([batch_size, num_hidden])
         zero_state = self.get_state_tuple(zeros, cells)
         return zero_state
-
 
     def get_state_tuple(self, state_vector, cells):
         """
@@ -59,13 +57,15 @@ class lstm(Trainable):
         return output
 
     # basic, abstract lstm functions
-    def forward_pass_sequence(self, input_tensor, input_state, input_dim, num_layers, num_hidden, output_dim,
-                              sequence_length, nonzero_sequence, fusion_type, dropout_prob=0.0, omit_output_fc = False):
+    def forward_pass_sequence(self, input_tensor, input_state, input_dim, lstm_params, output_dim,
+                              sequence_length, nonzero_sequence, dropout_prob=0.0, omit_output_fc = False):
         '''
         Pass an input sequence through the lstm, returning the output sequence state vector.
         :return: output and state
         '''
 
+        info("LSTM structure: %s" % lstm_params)
+        num_layers, num_hidden, fusion_type = lstm_params
         with tf.name_scope("lstm_net") as namescope:
             # define the cell(s)
             cells = self.make_cell(num_hidden, num_layers)

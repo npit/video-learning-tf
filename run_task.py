@@ -171,10 +171,10 @@ class Settings:
         self.network.load_weights = config['network']['load_weights']
         self.network.image_shape = parse_seq(config["network"]["image_shape"])
         self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
-        lstm_params = parse_seq(config['network']['lstm_params'])
-        self.network.lstm_num_hidden = int(lstm_params[0])
-        self.network.lstm_num_layers = int(lstm_params[1])
-        self.network.lstm_fusion = defs.check(lstm_params[2], defs.fusion_method)
+        self.network.lstm_params = parse_seq(config['network']['lstm_params'])
+        if len(self.network.lstm_params) != 3:
+            error("Expected lstm params are [num_hidden, num_layers, fusion_method]")
+        self.network.lstm_params[2] = defs.check(self.network.lstm_params[2], defs.fusion_method)
         self.network.num_classes = config["network"]["num_classes"]
         dataset_fusion = parse_seq(config["network"]["dataset_fusion"])
         self.network.dataset_fusion_type, self.network.dataset_fusion_method = \
