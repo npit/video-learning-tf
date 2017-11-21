@@ -64,8 +64,8 @@ class lstm(Trainable):
         :return: output and state
         '''
 
-        info("LSTM structure: %s" % lstm_params)
-        num_layers, num_hidden, fusion_type = lstm_params
+        info("LSTM structure [hidden, layers, fusion]: %s" % lstm_params)
+        num_hidden, num_layers, fusion_type = lstm_params
         with tf.name_scope("lstm_net") as namescope:
             # define the cell(s)
             cells = self.make_cell(num_hidden, num_layers)

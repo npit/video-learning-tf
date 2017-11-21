@@ -15,8 +15,6 @@ from utils_ import *
 from tools.inspect_checkpoint import get_checkpoint_tensor_names
 import logging, configparser, json, yaml
 from defs_ import defs
-import matplotlib.pyplot as plt
-
 
 # summaries for training & validation
 class Summaries:
