@@ -414,7 +414,7 @@ class Settings:
                         msg = "Resuming latest tf metadata: [%s]" % savefile_metapars
                         break
             else:
-                savefile_metapars = self.resume_file
+                savefile_metapars = self.resume_file + ".snap"
                 msg = "Resuming specified tf metadata: [%s]" % savefile_metapars
 
             info(msg)
@@ -530,7 +530,7 @@ class Settings:
 
             info("Saving params to [%s]" % savefile_metapars)
             info("Saving params for epoch index %d, train index %d" %
-                (self.train.epoch_index, self.get_batch_index()))
+                (self.train.epoch_index + 1, self.get_batch_index()))
 
             params2save = [self.get_batch_index(), self.train.epoch_index, self.global_step]
             if defs.workflows.is_description(self.workflow):
