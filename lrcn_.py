@@ -354,8 +354,8 @@ class LRCN:
         with tf.name_scope("lstm_workflow"):
             if settings.input_mode != defs.input_mode.video:
                 error("The LSTM workflow only available for video input mode")
-            if settings.network.frame_fusion_type == defs.fusion_type.early:
-                error("The LSTM workflow is incompatible with fusion mode %s" % defs.fusion_type.early)
+            if settings.network.frame_fusion_type != defs.fusion_type.none:
+                error("The LSTM workflow is only compatible with fusion mode %s. Specify lstm fusion in the network.lstm_params" % defs.fusion_type.none)
 
             # DCNN for frame encoding
             encodedFrames = self.make_dcnn(settings)
