@@ -100,7 +100,7 @@ class defs:
 
     # sequence fusion methods
     class fusion_method:
-        avg, last, concat, reshape, lstm = "avg", "last", "concat", "reshape", "lstm"
+        avg, last, concat, reshape, state = "avg", "last", "concat", "reshape", "state"
 
     # early/late fusion
     class fusion_type:

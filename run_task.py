@@ -353,6 +353,7 @@ class Settings:
     def initialize(self, init_file):
 
         self.initialize_from_file(init_file)
+        info("Initialized from file: [%s]" % init_file)
 
         if not os.path.exists(self.run_folder):
             warning("Non existent run folder %s - creating." % self.run_folder)

@@ -1,6 +1,7 @@
 
 # files and io
 import os, pickle, math
+import tqdm
 
 # utils
 from utils_ import *
@@ -775,8 +776,11 @@ class Dataset:
                 # if it refers to clips, it's straightforward
                 num_forward = self.num_frames_per_clip * item_index
             info("Fast forwarding to the batch # %d ( image # %d )" % (self.batch_index + 1, num_forward + 1))
-        for _ in range(num_forward):
-            next(self.iterator)
+        with tqdm.tqdm(total=num_forward, ascii=True) as pbar:
+            for _ in range(num_forward):
+                next(self.iterator)
+                pbar.update()
+
 
     # print active settings
     def tell(self):

@@ -65,7 +65,7 @@ class lstm(Trainable):
         '''
 
         info("LSTM structure [hidden, layers, fusion]: %s" % lstm_params)
-        num_hidden, num_layers, fusion_type = lstm_params
+        num_hidden, num_layers, fusion_method = lstm_params
         with tf.name_scope("lstm_net") as namescope:
             # define the cell(s)
             cells = self.make_cell(num_hidden, num_layers)
@@ -76,15 +76,20 @@ class lstm(Trainable):
             # evaluate it via dynamic_rnn
             output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length, nonzero_sequence, input_state)
 
-            # pool output batch to a vector
-            output = apply_temporal_fusion(output, num_hidden, sequence_length, fusion_type)
+            if fusion_method != defs.fusion_method.state:
+                # pool output batch to a vector
+                output = apply_temporal_fusion(output, num_hidden, sequence_length, fusion_method)
 
-            # add dropout
-            output = self.apply_dropout(output, dropout_prob)
+                # add dropout
+                output = self.apply_dropout(output, dropout_prob)
 
-            if not omit_output_fc:
-                # map to match the output dimension
-                output = convert_dim_fc(output, output_dim, "output_fc")
+                if not omit_output_fc:
+                    # map to match the output dimension
+                    output = convert_dim_fc(output, output_dim, "output_fc")
+            else:
+                # consider the state as the fusion of the input - no need to process the produced output
+                output = None
+
 
             # get trainable layers
             self.manage_trainables(namescope)

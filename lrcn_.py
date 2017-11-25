@@ -307,13 +307,13 @@ class LRCN:
                 return
 
             # apply late fusion, pooling the logits on the temporal dimension
-            if settings.network.frame_fusion_method == defs.fusion_method.lstm:
-                encoder = lstm.lstm()
-                encoder.params = settings.network.lstm_params
-            else:
-                encoder = None
+            #if settings.network.frame_fusion_method == defs.fusion_method.lstm:
+                #encoder = lstm.lstm()
+                #encoder.params = settings.network.lstm_params
+            #else:
+                #encoder = None
             self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip,
-                                                 settings.network.frame_fusion_method, lstm_encoder=encoder)
+                                                 settings.network.frame_fusion_method, lstm_encoder=None)
 
         elif settings.network.frame_fusion_type == defs.fusion_type.early:
             # frames - encode to vectors - pool to clips - logit per clip
@@ -326,13 +326,13 @@ class LRCN:
                 debug("Early fusion with [%s] of vectors: %s" % (settings.network.frame_fusion_method, self.encoded_frames_reshaped.shape))
                 # fuse to one vector per clip  
                 # apply late fusion, pooling the logits on the temporal dimension
-                if settings.network.frame_fusion_method == defs.fusion_method.lstm:
-                    encoder = lstm.lstm()
-                    encoder.params = settings.network.lstm_params
-                else:
-                    encoder = None
+                #if settings.network.frame_fusion_method == defs.fusion_method.lstm:
+                    #encoder = lstm.lstm()
+                    #encoder.params = settings.network.lstm_params
+                #else:
+                    #encoder = None
                 clip_vectors = apply_temporal_fusion(self.encoded_frames_reshaped, encoded_dim, settings.get_datasets()[0].num_frames_per_clip,
-                                                 settings.network.frame_fusion_method, lstm_encoder=encoder)
+                                                 settings.network.frame_fusion_method, lstm_encoder=None)
                 # classify to the desired dimension
                 self.logits = convert_dim_fc(clip_vectors, settings.network.num_classes)
 
@@ -355,7 +355,7 @@ class LRCN:
             if settings.input_mode != defs.input_mode.video:
                 error("The LSTM workflow only available for video input mode")
             if settings.network.frame_fusion_type != defs.fusion_type.none:
-                error("The LSTM workflow is only compatible with fusion mode %s. Specify lstm fusion in the network.lstm_params" % defs.fusion_type.none)
+                error("The LSTM workflow is only compatible with frame fusion mode %s. Specify lstm fusion in the network.lstm_params" % defs.fusion_type.none)
 
             # DCNN for frame encoding
             encodedFrames = self.make_dcnn(settings)
@@ -364,10 +364,16 @@ class LRCN:
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
             dropout = settings.train.dropout_keep_prob if settings.train else 0.0
-            self.logits, _ = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.network.lstm_params,
+            self.logits, output_state = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.network.lstm_params,
                                 settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip, None, dropout)
-            # self.lstm_model.define_activity_recognition(encodedFrames, dataset, settings)
-            # self.logits = self.lstm_model.get_output()
+            if settings.network.lstm_params[2] == defs.fusion_method.state:
+                # select the last state vector
+                output_state = output_state[-1].h
+                if int(output_state.shape[1]) != settings.network.num_classes:
+                    error("Fused lstm input with %s method, but num hidden is %d and num classes is %d"  \
+                          %(defs.fusion_method.state, settings.network.lstm_params[0], settings.network.num_classes))
+                self.logits = output_state
+
             info("logits : [%s]" % self.logits.shape)
 
     def create_actrec_audio(self, settings):

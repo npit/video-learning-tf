@@ -11,6 +11,9 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
     :param fusion_method:
     :return:
     '''
+    if fusion_method == defs.fusion_method.state:
+        return None
+
     if fusion_method == defs.fusion_method.last:
         # keep only the response at the last time step
         output = tf.slice(input_tensor, [0, temporal_dimension - 1, 0], [-1, 1, vector_dimension], name="lstm_output_reshape")
