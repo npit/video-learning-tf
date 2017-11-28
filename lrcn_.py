@@ -78,7 +78,7 @@ class LRCN:
             self.create_actrec_audio(settings)
         elif self.workflow == defs.workflows.acrec.lstm:
             self.create_actrec_lstm(settings)
-        elif self.workflow == defs.workflows.acrec.singlesingle:
+        elif self.workflow == defs.workflows.acrec.multi:
             self.create_actrec_dual(settings)
         # Image description
         elif self.workflow == defs.workflows.imgdesc.inputstep:
@@ -166,6 +166,7 @@ class LRCN:
 
     # training ops
     def create_training(self, settings, summaries):
+        info("Creating training: { %s }" % settings.get_train_str())
 
         self.logits = print_tensor(self.logits, "training: logits : ")
         # configure loss
@@ -289,52 +290,41 @@ class LRCN:
             self.inputData = inputData
             self.inputLabels = inputLabels
 
+        # get fpc from main dataset
+        fpc = settings.get_dataset_by_tag(defs.dataset_tag.main)[0].num_frames_per_clip
+
         # create the singleframe workflow
-        if settings.network.frame_fusion_type == defs.fusion_type.late:
-            # frames - encode to vectors - logit per frame - pool to clip level
-            with tf.name_scope("dcnn_workflow"):
-                # single DCNN, encoding and classifying individual frames
-                self.logits = self.make_dcnn(settings)
-                self.logits = print_tensor(self.logits, "logits")
-                # output is one logit per frame
-                # reshape to num_items x num_frames_per_item x dimension
-                self.logits = tf.reshape(self.logits, (-1, settings.get_datasets()[0].num_frames_per_clip, settings.network.num_classes),
-                                         name="reshape_framelogits_pervideo")
-                debug("reshaped dcnn output: %s" % str(self.logits.shape))
+        with tf.name_scope("dcnn_workflow"):
+            # encode the frames
+            encoding_layer = None
+            if settings.network.frame_fusion_type == defs.fusion_type.early:
+                encoding_layer = settings.network.frame_encoding_layer
+            encoded_frames = self.make_dcnn(settings, encoding_layer)
+            encoded_dim = int(encoded_frames.shape[-1])
+            encoded_frames = print_tensor(encoded_frames, "dcnn output")
+            encoded_frames = tf.reshape(encoded_frames, (-1, fpc, encoded_dim),
+                                     name="reshape_dcnn_out")
+            debug("reshaped dcnn output: %s" % str(encoded_frames))
+            if settings.network.frame_fusion_type == defs.fusion_type.late:
+                # if we have no clips, we're done
+                if settings.get_datasets()[0].input_mode == defs.input_mode.image or fpc == 1:
+                    return
+                if encoded_dim != self.network.num_classes:
+                    error("Specified late fusion but dcnn output is %d and num. classes is %d" % (encoded_dim, settings.network.num_classes))
 
-            # if we have no clips, we're done
-            if settings.get_datasets()[0].input_mode == defs.input_mode.image or settings.get_datasets()[0].num_frames_per_clip == 1:
-                return
+                self.logits = apply_temporal_fusion(encoded_frames, settings.network.num_classes, fpc,
+                                                     settings.network.frame_fusion_method)
 
-            # apply late fusion, pooling the logits on the temporal dimension
-            #if settings.network.frame_fusion_method == defs.fusion_method.lstm:
-                #encoder = lstm.lstm()
-                #encoder.params = settings.network.lstm_params
-            #else:
-                #encoder = None
-            self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip,
-                                                 settings.network.frame_fusion_method, lstm_encoder=None)
-
-        elif settings.network.frame_fusion_type == defs.fusion_type.early:
-            # frames - encode to vectors - pool to clips - logit per clip
-            with tf.name_scope("dcnn_workflow"):
-                # single DCNN, encoding individual frames to the encoding dim
-                self.encoded_frames = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer)
-                # reshape from batch_size * cpv * fpc x encoding dim to batch_size * cpv x fpc x encoding_dim
-                encoded_dim = int(self.encoded_frames.shape[-1])
-                self.encoded_frames_reshaped = tf.reshape(self.encoded_frames, [-1, settings.get_datasets()[0].num_frames_per_clip, encoded_dim])
-                debug("Early fusion with [%s] of vectors: %s" % (settings.network.frame_fusion_method, self.encoded_frames_reshaped.shape))
-                # fuse to one vector per clip  
-                # apply late fusion, pooling the logits on the temporal dimension
-                #if settings.network.frame_fusion_method == defs.fusion_method.lstm:
-                    #encoder = lstm.lstm()
-                    #encoder.params = settings.network.lstm_params
-                #else:
-                    #encoder = None
-                clip_vectors = apply_temporal_fusion(self.encoded_frames_reshaped, encoded_dim, settings.get_datasets()[0].num_frames_per_clip,
-                                                 settings.network.frame_fusion_method, lstm_encoder=None)
+            elif settings.network.frame_fusion_type == defs.fusion_type.early:
+                # frames - encode to vectors - pool to clips - logit per clip
+                clip_vectors = apply_temporal_fusion(encoded_frames, encoded_dim, fpc,
+                                             settings.network.frame_fusion_method, lstm_encoder=None)
                 # classify to the desired dimension
                 self.logits = convert_dim_fc(clip_vectors, settings.network.num_classes)
+            else:
+                # no frame fusion specified
+                if fpc == 1:
+                    self.logits = encoded_frames
 
         info("logits out : [%s]" % self.logits.shape)
 
@@ -370,36 +360,39 @@ class LRCN:
                 # select the last state vector
                 output_state = output_state[-1].h
                 if int(output_state.shape[1]) != settings.network.num_classes:
-                    error("Fused lstm input with %s method, but num hidden is %d and num classes is %d"  \
+                    info("Fused lstm input with %s method, but num hidden is %d and num classes is %d - adding fc layer"  \
                           %(defs.fusion_method.state, settings.network.lstm_params[0], settings.network.num_classes))
-                self.logits = output_state
+                    self.logits = convert_dim_fc(output_state, settings.network.num_classes)
+                else:
+                    self.logits = output_state
 
             info("logits : [%s]" % self.logits.shape)
 
     def create_actrec_audio(self, settings):
         # define label inputs
-        batchLabelsShape = [None, settings.network.num_classes]
-        self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
+        #batchLabelsShape = [None, settings.network.num_classes]
+        #self.inputLabels = tf.placeholder(tf.int32, batchLabelsShape, name="input_labels")
 
-        settings.frame_encoding_layer = None
-        # create the singleframe workflow
-        with tf.name_scope("audionet_workflow"):
-            info("Audionet workflow")
-            # single DCNN, classifying individual frames
-            self.dcnn_model = audionet.audionet()
-            self.dcnn_model.create(dataset.image_shape, settings.network.num_classes)
-            self.inputData, self.logits = self.dcnn_model.get_io()
-        # reshape to num_items x num_frames_per_item x dimension
-        self.logits = tf.reshape(self.logits, (-1, settings.get_datasets()[0].num_frames_per_clip, settings.network.num_classes),
-                                 name="reshape_framelogits_pervideo")
+        #settings.frame_encoding_layer = None
+        ## create the singleframe workflow
+        #with tf.name_scope("audionet_workflow"):
+        #    info("Audionet workflow")
+        #    # single DCNN, classifying individual frames
+        #    self.dcnn_model = audionet.audionet()
+        #    self.dcnn_model.create(dataset.image_shape, settings.network.num_classes)
+        #    self.inputData, self.logits = self.dcnn_model.get_io()
+        ## reshape to num_items x num_frames_per_item x dimension
+        #self.logits = tf.reshape(self.logits, (-1, settings.get_datasets()[0].num_frames_per_clip, settings.network.num_classes),
+        #                         name="reshape_framelogits_pervideo")
 
-        if dataset.input_mode == defs.input_mode.image or settings.get_datasets()[0].num_frames_per_clip == 1:
-            return
+        #if dataset.input_mode == defs.input_mode.image or settings.get_datasets()[0].num_frames_per_clip == 1:
+        #    return
 
         # fuse the logits on the temporal dimension
-        self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip, settings.network.frame_fusion_method)
+        #self.logits = apply_temporal_fusion(self.logits, settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip, settings.network.frame_fusion_method)
 
-        info("logits out : [%s]" % self.logits.shape)
+        #info("logits out : [%s]" % self.logits.shape)
+        pass
 
     def create_actrec_dual(self, settings):
         # workflow that encodes images from two datasets to vectors, which are fused as specififed by the
@@ -411,22 +404,24 @@ class LRCN:
         self.input.append((self.inputLabels, defs.net_input.labels, defs.dataset_tag.main))
 
         # make a dcnn for the main input
-        debug("Dcnn [%s]" % defs.dataset_tag.main)
+        ids1 = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.main)])
+        info("Dcnn [%s]-[%s]" % (defs.dataset_tag.main, ids1))
         input1 = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames1')
         self.input.append((input1, defs.net_input.visual, defs.dataset_tag.main))
         self.inputData = input1
         encoded1 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer)
-        dim1 = encoded1.shape[-1]
+        dim1 = int(encoded1.shape[-1])
         fpc1 = settings.get_dataset_by_tag(defs.dataset_tag.main)[0].num_frames_per_clip
         dcnn1 = self.dcnn_model
 
         # make dcnn for auxiliary input
-        debug("Dcnn [%s]" % defs.dataset_tag.aux)
+        ids2 = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.aux)])
+        info("Dcnn [%s]-[%s]" % (defs.dataset_tag.aux, ids2))
         input2 = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames2')
         self.input.append((input2, defs.net_input.visual, defs.dataset_tag.aux))
         self.inputData = input2
         encoded2 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer)
-        dim2 = encoded2.shape[-1]
+        dim2 = int(encoded2.shape[-1])
         fpc2 = settings.get_dataset_by_tag(defs.dataset_tag.aux)[0].num_frames_per_clip
         dcnn2 = self.dcnn_model
 
@@ -435,16 +430,16 @@ class LRCN:
         # available modes are early fusion and lstm bias.
         fused_fpc = False
         # early fusion: fuse before dataset fusion
-        if settings.network.frame_fusion_type == defs.fusion_type.early:
+        if settings.network.dataset_fusion_type == defs.fusion_type.early:
             # fuse frames now, before dataset fusion
-            encoded1 = tf.reshape(encoded1, [ -1, fpc1, dim1])
+            encoded1 = tf.reshape(encoded1, ( -1, fpc1, dim1))
             encoded1 = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
-            debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded1.shape)))
+            info("%s: Early fused frames per clip via %s: %s" % (ids1, settings.network.frame_fusion_method, str(encoded1.shape)))
             # fuse the other - aux
             encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
             encoded2 = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
             fused_fpc = True
-            debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded2.shape)))
+            info("%s: Early fused frames per clip via %s: %s" % (ids2, settings.network.frame_fusion_method, str(encoded2.shape)))
         else:
             if fpc1 != fpc2:
                 error("Non-early dataset fusion requires same fpc across datasets")
@@ -461,75 +456,67 @@ class LRCN:
             error("Only %s and %s fusion methods are meaningfull for the %s workflow" % \
                   (defs.fusion_method.avg, defs.fusion_method.concat, settings.workflow))
 
-        debug("Fused dataset vectors via %s: %s" % (settings.network.dataset_fusion_method, str(fused.shape)))
+        info("Fused dataset vectors via %s: %s" % (settings.network.dataset_fusion_method, str(fused.shape)))
 
-        if settings.network.frame_fusion.type == defs.fusion_type.late:
+        if settings.network.dataset_fusion_type == defs.fusion_type.late:
             dataset_fused_dim = int(fused.shape[-1])
             fused = tf.reshape(encoded1, [ -1, fpc1, dataset_fused_dim])
             fused = apply_temporal_fusion(fused, dataset_fused_dim, fpc1, settings.network.frame_fusion_method)
             debug("Late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
 
         # classify
-        if self.worfklow == defs.workflows.multi.fc:
+        multi_workflow = settings.network.multi_workflow
+        if multi_workflow == defs.workflows.multi.fc:
             # data has been fused across frames and datasets - clip vectors remain.
             # classify with an fc layer
+            info("Using multi workflow: [%s]" % multi_workflow)
             self.logits = convert_dim_fc(fused, settings.network.num_classes)
-        elif self.worfklow == defs.workflows.multi.lstm or self.workflow == defs.workflows.multi.singleframe:
+        elif multi_workflow == defs.workflows.multi.lstm or multi_workflow == defs.workflows.multi.singleframe:
             # these workflows operate on data with no fused frames
             # data has been fused across datasets - can classify
             if not settings.network.frame_fusion_type == defs.fusion_type.none:
-                error("[%s] fused workflow requires frame fusion type to be" % (self.workflow, defs.fusion_type.none))
+                error("[%s] fused workflow requires frame fusion type to be" % (multi_workflow, defs.fusion_type.none))
 
-            if self.worfklow == defs.workflows.multi.lstm:
+            if multi_workflow == defs.workflows.multi.lstm:
                 self.create_actrec_lstm(settings, inputData = fused, inputLabels = self.inputLabels)
                 #self.lstm_model = lstm.lstm()
                 #dataset_fused_dim = int(fused.shape[-1])
                 #self.logits, _ = self.lstm_model.forward_pass_sequence(fused, None, dataset_fused_dim , settings.network.lstm_num_layers,
                 #                            settings.network.lstm_num_hidden, settings.network.num_classes, fpc1, None,
                 #                            settings.network.frame_fusion_method, settings.train.dropout_keep_prob)
-            elif self.workflow == defs.workflows.multi.singleframe:
+            elif multi_workflow == defs.workflows.multi.singleframe:
                 self.create_actrec_singleframe(settings, inputData = fused, inputLabels = self.inputLabels)
         else:
             # these workflows require only *one* of the datasets to be frame-fused
-            # dataset fusion type decides what that is
-            if settings.network.dataset_fusion_type == defs.fusion_type.main:
-                # fuse the main dataset
-                encoded1 = tf.reshape(encoded1, [ -1, fpc1, dim1])
-                fused_dset = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
-                seq_dset = encoded2
-                fpc = fpc2
-                debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded1.shape)))
-            elif settings.network.dataset_fusion_type == defs.fusion_type.aux:
-                # fuse the aux dataset
-                encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
-                fused_dset = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
-                seq_dset = encoded1
-                fpc = fpc1
-                debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded2.shape)))
-            else:
-                error("%s or %s fusion type required for workflow %s" % (defs.fusion_type.main, defs.fusion_type.aux, self.workflow))
+            # the dataset to be fused will be the one with the aux tag
+            # fuse the aux dataset
+            encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
+            fused_dset = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
+            seq_dset = encoded1
+            fpc = fpc1
+            debug("Early fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(encoded2.shape)))
 
             seq_dim = int(seq_dset.shape[-1])
             fused_dim = int(fused_dset.shape[-1])
 
             # supply the non-fused dataset to an lstm input, and the fused one as a bias / concat type
-            if settings.workflow == defs.workflows.multi.lstm_conc:
+            if multi_workflow == defs.workflows.multi.lstm_conc:
                 # concat the fused clip vectors to each framevector
                 enc_concatted = vec_seq_concat(fused_dset, seq_dset, fpc)
                 # proceed with regular lstm
                 self.create_actrec_lstm(settings, inputData = enc_concatted, inputLabels = self.inputLabels)
-            elif settings.workflow == defs.workflow.multi.lstm_sbias:
+            elif multi_workflow == defs.workflow.multi.lstm_sbias:
                 # use the fused clip vectors as a state bias
                 lstm_model = lstm.lstm()
                 self.logits = lstm_model.forward_pass_sequence(seq_dset, fused_dset, seq_dim, settings.train.lstm_num_layers,
                                                                settings.train.lstm_num_hidden, settings.network.num_classes, fpc, None,
                                                               settings.network.lstm_fusion, settings.train.dropout_keep_prob)
 
-            elif settings.workflow == defs.workflow.multi.lstm_ibias:
+            elif multi_workflow == defs.workflow.multi.lstm_ibias:
                 # use the fused clip vectors as an additional input at the first step
                 if seq_dim != fused_dim:
                     error("%s workflow requires same encoded dimension for both datasets. Instead it is %d, %d for fused and seq." %  \
-                          (self.workflow, fused_dim, seq_dim))
+                          (multi_workflow, fused_dim, seq_dim))
 
                 batch_size = tf.shape(fused_dset)[0]
                 # reshape the fused dataset to batch_size x fpc=1 x dim
@@ -549,7 +536,7 @@ class LRCN:
                                                                augmented_fpc, None, settings.network.lstm_fusion,
                                                                settings.train.dropout_keep_prob)
 
-        debug("Logits: %s" % str(self.logits.shape))
+        info("Logits: %s" % str(self.logits.shape))
 
 
 

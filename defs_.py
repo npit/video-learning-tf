@@ -47,6 +47,8 @@ class defs:
                 return defs.input_mode.image
             elif defs.workflows.is_video(arg):
                 return defs.input_mode.video
+            elif defs.check("defs.workflows.multi."+arg, defs.workflows.multi):
+                return defs.input_mode.video
             else:
                 error("No input mode discernible from workflow %s" % arg)
                 return None
@@ -67,7 +69,7 @@ class defs:
         class multi:
             fc, singleframe, lstm, lstm_sbias, lstm_ibias, lstm_conc = "fc", "singleframe", "lstm", "lstm_sbias", "lstm_ibias", "lstm_conc"
         class acrec:
-            singleframe, lstm, audio, singlesingle = "acrec_singleframe", "acrec_lstm", "acrec_audio", "singlesingle"
+            singleframe, lstm, audio, multi = "acrec_singleframe", "acrec_lstm", "acrec_audio", "multi"
             def is_workflow(arg):
                 return arg == defs.workflows.acrec.singleframe or \
                        arg == defs.workflows.acrec.lstm
@@ -91,7 +93,7 @@ class defs:
                    defs.workflows.videodesc.encdec == arg or \
                    defs.workflows.videodesc.fused == arg or \
                    defs.workflows.acrec.audio == arg or \
-                   defs.workflows.acrec.singlesingle == arg
+                   defs.workflows.acrec.multi == arg
         def is_image(arg):
             return defs.workflows.imgdesc.statebias == arg or \
                    defs.workflows.imgdesc.inputstep == arg or \

@@ -102,6 +102,23 @@ class Settings:
     saver = None
 
 
+    def get_train_str(self):
+        tr = self.train
+        infostr = "epochs: %d, optim: %s" % (tr.epochs, tr.optimizer)
+
+        lrstr = ", lr: [%2.2f," % tr.base_lr
+        if tr.lr_mult is not None: lrstr += " mult: %2.2f," % tr.lr_mult
+        if tr.lr_decay is not None: lrstr += " %s]" % ", ".join([str(x) for x in tr.lr_decay])
+        else: lrstr += " static]"
+
+        infostr += lrstr
+
+        if tr.dropout_keep_prob is not None: infostr += " dropout: %2.2f," % tr.dropout_keep_prob
+        if tr.clip_norm is not None:
+            infostr += " clip: %2.2f" % tr.clip_norm
+
+        return infostr
+
     def validation_logits_to_captions(self, logits_chunk, num_processed_logits):
         return self.datasets[self.phase].validation_logits_to_captions(logits_chunk, num_processed_logits)
 
@@ -166,6 +183,8 @@ class Settings:
 
         # read network  architecture stuff
         self.network = Settings.network()
+        if self.workflow == defs.workflows.acrec.multi:
+            self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
         self.network.load_weights = config['network']['load_weights']
         self.network.image_shape = parse_seq(config["network"]["image_shape"])
         self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
@@ -353,7 +372,7 @@ class Settings:
     def initialize(self, init_file):
 
         self.initialize_from_file(init_file)
-        info("Initialized from file: [%s]" % init_file)
+        info("Initialized from configuration file: [%s]" % init_file)
 
         if not os.path.exists(self.run_folder):
             warning("Non existent run folder %s - creating." % self.run_folder)
