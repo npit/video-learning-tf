@@ -92,10 +92,10 @@ class serialization_settings:
         else:
             print("Using explicit run id of [%s]" % self.run_id)
         # configure the logs
-        logfile = "log_" + self.run_id + ".log"
+        self.logfile = "log_" + self.run_id + ".log"
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
-        self.logger.configure_logging(logfile, self.logging_level)
+        self.logger.configure_logging(self.logfile, self.logging_level)
         print("Successfully initialized from file %s" % self.init_file)
 
 
@@ -205,6 +205,7 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
 def generate_frames_per_video(paths_list, mode, settings):
     tic = time.time()
     paths_per_video = []
+    info("Reading raw frames from folder:[%s]" % settings.path_prepend_folder)
     info("Fetching frame paths for %d videos, using %s with %d cpv and %d fpc." %
          (len(paths_list), settings.clipframe_mode, settings.clip_offset_or_num, settings.num_frames_per_clip))
     with tqdm.tqdm(range(len(paths_list)), ascii=True, total=len(paths_list)) as pbar:
@@ -429,6 +430,8 @@ def deserialize_from_tfrecord(iterator, images_per_iteration):
 def read_file(inp, settings):
     mode = None
     info("Reading input file [%s] " % (inp))
+    if settings.path_prepend_folder is not None:
+        info("Prepending path:[%s]" % settings.path_prepend_folder)
     max_num_labels = -1
     paths = []
     labels = []
@@ -691,6 +694,10 @@ def main():
     if settings.do_validate:
         info("Validating serialization")
         validate(written_data, errors_per_file, settings)
+    # move log file to output directory, if specified
+    if settings.output_folder is not None:
+        os.rename(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
+
 
 if __name__ == '__main__':
     main()
