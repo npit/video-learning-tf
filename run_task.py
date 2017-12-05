@@ -104,7 +104,7 @@ class Settings:
 
     def get_train_str(self):
         tr = self.train
-        infostr = "epochs: %d, optim: %s" % (tr.epochs, tr.optimizer)
+        infostr = "classes: %d, epochs: %d, optim: %s" % (self.network.num_classes, tr.epochs, tr.optimizer)
 
         lrstr = ", lr: [%2.2f," % tr.base_lr
         if tr.lr_mult is not None: lrstr += " mult: %2.2f," % tr.lr_mult

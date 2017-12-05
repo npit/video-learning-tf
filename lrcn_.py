@@ -101,8 +101,6 @@ class LRCN:
             self.create_training(settings, summaries)
 
     def precompute_learning_rates(self, settings):
-        info("Precomputing learning rates per batch")
-
         base_lr = settings.train.base_lr
         decay_params = settings.train.lr_decay
         num_batches = settings.get_num_batches()
@@ -309,7 +307,7 @@ class LRCN:
                 # if we have no clips, we're done
                 if settings.get_datasets()[0].input_mode == defs.input_mode.image or fpc == 1:
                     return
-                if encoded_dim != self.network.num_classes:
+                if encoded_dim != settings.network.num_classes:
                     error("Specified late fusion but dcnn output is %d and num. classes is %d" % (encoded_dim, settings.network.num_classes))
 
                 self.logits = apply_temporal_fusion(encoded_frames, settings.network.num_classes, fpc,
