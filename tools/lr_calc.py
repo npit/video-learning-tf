@@ -37,8 +37,8 @@ if __name__ == '__main__':
         res = input("Enter value(s) for number of learning rate values to check: ")
         try:
             total_num_values = list(map(int,res.split()))
-        except Exception:
-            print("Gotta be numbers.")
+        except Exception as ex:
+            print("Gotta be numbers : ", ex)
         print_projections(total_num_values, total_batches, baselr, decay)
 
 

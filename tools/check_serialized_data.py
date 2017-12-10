@@ -37,11 +37,11 @@ def deserialize_from_tfrecord(iterator, images_per_iteration):
             image = img_1d.reshape(height, width, depth)
 
         except StopIteration:
-            #print("Stop iteration thrown.")
+            print("Encountered stop iteration exception.")
             return None, None
 
         except Exception as ex:
-            #print('Exception at reading image, loading from scratch')
+            #print('Exception at reading image idx %d, loading from scratch' % imidx)
             return None, None
 
         images.append(image)
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     num_items = None
     if opts:
         try:
-            num_items = int(opts[0]) 
+            num_items = int(opts[0])
         except Exception as ex:
             print(ex)
             exit(1)
@@ -78,13 +78,18 @@ if __name__ == '__main__':
             print()
 
         print("------------------")
+    else:
+        print(sizefile)
+        exit(1)
 
     if not os.path.exists(sizefile):
         print("File %s does not exist." % filename)
         exit(1)
+
     print()
     if num_items is not None:
         print("Printing %s items due to user argument" % str(num_items))
+
     iterator = tf.python_io.tf_record_iterator(path = filename)
     shapes = OrderedDict()
     count = 0
