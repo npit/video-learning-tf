@@ -428,7 +428,7 @@ class Settings:
             if self.resume_file == defs.names.latest_savefile:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
                     for line in f:
-                        savefile_graph = line.strip().split()[-1].strip()
+                        savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
                         if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
                         savefile_metapars = savefile_graph + ".snap"
                         msg = "Resuming latest tf metadata: [%s]" % savefile_metapars
@@ -482,7 +482,7 @@ class Settings:
             if self.resume_file == defs.names.latest_savefile:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
                     for line in f:
-                        savefile_graph = line.strip().split()[-1].strip()
+                        savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
                         if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
                         msg = "Resuming latest tf graph: [%s]" % savefile_graph
                         break

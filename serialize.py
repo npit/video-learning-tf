@@ -1,12 +1,12 @@
 import tensorflow as tf
 import itertools
 import numpy as np
-from random import shuffle, choice
+from random import shuffle, choice, random, seed
 from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os, configparser, sys
 from os.path import basename
-from shutil import copyfile
+from shutil import copyfile, move
 from utils_ import *
 import tqdm
 from defs_ import *
@@ -68,7 +68,7 @@ class serialization_settings:
             self.output_folder = config['output_folder']
             self.path_prepend_folder = config['path_prepend_folder']
             self.input_files = parse_seq(config['input_files'])
-            self.run_id = config['run_id']
+            self.run_id = config['run_id'].strip()
             self.num_threads = int(config['num_threads'])
             self.num_items_per_thread = int(config['num_items_per_thread'])
             self.raw_image_shape = parse_seq(config['raw_image_shape'])
@@ -87,7 +87,8 @@ class serialization_settings:
             self.logging_level = eval(self.logging_level)
 
 
-        if self.run_id is None:
+
+        if self.run_id is None or not self.run_id:
             self.run_id = "serialize_%s" % (get_datetime_str())
         else:
             print("Using explicit run id of [%s]" % self.run_id)
@@ -96,7 +97,21 @@ class serialization_settings:
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
         self.logger.configure_logging(self.logfile, self.logging_level)
-        print("Successfully initialized from file %s" % self.init_file)
+
+
+        if 'seed' in config:
+            try:
+                self.seed = float(config['seed'])
+            except Exception as ex:
+                print(ex)
+                error("Invalid seed value: %s - numeric expected" % str(self.seed))
+                exit(1)
+            info("Using supplied seed: %f" % self.seed)
+        else:
+            self.seed = random()
+            info("Using randomized seed: %f" % self.seed)
+        seed(self.seed)
+        info("Successfully initialized from file %s" % self.init_file)
 
 
 
@@ -696,7 +711,7 @@ def main():
         validate(written_data, errors_per_file, settings)
     # move log file to output directory, if specified
     if settings.output_folder is not None:
-        os.rename(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
+        shutil.move(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
 
 
 if __name__ == '__main__':
