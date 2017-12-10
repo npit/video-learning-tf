@@ -747,6 +747,8 @@ class Dataset:
     def reset_iterator(self):
         if not self.data_format == defs.data_format.tfrecord:
             return
+        if self.iterator:
+            self.iterator.close()
         self.iterator = tf.python_io.tf_record_iterator(path=self.path)
 
     # reset to the start of a dataset
@@ -758,24 +760,32 @@ class Dataset:
     def fast_forward_iter(self):
         # fast forward to batch index
         num_forward = self.batch_index
+        num_all_frames = sum([ x * y * self.num_frames_per_clip for (x, y) in zip(self.batches, self.clips_per_video)])
         if self.input_mode == defs.input_mode.image:
-            info("Fast forwarding to the batch # %d ( image # %d)" % (self.batch_index+1, num_forward+1))
+            error("Image fast-forwarding not implemented yet")
         elif self.input_mode == defs.input_mode.video:
-            # get how many items we have to move up to
-            item_index = self.batch_index * self.batch_size
-            if self.batch_item == defs.batch_item.default:
-                # if the batch size refers to whole items, gotta count the clips
-                # up to the restoration point (for variable cpv cases)
-                num_clips = 0
-                for i in range(len(self.clips_per_video)):
-                    if i == item_index:
-                        break
-                    num_clips += self.clips_per_video[i]
-                num_forward = num_clips * self.num_frames_per_clip
-            elif self.batch_item == defs.batch_item.clip:
-                # if it refers to clips, it's straightforward
-                num_forward = self.num_frames_per_clip * item_index
-            info("Fast forwarding to the batch # %d ( image # %d )" % (self.batch_index + 1, num_forward + 1))
+            # if the max number of batches is specified, account for potentially
+            # incomplete last batch
+            if num_forward == len(self.batches):
+                num_forward = num_all_frames
+            else:
+                # get how many items we have to move up to
+                item_index = self.batch_index * self.batch_size
+                if self.batch_item == defs.batch_item.default:
+                    # if the batch size refers to whole items, gotta count the clips
+                    # up to the restoration point (for variable cpv cases)
+                    num_clips = 0
+                    for i in range(len(self.clips_per_video)):
+                        if i == item_index:
+                            break
+                        num_clips += self.clips_per_video[i]
+                    num_forward = num_clips * self.num_frames_per_clip
+                elif self.batch_item == defs.batch_item.clip:
+                    # if it refers to clips, it's straightforward
+                    num_forward = self.num_frames_per_clip * item_index
+
+
+        info("Fast forwarding to batch # %d/%d ( image # %d/%d )" % (self.batch_index + 1, len(self.batches), num_forward + 1, num_all_frames))
         with tqdm.tqdm(total=num_forward, ascii=True) as pbar:
             for _ in range(num_forward):
                 next(self.iterator)
