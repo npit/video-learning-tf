@@ -25,7 +25,7 @@ def print_tensors_in_checkpoint_file(file_name, tensor_name, print_values):
     if all_tensors:
       var_to_shape_map = reader.get_variable_to_shape_map()
       for key in var_to_shape_map:
-        print("tensor_name: ", key)
+        print("tensor_name:", key, "shape:",reader.get_tensor(key).shape)
         if print_values:
             print("tensor_value: ",reader.get_tensor(key))
         count = count  + 1
