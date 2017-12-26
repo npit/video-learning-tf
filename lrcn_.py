@@ -125,7 +125,7 @@ class LRCN:
             # reduce every decay_freq batches
             decay_period = decay_freq
             log_message += "every %d step(s) " % decay_period
-        elif decay_scheme == defs.decay.scheme.total:
+        elif decay_scheme == defs.decay.scheme.drops:
             # reduce a total of decay_freq times
             decay_period = math.ceil(total_num_batches / decay_freq)
             log_message += "every ceil[(%d batches x %d epochs) / %d total steps] = %d steps" % \
@@ -323,6 +323,8 @@ class LRCN:
                 # no frame fusion specified
                 if fpc == 1:
                     self.logits = encoded_frames
+                else:
+                    error("Dataset has non-unitary fpc, but no frame fusion has been specified.")
 
         info("logits out : [%s]" % self.logits.shape)
 

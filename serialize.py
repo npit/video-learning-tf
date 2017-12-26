@@ -711,7 +711,7 @@ def main():
         validate(written_data, errors_per_file, settings)
     # move log file to output directory, if specified
     if settings.output_folder is not None:
-        shutil.move(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
+        move(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
 
 
 if __name__ == '__main__':

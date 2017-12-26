@@ -130,7 +130,7 @@ class defs:
 
         # drop at intervals or a total number of times
         class scheme:
-            interval, total = "interval", "total"
+            interval, drops = "interval", "drops"
 
     class label_type:
         single, multiple = "single", "multiple"

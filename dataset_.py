@@ -35,6 +35,7 @@ class Dataset:
     raw_image_shape = None
     desired_image_shape = None
     input_mode = None
+    serialization_size = None
 
     # mean image subtraction
     mean_image = None
@@ -96,46 +97,91 @@ class Dataset:
         # plt.waitforbuttonpress()
         pass
 
+    def deserialize_example(self, string_record):
+        '''
+        Deserialize single TFRecord example
+        '''
+        ser_size = len(string_record)
+        if self.serialization_size:
+            if ser_size != self.serialization_size:
+                error("Encountered a different serialization size: %d vs stored %d" % \
+                      (ser_size, self.serialization_size))
+            else:
+                self.serialization_size = ser_size
+        example = tf.train.Example()
+        example.ParseFromString(string_record)
+        img_string = (example.features.feature['image_raw']
+                      .bytes_list
+                      .value[0])
+        height = int(example.features.feature['height']
+                     .int64_list
+                     .value[0])
+        width = int(example.features.feature['width']
+                    .int64_list
+                    .value[0])
+        depth = (example.features.feature['depth']
+                 .int64_list
+                 .value[0])
+        label = (example.features.feature['label']
+                 .int64_list
+                 .value)
+        label = list(label)
+        label = label[0] if len(label) == 0 else label
+
+        img_1d = np.fromstring(img_string, dtype=np.uint8)
+        image = img_1d.reshape(height, width, depth)
+        return image, label
+
     # read from tfrecord
     def deserialize_from_tfrecord(self, iterator, images_per_iteration):
         # images_per_iteration :
-        images = []
-        labels  = []
+        images, labels = [], []
         for imidx in range(images_per_iteration):
             try:
                 string_record = next(iterator)
-                example = tf.train.Example()
-                example.ParseFromString(string_record)
-                img_string = (example.features.feature['image_raw']
-                              .bytes_list
-                              .value[0])
-                height = int(example.features.feature['height']
-                             .int64_list
-                             .value[0])
-                width = int(example.features.feature['width']
-                            .int64_list
-                            .value[0])
-                depth = (example.features.feature['depth']
-                         .int64_list
-                         .value[0])
-                label = (example.features.feature['label']
-                         .int64_list
-                         .value)
-                label = list(label)
-                label = label[0] if len(label) == 0 else label
-
-
-                img_1d = np.fromstring(img_string, dtype=np.uint8)
-                image = img_1d.reshape(height, width, depth)
-
+                image, label = self.deserialize_example(string_record)
             except StopIteration:
                 if imidx < images_per_iteration:
-                    warning('Tfrecord unexpected EOF, loading from scratch')
-                    image, label = self.manually_read_image(imidx)
+                    error('Encountered unexpected EOF while reading TFRecord example # %d in the batch.' % imidx)
+                    #image, label = self.manually_read_image(imidx)
 
             except Exception as ex:
-                warning('Exception at reading image, loading from scratch')
-                image,label = self.manually_read_image(imidx)
+                error('Encountered unexpected EOF while reading TFRecord example # %d in the batch.' % imidx)
+
+                try:
+                    print("String record length:",len(string_record))
+                except:
+                    print("Failed to print the length of the string record")
+
+                warning('Retrying to parse the example %d times' % (imidx, self.read_tries))
+                counter = 0
+                success = False
+                while True:
+                    try:
+                        if counter > self.read_tries:
+                            break
+                        counter +=1
+                        print("Try #%d", counter)
+                        image, label = self.deserialize_example(string_record)
+                        success = True
+                    except:
+                        pass
+
+                    if success:
+
+                        info("Serialization error recovered through example reread!")
+                    else:
+                        # try the long way around: reset the iterator
+                        self.reset_iterator()
+                        # forward to the index within the current batch
+                        for _ in range(imidx):
+                            next(iterator)
+                        try:
+                            image, label = self.deserialize_example(string_record)
+                        except:
+                            error("Failed to troubleshoot serialization error.")
+                        info("Serialization error recovered through iterator restore!")
+                    break
 
             image = self.process_image(image)
             images.append(image)
@@ -312,6 +358,8 @@ class Dataset:
             curr_video = self.batch_index * self.batch_size
             curr_cpv = self.clips_per_video[curr_video : curr_video + self.batch_size]
             num_frames_in_batch = sum([self.num_frames_per_clip * x for x in curr_cpv])
+            if not num_frames_in_batch:
+                error("Computed 0 frames in next batch.")
             # read the frames from the TFrecord serialization file
             images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
 
@@ -419,7 +467,7 @@ class Dataset:
         return image
 
     def initialize(self, id, path, mean_image, prepend_folder, desired_image_shape, imgproc, raw_image_shape,
-                   data_format, frame_format, batch_item, num_classes, tag):
+                   data_format, frame_format, batch_item, num_classes, tag, image_tries):
         info("Initializing dataset [%s]" % id)
         self.id = id
         self.path = path
@@ -433,6 +481,7 @@ class Dataset:
         self.raw_image_shape = raw_image_shape
         self.num_classes = num_classes
         self.tag = tag
+        self.image_tries = image_tries
 
 
     def build_mean_image(self):
@@ -468,52 +517,6 @@ class Dataset:
             else:
                 # precompute the center crop
                 self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.desired_image_shape, defs.imgproc.center_crop)
-
-
-    # do preparatory work
-    def initialize_old(self, sett):
-        # transfer relevant configuration from settings
-        self.workflow = sett.workflow
-        self.epochs = sett.epochs
-        self.do_training = sett.do_training
-        self.do_validation = sett.do_validation
-        self.validation_interval = sett.validation_interval
-        self.run_folder = sett.run_folder
-        self.path_prepend_folder = sett.path_prepend_folder
-        self.frame_encoding_layer = sett.frame_encoding_layer
-
-        self.data_format = sett.data_format
-        self.frame_format = sett.frame_format
-        self.mean_image = sett.mean_image
-        self.raw_image_shape = sett.raw_image_shape
-        self.num_classes = sett.num_classes
-        self.image_shape = sett.image_shape
-        self.imgproc = sett.imgproc
-
-        info("Initializing dataset at [%s]" % sett.data_path)
-
-        self.batch_size_train = sett.batch_size_train
-        self.batch_size_val = sett.batch_size_val
-        self.batch_item = sett.batch_item
-        self.batch_index_val = 0
-
-        self.input_mode = defs.input_mode.get_from_workflow(self.workflow)
-
-        # transfer resumed snapshot settings
-        self.epoch_index = sett.epoch_index
-        self.batch_index_train = sett.train_index
-
-        self.caption_search = sett.caption_search
-        self.eval_type = sett.eval_type
-
-        # iniitalize image data
-        self.initialize_data(sett)
-
-        # perform run mode - specific initializations
-        self.initialize_workflow(sett)
-        self.initialize_imgproc()
-
-        self.tell()
 
     def compute_dataset_portion(self, freq_per_epoch):
         # set save interval
@@ -714,11 +717,8 @@ class Dataset:
             # read RLC-encoded cpv, if applicable
             if type(cpv[0]) == tuple:
                 cpv= [item for num, item in cpv for _ in range(num)]
-            # else, the list contains 1 cpv entry per item
-            # check consistency
-            else:
-                if len(cpv) != self.num_items:
-                    error("Read %d items but got cpv list of size %d" % (self.num_items, len(cpv)))
+            if len(cpv) != self.num_items:
+                error("Read %d items but got cpv list of size %d" % (self.num_items, len(cpv)))
 
             # and len(self.clips_per_video) > 12:
             # if it's large, make it small and printable
@@ -757,9 +757,13 @@ class Dataset:
         self.batch_index = 0
 
     # move up an iterator
-    def fast_forward_iter(self):
+    def fast_forward_iter(self, index = None):
         # fast forward to batch index
-        num_forward = self.batch_index
+        if index is None:
+            num_forward = self.batch_index
+        else:
+            num_forward = index
+
         num_all_frames = sum([ x * y * self.num_frames_per_clip for (x, y) in zip(self.batches, self.clips_per_video)])
         if self.input_mode == defs.input_mode.image:
             error("Image fast-forwarding not implemented yet")

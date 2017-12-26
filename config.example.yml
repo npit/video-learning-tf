@@ -21,7 +21,8 @@ run:
       batch_item: defs.batch_item.default
       phase: defs.phase.train
       tag: defs.dataset_tag.main
-    # similarly, can defined additional datasets
+      image_tries: 3
+    # similarly, can define additional datasets
 
   network:
     # architecture settings
