@@ -467,7 +467,7 @@ class Dataset:
         return image
 
     def initialize(self, id, path, mean_image, prepend_folder, desired_image_shape, imgproc, raw_image_shape,
-                   data_format, frame_format, batch_item, num_classes, tag, image_tries):
+                   data_format, frame_format, batch_item, num_classes, tag, read_tries):
         info("Initializing dataset [%s]" % id)
         self.id = id
         self.path = path
@@ -481,7 +481,7 @@ class Dataset:
         self.raw_image_shape = raw_image_shape
         self.num_classes = num_classes
         self.tag = tag
-        self.image_tries = image_tries
+        self.read_tries = read_tries
 
 
     def build_mean_image(self):
