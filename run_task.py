@@ -298,7 +298,9 @@ class Settings:
                     ans = input("continue? (y/n) : ")
                     if ans != "y":
                         error("Aborted.")
-            read_tries = int(dataobj["read_tries"])
+
+            val = int(dataobj["read_tries"]) if "read_tries" in dataobj else 1
+            read_tries = val
             dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
                                 frame_format, batch_item, self.network.num_classes, tag, read_tries)
 
