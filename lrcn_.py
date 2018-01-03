@@ -347,8 +347,12 @@ class LRCN:
             if settings.network.frame_fusion_type != defs.fusion_type.none:
                 error("The LSTM workflow is only compatible with frame fusion mode %s. Specify lstm fusion in the network.lstm_params" % defs.fusion_type.none)
 
-            # DCNN for frame encoding
-            encodedFrames = self.make_dcnn(settings)
+            # create vectorial input, if not supplied
+            if inputData is None:
+                # DCNN for frame encoding
+                encodedFrames = self.make_dcnn(settings)
+            else:
+                encodedFrames = inputData
 
             # LSTM for frame sequence classification for frame encoding
             self.lstm_model = lstm.lstm()
@@ -460,7 +464,7 @@ class LRCN:
                     # already fused dsets
                     fused = tf.reshape(fused, [ -1, fpc1, dataset_fused_dim])
                     fused = apply_temporal_fusion(fused, dataset_fused_dim, fpc1, settings.network.frame_fusion_method)
-                    debug("Early-late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
+                    info("Early-late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
                 else:
                     # fuse the video frames of the main dataset
                     encoded1 = tf.reshape(encoded1, ( -1, fpc1, dim1))
@@ -491,21 +495,17 @@ class LRCN:
                 self.logits = tf.reshape(self.logits,[-1, fpc1, settings.network.num_classes])
                 self.logits = apply_temporal_fusion(self.logits, dataset_fused_dim, fpc1,settings.network.frame_fusion_method)
 
-        elif multi_workflow == defs.workflows.multi.lstm or multi_workflow == defs.workflows.multi.singleframe:
+        elif multi_workflow == defs.workflows.multi.lstm:
             # these workflows operate on data with no fused frames
             # data has been fused across datasets - can classify
-            if settings.network.dataset_frame_fusion_method is not None:
+            if settings.network.frame_fusion_type != defs.fusion_type.none:
                 error("[%s] fused workflow requires frame fusion type to be [%s]" % (multi_workflow, defs.fusion_type.none))
-
-            if multi_workflow == defs.workflows.multi.lstm:
-                self.create_actrec_lstm(settings, inputData = fused, inputLabels = self.inputLabels)
+            self.create_actrec_lstm(settings, inputData = fused, inputLabels = self.inputLabels)
                 #self.lstm_model = lstm.lstm()
                 #dataset_fused_dim = int(fused.shape[-1])
                 #self.logits, _ = self.lstm_model.forward_pass_sequence(fused, None, dataset_fused_dim , settings.network.lstm_num_layers,
                 #                            settings.network.lstm_num_hidden, settings.network.num_classes, fpc1, None,
                 #                            settings.network.frame_fusion_method, settings.train.dropout_keep_prob)
-            elif multi_workflow == defs.workflows.multi.singleframe:
-                self.create_actrec_singleframe(settings, inputData = fused, inputLabels = self.inputLabels)
         else:
             # these workflows require only *one* of the datasets to be frame-fused
             # the dataset to be fused will be the one with the aux tag
@@ -525,14 +525,13 @@ class LRCN:
                 enc_concatted = vec_seq_concat(fused_dset, seq_dset, fpc)
                 # proceed with regular lstm
                 self.create_actrec_lstm(settings, inputData = enc_concatted, inputLabels = self.inputLabels)
-            elif multi_workflow == defs.workflow.multi.lstm_sbias:
+            elif multi_workflow == defs.workflows.multi.lstm_sbias:
                 # use the fused clip vectors as a state bias
                 lstm_model = lstm.lstm()
-                self.logits = lstm_model.forward_pass_sequence(seq_dset, fused_dset, seq_dim, settings.train.lstm_num_layers,
-                                                               settings.train.lstm_num_hidden, settings.network.num_classes, fpc, None,
-                                                              settings.network.lstm_fusion, settings.train.dropout_keep_prob)
+                self.logits, _ = lstm_model.forward_pass_sequence(seq_dset, fused_dset, seq_dim, settings.network.lstm_params,
+                                                settings.network.num_classes, fpc, None, settings.train.dropout_keep_prob)
 
-            elif multi_workflow == defs.workflow.multi.lstm_ibias:
+            elif multi_workflow == defs.workflows.multi.lstm_ibias:
                 # use the fused clip vectors as an additional input at the first step
                 if seq_dim != fused_dim:
                     error("%s workflow requires same encoded dimension for both datasets. Instead it is %d, %d for fused and seq." %  \
@@ -547,13 +546,13 @@ class LRCN:
                 input_biased_seq = tf.concat([reshaped_fused_dset, reshaped_seq_dset], axis=1)
                 # increase the seq len to account for the input bias extra timestep
                 augmented_fpc = fpc + 1
+                info("Input bias augmented fpc: %d + 1 = %d" % (fpc, augmented_fpc))
                 # restore to batchsize*seqlen x embedding_dim
                 input_biased_seq = tf.reshape(input_biased_seq ,[augmented_fpc * batch_size, seq_dim])
                 # classify
                 lstm_model = lstm.lstm()
-                self.logits = lstm_model.forward_pass_sequence(input_biased_seq, None, seq_dim, settings.train.lstm_num_layers,
-                                                               settings.train.lstm_num_hidden, settings.network.num_classes,
-                                                               augmented_fpc, None, settings.network.lstm_fusion,
+                self.logits, _ = lstm_model.forward_pass_sequence(input_biased_seq, None, seq_dim, settings.network.lstm_params,
+                                                               settings.network.num_classes, augmented_fpc, None,
                                                                settings.train.dropout_keep_prob)
 
         info("Logits: %s" % str(self.logits.shape))
