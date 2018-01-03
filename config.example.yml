@@ -32,7 +32,8 @@ run:
     frame_fusion : [defs.fusion_type.early, defs.fusion_method.last]
     clip_fusion : [defs.fusion_type.late, defs.fusion_method.last]
     num_classes : 101
-    dataset_fusion: [defs.fusion_type.late, defs.fusion_method.avg]
+    # dataset fusion method, dataset fusion method, pre-workflow frame fusion method. Skip last arg if no framefusion.
+    dataset_fusion: [defs.fusion_type.late, defs.fusion_method.avg, defs.fusion_method.avg]
     multi_workflow: defs.workflow.lstm
     load_weights: True
 
@@ -81,6 +82,8 @@ serialize:
   input_files: [ "/path/to/imgfile1", "/path/to/imgfile2"]
 
   # run type
+  run_id: ""
+  seed: 1936
   do_shuffle: True
   do_serialize: True
   do_validate: True
@@ -98,6 +101,8 @@ serialize:
   raw_image_shape: (240,320,3)
   clipframe_mode: defs.clipframe_mode.iterative
   frame_format: "jpg"
+
+  logging_level : logging.INFO
 
 captions:
   # vocabulary to encode captions or produce embeddings.Set to None to generate.

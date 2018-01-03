@@ -197,6 +197,7 @@ class Settings:
         self.network.dataset_fusion_type, self.network.dataset_fusion_method = \
             defs.check(dataset_fusion[0], defs.fusion_type), defs.check(dataset_fusion[1], defs.fusion_method),
 
+
         frame_fusion = parse_seq(config["network"]["frame_fusion"])
         self.network.frame_fusion_type, self.network.frame_fusion_method = \
             defs.check(frame_fusion[0], defs.fusion_type), defs.check(frame_fusion[1], defs.fusion_method)
@@ -318,7 +319,8 @@ class Settings:
             error("No dataset configured to active phase [%s]" % self.phase)
         self.input_mode = defs.input_mode.get_from_workflow(self.workflow)
         for phase in self.phases:
-            for dset in self.datasets[phase]:
+            for i, dset in enumerate(self.datasets[phase]):
+                info("Reading dataset %d / %d : [%s]" % (i+1, len(self.datasets[phase]), dset.id))
                 if self.train:
                     dset.calculate_batches(self.train.batch_size, self.input_mode)
                 elif self.val:
