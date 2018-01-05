@@ -133,27 +133,28 @@ class Dataset:
         return image, label
 
     # read from tfrecord
-    def deserialize_from_tfrecord(self, iterator, images_per_iteration):
+    def deserialize_from_tfrecord(self, images_per_iteration):
         # images_per_iteration :
         images, labels = [], []
         for imidx in range(images_per_iteration):
             try:
-                string_record = next(iterator)
+                string_record = ""
+                string_record = next(self.iterator)
                 image, label = self.deserialize_example(string_record)
             except StopIteration:
                 if imidx < images_per_iteration:
-                    error('Encountered unexpected EOF while reading TFRecord example # %d in the batch.' % imidx)
+                    image, label = self.reread_serialized(imidx)
+                    #error('Encountered unexpected EOF while reading TFRecord example # %d in the batch.' % imidx)
                     #image, label = self.manually_read_image(imidx)
 
             except Exception as ex:
-                error('Encountered unexpected EOF while reading TFRecord example # %d in the batch.' % imidx)
-
+                warning('Encountered exception while reading TFRecord example # %d in the batch. Trying to print length:' % imidx)
                 try:
                     print("String record length:",len(string_record))
                 except:
                     print("Failed to print the length of the string record")
 
-                warning('Retrying to parse the example %d times' % (imidx, self.read_tries))
+                warning('Retrying to parse the idx %d example of %d times' % (imidx, self.read_tries))
                 counter = 0
                 success = False
                 while True:
@@ -171,16 +172,7 @@ class Dataset:
 
                         info("Serialization error recovered through example reread!")
                     else:
-                        # try the long way around: reset the iterator
-                        self.reset_iterator()
-                        # forward to the index within the current batch
-                        for _ in range(imidx):
-                            next(iterator)
-                        try:
-                            image, label = self.deserialize_example(string_record)
-                        except:
-                            error("Failed to troubleshoot serialization error.")
-                        info("Serialization error recovered through iterator restore!")
+                        image, label = self.reread_serialized(imidx)
                     break
 
             image = self.process_image(image)
@@ -188,6 +180,19 @@ class Dataset:
             labels.append(label)
 
         return images, labels
+
+    def reread_serialized(self, imidx):
+        # try to reread the long way around: reset the iterator
+        self.reset_iterator()
+        # forward to the index within the current batch
+        for _ in range(imidx):
+            string_record = next(self.iterator)
+        try:
+            image, label = self.deserialize_example(string_record)
+        except:
+            error("Failed to troubleshoot serialization error.")
+        info("Serialization error recovered: re-read through iterator restore!")
+        return image, label
 
     # fallback when tfrecord image reads fail
     def manually_read_image(self, idx_in_batch):
@@ -361,7 +366,7 @@ class Dataset:
             if not num_frames_in_batch:
                 error("Computed 0 frames in next batch.")
             # read the frames from the TFrecord serialization file
-            images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+            images, labels_per_frame = self.deserialize_from_tfrecord(num_frames_in_batch)
 
             # limit to <numclips> labels per video.
             fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
@@ -379,7 +384,7 @@ class Dataset:
             # handle potentially incomplete batches
             clips_left = len(self.batches) - self.batch_index
             num_frames_in_batch = math.min(clips_left * self.num_frames_per_clip, num_frames_in_batch)
-            images, labels_per_frame = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+            images, labels_per_frame = self.deserialize_from_tfrecord(num_frames_in_batch)
             # limit to 1 label per clip
             labels = labels_per_frame[0:: self.num_frames_per_clip]
 
@@ -387,7 +392,7 @@ class Dataset:
 
     def get_next_batch_frame_tfr(self, num_frames_in_batch):
         # read images from a TFrecord serialization file
-        images, labels = self.deserialize_from_tfrecord(self.iterator, num_frames_in_batch)
+        images, labels = self.deserialize_from_tfrecord(num_frames_in_batch)
         if self.input_mode == defs.input_mode.video:
             labels = [labels[l] for l in range(0, len(labels), self.num_frames_per_clip)]
         return images,labels
@@ -467,7 +472,7 @@ class Dataset:
         return image
 
     def initialize(self, id, path, mean_image, prepend_folder, desired_image_shape, imgproc, raw_image_shape,
-                   data_format, frame_format, batch_item, num_classes, tag, image_tries):
+                   data_format, frame_format, batch_item, num_classes, tag, read_tries):
         info("Initializing dataset [%s]" % id)
         self.id = id
         self.path = path
@@ -481,7 +486,7 @@ class Dataset:
         self.raw_image_shape = raw_image_shape
         self.num_classes = num_classes
         self.tag = tag
-        self.image_tries = image_tries
+        self.read_tries = read_tries
 
 
     def build_mean_image(self):
@@ -794,7 +799,6 @@ class Dataset:
             for _ in range(num_forward):
                 next(self.iterator)
                 pbar.update()
-
 
     # print active settings
     def tell(self):
