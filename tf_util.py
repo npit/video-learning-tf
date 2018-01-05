@@ -108,15 +108,29 @@ def make_conv(input_tensor, kernel_params, strides, scopename, init_w=(0.0, 0.1)
     return tf.nn.relu(value, name = scopename)
 
 def vec_seq_concat(seq_tensor, vec_tensor, sequence_length, order = 'vecfirst'):
+    """
+    concatenate each vector in vec_tensor to each element in seq_tensor, wrt the sequence length
+    :param seq_tensor:
+    :param vec_tensor:
+    :param sequence_length:
+    :param order:
+    :return:
+    """
     vec_dim = int(vec_tensor.shape[-1])
     # repeat the vec tensor to the sequence length
+    vec_tensor = print_tensor(vec_tensor, "original vec tensor")
+    seq_tensor = print_tensor(seq_tensor, "seq tensor")
     vec_tensor = tf.tile(vec_tensor, [1, sequence_length])
-    # restore to one image per column
+    vec_tensor = print_tensor(vec_tensor, "tiled tensor")
+
+    # restore to one vector per column
     vec_tensor = tf.reshape(vec_tensor, [-1, vec_dim])
+    vec_tensor = print_tensor(vec_tensor, "reshaped tiled tensor")
     # hor. concat with the seq_tensor
     if order == 'vecfirst':
-        res = tf.concat([vec_tensor, seq_tensor],axis=0)
+        res = tf.concat([vec_tensor, seq_tensor],axis=1)
     else:
-        res = tf.concat([seq_tensor, vec_tensor],axis=0)
+        res = tf.concat([seq_tensor, vec_tensor],axis=1)
+    vec_tensor = print_tensor(vec_tensor, "concatted tensor")
     return res
 

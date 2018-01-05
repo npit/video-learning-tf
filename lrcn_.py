@@ -354,7 +354,7 @@ class LRCN:
             else:
                 encodedFrames = inputData
 
-            # LSTM for frame sequence classification for frame encoding
+            # LSTM for frame sequence classificationfor frame encoding
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
             dropout = settings.train.dropout_keep_prob if settings.train else 0.0
@@ -522,7 +522,8 @@ class LRCN:
             # supply the non-fused dataset to an lstm input, and the fused one as a bias / concat type
             if multi_workflow == defs.workflows.multi.lstm_conc:
                 # concat the fused clip vectors to each framevector
-                enc_concatted = vec_seq_concat(fused_dset, seq_dset, fpc)
+                enc_concatted = vec_seq_concat(seq_dset, fused_dset, fpc)
+                enc_concatted = print_tensor(enc_concatted, "lstm-concatted tensor")
                 # proceed with regular lstm
                 self.create_actrec_lstm(settings, inputData = enc_concatted, inputLabels = self.inputLabels)
             elif multi_workflow == defs.workflows.multi.lstm_sbias:
