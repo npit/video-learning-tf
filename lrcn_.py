@@ -260,7 +260,6 @@ class LRCN:
             grads_vars = opt.compute_gradients(self.loss)
             grads = [grad for grad, _ in grads_vars]
             if settings.train.clip_norm:
-                info("Setting gradient clipping to a global norm of %d" % settings.train.clip_norm)
                 #clipmin, clipmax = settings.clip_grads
                 #max_norm = settings.clip_norm
                 grads, _ = tf.clip_by_global_norm(grads, settings.train.clip_norm)
@@ -767,7 +766,8 @@ class LRCN:
             ignorables.extend(self.dcnn_model.ignorable_variable_names)
         if self.lstm_model:
             ignorables.extend(self.lstm_model.ignorable_variable_names)
-        debug("Getting lrcn raw ignorables: %s" % str(ignorables))
+        if ignorables:
+            info("Getting lrcn raw ignorables: %s" % str(ignorables))
         ignorables = [drop_tensor_name_index(s) for s in ignorables]
         return list(set(ignorables))
 

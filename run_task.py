@@ -174,6 +174,8 @@ class Settings:
         self.workflow = defs.check(config['workflow'], defs.workflows)
         self.resume_file = config['resume_file']
         self.run_folder = config["run_folder"]
+        if "run_id" in config:
+            self.run_id = config["run_id"]
 
         # read phase information
         self.phases = defs.check(config["phase"], defs.phase)
@@ -363,12 +365,8 @@ class Settings:
         if self.run_id:
             run_identifiers = [self.workflow ,self.run_id , trainval_str]
         else:
-            if init_file == "config.ini":
-                run_identifiers = [self.workflow, trainval_str]
-            else:
-                # use the configuration file suffix
-                file_suffix = init_file.split(".")[-1]
-                run_identifiers = [self.workflow, file_suffix, trainval_str]
+            # use the configuration filename
+            run_identifiers = [self.workflow, os.path.basename(init_file), trainval_str]
 
         self.run_id = "_".join(run_identifiers)
         print("Initialized run [%s] from file %s" % (self.run_id, init_file))
@@ -737,6 +735,10 @@ def test(lrcn, settings, sess, tboard_writer, summaries):
         accuracy = lrcn.get_accuracy()
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
         info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
+        # if specified to save the logits, save the accuracy as well
+        if lrcn.validation_logits_save_interval is not None:
+            with open(os.path.join(settings.run_folder,"accuracy_" + settings.run_id), "w") as f:
+                f.write(str(accuracy))
         tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
     tboard_writer.flush()
     return True
