@@ -384,7 +384,7 @@ class Settings:
             warning("Non existent run folder %s - creating." % self.run_folder)
             os.mkdir(self.run_folder)
         # if config file is not in the run folder, copy it there to preserve a settings log
-        if not (os.path.basename(init_file) == self.run_folder):
+        if not (os.path.dirname(init_file) == self.run_folder):
             copyfile(init_file,  os.path.join(self.run_folder, os.path.basename(init_file)))
 
         # configure the logs
@@ -489,18 +489,21 @@ class Settings:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
                     for line in f:
                         savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
-                        if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
                         msg = "Resuming latest tf graph: [%s]" % savefile_graph
                         break
             else:
                 savefile_graph = os.path.join(self.resume_file)
                 msg = "Resuming specified tf graph: [%s]" % savefile_graph
 
+            # handle surrounding quotes
+            if savefile_graph.startswith('"') or savefile_graph.startswith("'"): savefile_graph = savefile_graph[1:-1]
             info(msg)
-            if not (os.path.exists(savefile_graph + ".meta")
-                    and os.path.exists(savefile_graph + ".index")
-                    and os.path.exists(savefile_graph + ".snap")):
-                error("Missing meta, snap or index part from graph savefile: %s" % savefile_graph)
+            required_files = [savefile_graph + "." + suf for suf in ["meta","index","snap"]]
+            exists = [os.path.exists(f) for f in required_files]
+            if any([ not ex for ex in exists]) :
+                for fname, ex in zip(required_files, exists):
+                    print("file: [%s], exists: [%s]" % (fname, str(ex)))
+                error("Missing meta, snap or index part: [%s], from graph savefile: %s" % (str(exists), savefile_graph))
 
             try:
                 # if we are in validation mode, the 'global_step' training variable is discardable

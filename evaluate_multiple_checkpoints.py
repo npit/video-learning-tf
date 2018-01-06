@@ -17,6 +17,8 @@ if len(sys.argv) < 2:
     print("Give config file.")
     exit(1)
 
+# parse checkpoints
+#####################
 config_file = sys.argv[1]
 with open(config_file,"r") as f:
     config = yaml.load(f)['run']
@@ -52,6 +54,7 @@ for line in checkpoints:
     print(line)
 
 # write configuration files
+###########################
 config_files = []
 for i in range(len(checkpoints)):
     conffile = config_file + ".%d" % (i+1)
@@ -60,11 +63,12 @@ for i in range(len(checkpoints)):
     value = wrap_quotes(checkpoints[i])
     curr_config['resume_file'] = value
     curr_config['phase'] = "defs.phase.val"
+    curr_config = { "run" : curr_config }
     with open(config_files[-1],"w") as f:
-        yaml.dump(curr_config, f)
+        yaml.dump(curr_config, f, default_flow_style = False)
 
 # run each validation run
 for conf in config_files:
     cmd = ("python3 run_task.py " + wrap_quotes(conf)).split(maxsplit=2)
     print(cmd)
-    #subprocess.run()
+    #subprocess.run(cmd)
