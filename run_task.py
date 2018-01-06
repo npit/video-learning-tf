@@ -336,6 +336,7 @@ class Settings:
         tag_to_read = "run"
         print("Initializing from file %s" % init_file)
         if init_file.endswith(".ini"):
+            error(".ini files deprecated.")
             config = configparser.ConfigParser()
             config.read(init_file)
             if not config[tag_to_read]:
@@ -343,10 +344,10 @@ class Settings:
             config = config[tag_to_read]
             for var in config:
                 exec("self.%s=%s" % (var, config[var]))
-        elif init_file.endswith("yml") or init_file.endswith("yaml"):
-            with open(init_file,"r") as f:
-                config = yaml.load(f)[tag_to_read]
-                self.read_config(config)
+        
+        with open(init_file,"r") as f:
+            config = yaml.load(f)[tag_to_read]
+            self.read_config(config)
         # set append the config.ini.xxx suffix to the run id
         trainval_str = ""
         if self.train:
