@@ -174,6 +174,8 @@ class Settings:
         self.workflow = defs.check(config['workflow'], defs.workflows)
         self.resume_file = config['resume_file']
         self.run_folder = config["run_folder"]
+        if "run_id" in config:
+            self.run_id = config["run_id"]
 
         # read phase information
         self.phases = defs.check(config["phase"], defs.phase)
@@ -196,6 +198,7 @@ class Settings:
         dataset_fusion = parse_seq(config["network"]["dataset_fusion"])
         self.network.dataset_fusion_type, self.network.dataset_fusion_method = \
             defs.check(dataset_fusion[0], defs.fusion_type), defs.check(dataset_fusion[1], defs.fusion_method),
+
 
         frame_fusion = parse_seq(config["network"]["frame_fusion"])
         self.network.frame_fusion_type, self.network.frame_fusion_method = \
@@ -298,7 +301,9 @@ class Settings:
                     ans = input("continue? (y/n) : ")
                     if ans != "y":
                         error("Aborted.")
-            read_tries = int(dataobj["read_tries"])
+
+            val = int(dataobj["read_tries"]) if "read_tries" in dataobj else 1
+            read_tries = val
             dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
                                 frame_format, batch_item, self.network.num_classes, tag, read_tries)
 
@@ -316,7 +321,8 @@ class Settings:
             error("No dataset configured to active phase [%s]" % self.phase)
         self.input_mode = defs.input_mode.get_from_workflow(self.workflow)
         for phase in self.phases:
-            for dset in self.datasets[phase]:
+            for i, dset in enumerate(self.datasets[phase]):
+                info("Reading dataset %d / %d : [%s]" % (i+1, len(self.datasets[phase]), dset.id))
                 if self.train:
                     dset.calculate_batches(self.train.batch_size, self.input_mode)
                 elif self.val:
@@ -332,6 +338,7 @@ class Settings:
         tag_to_read = "run"
         print("Initializing from file %s" % init_file)
         if init_file.endswith(".ini"):
+            error(".ini files deprecated.")
             config = configparser.ConfigParser()
             config.read(init_file)
             if not config[tag_to_read]:
@@ -339,10 +346,10 @@ class Settings:
             config = config[tag_to_read]
             for var in config:
                 exec("self.%s=%s" % (var, config[var]))
-        elif init_file.endswith("yml") or init_file.endswith("yaml"):
-            with open(init_file,"r") as f:
-                config = yaml.load(f)[tag_to_read]
-                self.read_config(config)
+        
+        with open(init_file,"r") as f:
+            config = yaml.load(f)[tag_to_read]
+            self.read_config(config)
         # set append the config.ini.xxx suffix to the run id
         trainval_str = ""
         if self.train:
@@ -358,12 +365,8 @@ class Settings:
         if self.run_id:
             run_identifiers = [self.workflow ,self.run_id , trainval_str]
         else:
-            if init_file == "config.ini":
-                run_identifiers = [self.workflow, trainval_str]
-            else:
-                # use the configuration file suffix
-                file_suffix = init_file.split(".")[-1]
-                run_identifiers = [self.workflow, file_suffix, trainval_str]
+            # use the configuration filename
+            run_identifiers = [self.workflow, os.path.basename(init_file), trainval_str]
 
         self.run_id = "_".join(run_identifiers)
         print("Initialized run [%s] from file %s" % (self.run_id, init_file))
@@ -379,7 +382,7 @@ class Settings:
             warning("Non existent run folder %s - creating." % self.run_folder)
             os.mkdir(self.run_folder)
         # if config file is not in the run folder, copy it there to preserve a settings log
-        if not (os.path.basename(init_file) == self.run_folder):
+        if not (os.path.dirname(init_file) == self.run_folder):
             copyfile(init_file,  os.path.join(self.run_folder, os.path.basename(init_file)))
 
         # configure the logs
@@ -484,18 +487,21 @@ class Settings:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
                     for line in f:
                         savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
-                        if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
                         msg = "Resuming latest tf graph: [%s]" % savefile_graph
                         break
             else:
                 savefile_graph = os.path.join(self.resume_file)
                 msg = "Resuming specified tf graph: [%s]" % savefile_graph
 
+            # handle surrounding quotes
+            if savefile_graph.startswith('"') or savefile_graph.startswith("'"): savefile_graph = savefile_graph[1:-1]
             info(msg)
-            if not (os.path.exists(savefile_graph + ".meta")
-                    and os.path.exists(savefile_graph + ".index")
-                    and os.path.exists(savefile_graph + ".snap")):
-                error("Missing meta, snap or index part from graph savefile: %s" % savefile_graph)
+            required_files = [savefile_graph + "." + suf for suf in ["meta","index","snap"]]
+            exists = [os.path.exists(f) for f in required_files]
+            if any([ not ex for ex in exists]) :
+                for fname, ex in zip(required_files, exists):
+                    print("file: [%s], exists: [%s]" % (fname, str(ex)))
+                error("Missing meta, snap or index part: [%s], from graph savefile: %s" % (str(exists), savefile_graph))
 
             try:
                 # if we are in validation mode, the 'global_step' training variable is discardable
@@ -729,6 +735,10 @@ def test(lrcn, settings, sess, tboard_writer, summaries):
         accuracy = lrcn.get_accuracy()
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
         info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
+        # if specified to save the logits, save the accuracy as well
+        if lrcn.validation_logits_save_interval is not None:
+            with open(os.path.join(settings.run_folder,"accuracy_" + settings.run_id), "w") as f:
+                f.write(str(accuracy))
         tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
     tboard_writer.flush()
     return True

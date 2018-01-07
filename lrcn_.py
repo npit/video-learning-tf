@@ -260,7 +260,6 @@ class LRCN:
             grads_vars = opt.compute_gradients(self.loss)
             grads = [grad for grad, _ in grads_vars]
             if settings.train.clip_norm:
-                info("Setting gradient clipping to a global norm of %d" % settings.train.clip_norm)
                 #clipmin, clipmax = settings.clip_grads
                 #max_norm = settings.clip_norm
                 grads, _ = tf.clip_by_global_norm(grads, settings.train.clip_norm)
@@ -277,7 +276,7 @@ class LRCN:
     # Activity recognition
     def create_actrec_singleframe(self, settings, inputData = None, inputLabels = None):
         if inputData is None:
-            info("Dcnn workflow [%s][%s]" % (settings.network.frame_fusion_type, settings.network.frame_fusion_method))
+            info("Dcnn workflow [%s][%s][%s]" % (settings.network.frame_fusion_type, settings.network.frame_fusion_method, settings.network.frame_encoding_layer))
             # define label inputs
             self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
             self.inputData = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames')
@@ -347,10 +346,14 @@ class LRCN:
             if settings.network.frame_fusion_type != defs.fusion_type.none:
                 error("The LSTM workflow is only compatible with frame fusion mode %s. Specify lstm fusion in the network.lstm_params" % defs.fusion_type.none)
 
-            # DCNN for frame encoding
-            encodedFrames = self.make_dcnn(settings)
+            # create vectorial input, if not supplied
+            if inputData is None:
+                # DCNN for frame encoding
+                encodedFrames = self.make_dcnn(settings)
+            else:
+                encodedFrames = inputData
 
-            # LSTM for frame sequence classification for frame encoding
+            # LSTM for frame sequence classificationfor frame encoding
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
             dropout = settings.train.dropout_keep_prob if settings.train else 0.0
@@ -399,6 +402,9 @@ class LRCN:
         # dataset and frame fusion parameters. The classification itself is determined by the multi_workflow network
         # parameter
 
+
+        info("%s workflow type: [%s]" % (settings.workflow, settings.network.multi_workflow))
+
         # a dcnn for each dataset, mapping an image to a vector.
         self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
         self.input.append((self.inputLabels, defs.net_input.labels, defs.dataset_tag.main))
@@ -409,10 +415,9 @@ class LRCN:
         input1 = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames1')
         self.input.append((input1, defs.net_input.visual, defs.dataset_tag.main))
         self.inputData = input1
-        encoded1 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer)
+        encoded1, dcnn1 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer, get_model = True)
         dim1 = int(encoded1.shape[-1])
         fpc1 = settings.get_dataset_by_tag(defs.dataset_tag.main)[0].num_frames_per_clip
-        dcnn1 = self.dcnn_model
 
         # make dcnn for auxiliary input
         ids2 = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.aux)])
@@ -420,49 +425,54 @@ class LRCN:
         input2 = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames2')
         self.input.append((input2, defs.net_input.visual, defs.dataset_tag.aux))
         self.inputData = input2
-        encoded2 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer)
+        encoded2, dcnn2 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer, get_model = True)
         dim2 = int(encoded2.shape[-1])
         fpc2 = settings.get_dataset_by_tag(defs.dataset_tag.aux)[0].num_frames_per_clip
-        dcnn2 = self.dcnn_model
 
-        # true late fusion can be evaluated by running each dataset separately
-        # instead here early (resp. late) refers to fusing the dataset before (resp. after) fusing the frames
-        # available modes are early fusion and lstm bias.
-        fused_fpc = False
-        # early fusion: fuse before dataset fusion
+
+        # early / late frame fusion: framefusion before / after the classification
+        # early / late frame fusion: framefusion before / after the frame fusion, if the latter is early. Always b4 classification
+        fusion_order = []
         if settings.network.dataset_fusion_type == defs.fusion_type.early:
-            # fuse frames now, before dataset fusion
-            encoded1 = tf.reshape(encoded1, ( -1, fpc1, dim1))
-            encoded1 = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
-            info("%s: Early fused frames per clip via %s: %s" % (ids1, settings.network.frame_fusion_method, str(encoded1.shape)))
-            # fuse the other - aux
-            encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
-            encoded2 = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
-            fused_fpc = True
-            info("%s: Early fused frames per clip via %s: %s" % (ids2, settings.network.frame_fusion_method, str(encoded2.shape)))
-        else:
-            if fpc1 != fpc2:
-                error("Non-early dataset fusion requires same fpc across datasets")
-
-        # fuse across datasets
-        if settings.network.dataset_fusion_method == defs.fusion_method.avg:
-            if dim1 != dim2:
-                error("%s dataset fusion requires same vector dim." % (settings.network.dataset_fusion_method))
-            conc = tf.stack([encoded1, encoded2])
-            fused = tf.reduce_mean(conc,axis=0)
-        elif settings.network.dataset_fusion_method == defs.fusion_method.concat:
-            fused = tf.concat([encoded1, encoded2],axis=1)
-        else:
-            error("Only %s and %s fusion methods are meaningfull for the %s workflow" % \
-                  (defs.fusion_method.avg, defs.fusion_method.concat, settings.workflow))
-
-        info("Fused dataset vectors via %s: %s" % (settings.network.dataset_fusion_method, str(fused.shape)))
-
+            fusion_order.append("dataset")
+        if settings.network.frame_fusion_type == defs.fusion_type.early:
+            fusion_order.append("frames")
         if settings.network.dataset_fusion_type == defs.fusion_type.late:
-            dataset_fused_dim = int(fused.shape[-1])
-            fused = tf.reshape(encoded1, [ -1, fpc1, dataset_fused_dim])
-            fused = apply_temporal_fusion(fused, dataset_fused_dim, fpc1, settings.network.frame_fusion_method)
-            debug("Late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
+            fusion_order.append("dataset")
+
+
+        for i, fusion in enumerate(fusion_order):
+            if fusion == "dataset":
+                if i == 0 and fpc1 != fpc2:
+                    error("Attempted early dataset fusion with different fpcs: %d and %d for %s and %s." % (fpc1, fpc2, ids1, ids2))
+                # dataset before frames
+                if settings.network.dataset_fusion_method == defs.fusion_method.avg:
+                    if dim1 != dim2:
+                        error("%s dataset fusion requires same vector dim, but it's %d and %d for %s and %s." % (settings.network.dataset_fusion_method, dim1, dim2, ids1, ids2))
+                    conc = tf.stack([encoded1, encoded2])
+                    fused = tf.reduce_mean(conc,axis=0)
+                elif settings.network.dataset_fusion_method == defs.fusion_method.concat:
+                    fused = tf.concat([encoded1, encoded2],axis=1)
+                else:
+                    error("Only %s and %s fusion methods are meaningfull for the %s workflow" % \
+                          (defs.fusion_method.avg, defs.fusion_method.concat, settings.workflow))
+                dataset_fused_dim = int(fused.shape[-1])
+                info("Fused dataset vectors via %s. Result: %s" % (settings.network.dataset_fusion_method, str(fused.shape)))
+            elif fusion == "frames":
+                if i > 0 and "dataset" in fusion_order[:i]:
+                    # already fused dsets
+                    fused = tf.reshape(fused, [ -1, fpc1, dataset_fused_dim])
+                    fused = apply_temporal_fusion(fused, dataset_fused_dim, fpc1, settings.network.frame_fusion_method)
+                    info("Early-late fused frames per clip via %s: %s" % (settings.network.frame_fusion_method, str(fused.shape)))
+                else:
+                    # fuse the video frames of the main dataset
+                    encoded1 = tf.reshape(encoded1, ( -1, fpc1, dim1))
+                    encoded1 = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
+                    info("%s: Early-early fused frames per clip via %s: %s" % (ids1, settings.network.frame_fusion_method, str(encoded1.shape)))
+                    # fuse the other - aux
+                    encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
+                    encoded2 = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
+                    info("%s: Early-early fused frames per clip via %s: %s" % (ids2, settings.network.frame_fusion_method, str(encoded2.shape)))
 
         # classify
         multi_workflow = settings.network.multi_workflow
@@ -471,21 +481,30 @@ class LRCN:
             # classify with an fc layer
             info("Using multi workflow: [%s]" % multi_workflow)
             self.logits = convert_dim_fc(fused, settings.network.num_classes)
-        elif multi_workflow == defs.workflows.multi.lstm or multi_workflow == defs.workflows.multi.singleframe:
+            if "frames" not in fusion_order:
+                # if no frame fusion specified: better be applicable
+                if settings.network.frame_fusion_type == defs.fusion_type.none and fpc1 != 1:
+                    error("Did not specify frame fusion method in [%s] workflow and fpc is %d" % (multi_workflow, fpc1))
+                # it's gotta be late
+                elif settings.network.frame_fusion_type != defs.fusion_type.late:
+                    error("Arrived at multi fc workflow with unfused frames, fusion type is %s." % settings.network.frame_fusion_type)
+
+                # apply late fusion, if not already (i.e. early dataset fusion)
+                self.logits = print_tensor(self.logits, "raw fc logits")
+                self.logits = tf.reshape(self.logits,[-1, fpc1, settings.network.num_classes])
+                self.logits = apply_temporal_fusion(self.logits, dataset_fused_dim, fpc1,settings.network.frame_fusion_method)
+
+        elif multi_workflow == defs.workflows.multi.lstm:
             # these workflows operate on data with no fused frames
             # data has been fused across datasets - can classify
-            if not settings.network.frame_fusion_type == defs.fusion_type.none:
-                error("[%s] fused workflow requires frame fusion type to be" % (multi_workflow, defs.fusion_type.none))
-
-            if multi_workflow == defs.workflows.multi.lstm:
-                self.create_actrec_lstm(settings, inputData = fused, inputLabels = self.inputLabels)
+            if settings.network.frame_fusion_type != defs.fusion_type.none:
+                error("[%s] fused workflow requires frame fusion type to be [%s]" % (multi_workflow, defs.fusion_type.none))
+            self.create_actrec_lstm(settings, inputData = fused, inputLabels = self.inputLabels)
                 #self.lstm_model = lstm.lstm()
                 #dataset_fused_dim = int(fused.shape[-1])
                 #self.logits, _ = self.lstm_model.forward_pass_sequence(fused, None, dataset_fused_dim , settings.network.lstm_num_layers,
                 #                            settings.network.lstm_num_hidden, settings.network.num_classes, fpc1, None,
                 #                            settings.network.frame_fusion_method, settings.train.dropout_keep_prob)
-            elif multi_workflow == defs.workflows.multi.singleframe:
-                self.create_actrec_singleframe(settings, inputData = fused, inputLabels = self.inputLabels)
         else:
             # these workflows require only *one* of the datasets to be frame-fused
             # the dataset to be fused will be the one with the aux tag
@@ -502,17 +521,17 @@ class LRCN:
             # supply the non-fused dataset to an lstm input, and the fused one as a bias / concat type
             if multi_workflow == defs.workflows.multi.lstm_conc:
                 # concat the fused clip vectors to each framevector
-                enc_concatted = vec_seq_concat(fused_dset, seq_dset, fpc)
+                enc_concatted = vec_seq_concat(seq_dset, fused_dset, fpc)
+                enc_concatted = print_tensor(enc_concatted, "lstm-concatted tensor")
                 # proceed with regular lstm
                 self.create_actrec_lstm(settings, inputData = enc_concatted, inputLabels = self.inputLabels)
-            elif multi_workflow == defs.workflow.multi.lstm_sbias:
+            elif multi_workflow == defs.workflows.multi.lstm_sbias:
                 # use the fused clip vectors as a state bias
                 lstm_model = lstm.lstm()
-                self.logits = lstm_model.forward_pass_sequence(seq_dset, fused_dset, seq_dim, settings.train.lstm_num_layers,
-                                                               settings.train.lstm_num_hidden, settings.network.num_classes, fpc, None,
-                                                              settings.network.lstm_fusion, settings.train.dropout_keep_prob)
+                self.logits, _ = lstm_model.forward_pass_sequence(seq_dset, fused_dset, seq_dim, settings.network.lstm_params,
+                                                settings.network.num_classes, fpc, None, settings.train.dropout_keep_prob)
 
-            elif multi_workflow == defs.workflow.multi.lstm_ibias:
+            elif multi_workflow == defs.workflows.multi.lstm_ibias:
                 # use the fused clip vectors as an additional input at the first step
                 if seq_dim != fused_dim:
                     error("%s workflow requires same encoded dimension for both datasets. Instead it is %d, %d for fused and seq." %  \
@@ -527,13 +546,13 @@ class LRCN:
                 input_biased_seq = tf.concat([reshaped_fused_dset, reshaped_seq_dset], axis=1)
                 # increase the seq len to account for the input bias extra timestep
                 augmented_fpc = fpc + 1
+                info("Input bias augmented fpc: %d + 1 = %d" % (fpc, augmented_fpc))
                 # restore to batchsize*seqlen x embedding_dim
                 input_biased_seq = tf.reshape(input_biased_seq ,[augmented_fpc * batch_size, seq_dim])
                 # classify
                 lstm_model = lstm.lstm()
-                self.logits = lstm_model.forward_pass_sequence(input_biased_seq, None, seq_dim, settings.train.lstm_num_layers,
-                                                               settings.train.lstm_num_hidden, settings.network.num_classes,
-                                                               augmented_fpc, None, settings.network.lstm_fusion,
+                self.logits, _ = lstm_model.forward_pass_sequence(input_biased_seq, None, seq_dim, settings.network.lstm_params,
+                                                               settings.network.num_classes, augmented_fpc, None,
                                                                settings.train.dropout_keep_prob)
 
         info("Logits: %s" % str(self.logits.shape))
@@ -681,7 +700,7 @@ class LRCN:
         debug("input labels : [%s]" % self.inputLabels)
 
     # make then dcnn network
-    def make_dcnn(self, settings, output_layer = None):
+    def make_dcnn(self, settings, output_layer = None, get_model = False):
 
         # make sure dcnn weights are good2go
         self.dcnn_weights_file = os.path.join(os.getcwd(), "models/alexnet/bvlc_alexnet.npy")
@@ -689,14 +708,18 @@ class LRCN:
             error("Weights file %s does not exist." % self.dcnn_weights_file)
 
         # DCNN for frame encoding
-        self.dcnn_model = alexnet.dcnn()
+        model = alexnet.dcnn()
         # get the first dataset through the DCNN
-        self.dcnn_model.create(self.inputData, self.dcnn_weights_file, settings.network.num_classes, output_layer, settings.network.load_weights)
-        outputData = self.dcnn_model.get_output()
+        model.create(self.inputData, self.dcnn_weights_file, settings.network.num_classes, output_layer, settings.network.load_weights)
+        outputData = model.get_output()
         debug("dcnn input : [%s]" % self.inputData.shape)
         debug("dcnn output : [%s]" % outputData.shape)
         outputData = print_tensor(outputData, "encoded frames")
-        return outputData
+        if not get_model:
+            self.dcnn_model = model
+            return outputData
+        else:
+            return outputData, model
 
     # video description
     def create_videodesc_fusion(self, settings):
@@ -743,7 +766,8 @@ class LRCN:
             ignorables.extend(self.dcnn_model.ignorable_variable_names)
         if self.lstm_model:
             ignorables.extend(self.lstm_model.ignorable_variable_names)
-        debug("Getting lrcn raw ignorables: %s" % str(ignorables))
+        if ignorables:
+            info("Getting lrcn raw ignorables: %s" % str(ignorables))
         ignorables = [drop_tensor_name_index(s) for s in ignorables]
         return list(set(ignorables))
 
