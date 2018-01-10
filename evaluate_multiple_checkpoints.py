@@ -1,5 +1,5 @@
 import sys, yaml
-from os.path import join
+from os.path import join, basename
 import os
 import subprocess
 
@@ -68,17 +68,20 @@ for i in range(len(checkpoints)):
 if not "onlyprint" in opts:
     for i, conf in enumerate(config_files):
         cmd = ("python3 run_task.py " + conf).split(maxsplit=2)
-        print("Running %d/%d validation, with command:" % (i+1, len(config_files),cmd)
+        print("Running %d/%d validation, with command:" % (i+1, len(config_files)),cmd)
         subprocess.run(cmd)
 
 # print out accuracies
 print("Getting results from",run_folder)
 dirfiles = [ff for ff in os.listdir(run_folder)]
-for (conf, rid) in zip(config_files, run_ids):
+for i,(conf, rid) in enumerate(zip(config_files, run_ids)):
     accfiles = [f for f in dirfiles if rid in  f and "accuracy" in f]
     if len(accfiles) > 1:
         print("(!) Multiple accuracy files for",rid,":",accfiles)
+    if not accfiles:
+        print("(!) No accuracy files for",rid,":",accfiles)
+        continue
     accfile = accfiles[0]
     with open(join(run_folder,accfile),"r") as f:
         accuracy = f.read()
-    print(rid,accfile,accuracy)
+    print(rid,accfile,basename(checkpoints[i]),accuracy)

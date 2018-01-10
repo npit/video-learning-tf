@@ -409,23 +409,27 @@ class LRCN:
         self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
         self.input.append((self.inputLabels, defs.net_input.labels, defs.dataset_tag.main))
 
+        if type(settings.network.frame_encoding_layer) != list:
+            settings.network.frame_encoding_layer = [settings.network.frame_encoding_layer for _ in range(2)]
+
+        enc_layer_main, enc_layer_aux = settings.network.frame_encoding_layer
         # make a dcnn for the main input
-        ids1 = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.main)])
-        info("Dcnn [%s]-[%s]" % (defs.dataset_tag.main, ids1))
+        ids_main = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.main)])
+        info("Dcnn [%s]-[%s]-[%s]" % (defs.dataset_tag.main, ids_main, enc_layer_main))
         input1 = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames1')
         self.input.append((input1, defs.net_input.visual, defs.dataset_tag.main))
         self.inputData = input1
-        encoded1, dcnn1 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer, get_model = True)
+        encoded1, dcnn1 = self.make_dcnn(settings, output_layer=enc_layer_main, get_model = True)
         dim1 = int(encoded1.shape[-1])
         fpc1 = settings.get_dataset_by_tag(defs.dataset_tag.main)[0].num_frames_per_clip
 
         # make dcnn for auxiliary input
-        ids2 = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.aux)])
-        info("Dcnn [%s]-[%s]" % (defs.dataset_tag.aux, ids2))
+        ids_aux = ",".join([d.id for d in settings.get_dataset_by_tag(defs.dataset_tag.aux)])
+        info("Dcnn [%s]-[%s]-[%s]" % (defs.dataset_tag.aux, ids_aux, enc_layer_aux))
         input2 = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames2')
         self.input.append((input2, defs.net_input.visual, defs.dataset_tag.aux))
         self.inputData = input2
-        encoded2, dcnn2 = self.make_dcnn(settings, output_layer=settings.network.frame_encoding_layer, get_model = True)
+        encoded2, dcnn2 = self.make_dcnn(settings, output_layer=enc_layer_aux, get_model = True)
         dim2 = int(encoded2.shape[-1])
         fpc2 = settings.get_dataset_by_tag(defs.dataset_tag.aux)[0].num_frames_per_clip
 
@@ -433,10 +437,13 @@ class LRCN:
         # early / late frame fusion: framefusion before / after the classification
         # early / late frame fusion: framefusion before / after the frame fusion, if the latter is early. Always b4 classification
         fusion_order = []
+        # early dataset fusion: before frame fusion
         if settings.network.dataset_fusion_type == defs.fusion_type.early:
             fusion_order.append("dataset")
+        # early frame fusion: before classification
         if settings.network.frame_fusion_type == defs.fusion_type.early:
             fusion_order.append("frames")
+        # late dataset fusion: after frame fusion
         if settings.network.dataset_fusion_type == defs.fusion_type.late:
             fusion_order.append("dataset")
 
@@ -444,11 +451,11 @@ class LRCN:
         for i, fusion in enumerate(fusion_order):
             if fusion == "dataset":
                 if i == 0 and fpc1 != fpc2:
-                    error("Attempted early dataset fusion with different fpcs: %d and %d for %s and %s." % (fpc1, fpc2, ids1, ids2))
+                    error("Attempted early dataset fusion with different fpcs: %d and %d for %s and %s." % (fpc1, fpc2, ids_main, ids_aux))
                 # dataset before frames
                 if settings.network.dataset_fusion_method == defs.fusion_method.avg:
                     if dim1 != dim2:
-                        error("%s dataset fusion requires same vector dim, but it's %d and %d for %s and %s." % (settings.network.dataset_fusion_method, dim1, dim2, ids1, ids2))
+                        error("%s dataset fusion requires same vector dim, but it's %d and %d for %s and %s." % (settings.network.dataset_fusion_method, dim1, dim2, ids_main, ids_aux))
                     conc = tf.stack([encoded1, encoded2])
                     fused = tf.reduce_mean(conc,axis=0)
                 elif settings.network.dataset_fusion_method == defs.fusion_method.concat:
@@ -468,11 +475,11 @@ class LRCN:
                     # fuse the video frames of the main dataset
                     encoded1 = tf.reshape(encoded1, ( -1, fpc1, dim1))
                     encoded1 = apply_temporal_fusion(encoded1, dim1, fpc1, settings.network.frame_fusion_method)
-                    info("%s: Early-early fused frames per clip via %s: %s" % (ids1, settings.network.frame_fusion_method, str(encoded1.shape)))
+                    info("%s: Early-early fused frames per clip via %s: %s" % (ids_main, settings.network.frame_fusion_method, str(encoded1.shape)))
                     # fuse the other - aux
                     encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
                     encoded2 = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
-                    info("%s: Early-early fused frames per clip via %s: %s" % (ids2, settings.network.frame_fusion_method, str(encoded2.shape)))
+                    info("%s: Early-early fused frames per clip via %s: %s" % (ids_aux, settings.network.frame_fusion_method, str(encoded2.shape)))
 
         # classify
         multi_workflow = settings.network.multi_workflow

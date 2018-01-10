@@ -189,7 +189,11 @@ class Settings:
             self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
         self.network.load_weights = config['network']['load_weights']
         self.network.image_shape = parse_seq(config["network"]["image_shape"])
+        # encoding layer. For multi workflow (only), it can be a list
         self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
+        if type(self.network.frame_encoding_layer) == list and self.workflow != defs.workflows.acrec.multi:
+            error("Multiple frame encoding methods supplied: %s in %s workflow, but that is available only for [%s] workflow" %
+                  (self.network.frame_encoding_layer, self.workflow, defs.workflows.acrec.multi))
         self.network.lstm_params = parse_seq(config['network']['lstm_params'])
         if len(self.network.lstm_params) != 3:
             error("Expected lstm params are [num_hidden, num_layers, fusion_method]")
