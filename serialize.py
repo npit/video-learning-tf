@@ -709,9 +709,10 @@ def main():
     if settings.do_validate:
         info("Validating serialization")
         validate(written_data, errors_per_file, settings)
-    # move log file to output directory, if specified
+    # move log and config files to output directory, if specified
     if settings.output_folder is not None:
-        move(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
+        copyfile(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
+        copyfile(settings.init_file, os.path.join(settings.output_folder, basename(settings.init_file)))
 
 
 if __name__ == '__main__':
