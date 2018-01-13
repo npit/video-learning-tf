@@ -356,7 +356,7 @@ class LRCN:
             # LSTM for frame sequence classificationfor frame encoding
             self.lstm_model = lstm.lstm()
             input_dim = int(encodedFrames.shape[1])
-            dropout = settings.train.dropout_keep_prob if settings.train else 0.0
+            dropout = settings.train.dropout_keep_prob if settings.phase == defs.phase.train else 0.0
             self.logits, output_state = self.lstm_model.forward_pass_sequence(encodedFrames, None, input_dim, settings.network.lstm_params,
                                 settings.network.num_classes, settings.get_datasets()[0].num_frames_per_clip, None, dropout)
             if settings.network.lstm_params[2] == defs.fusion_method.state:
@@ -514,6 +514,7 @@ class LRCN:
                 #                            settings.network.frame_fusion_method, settings.train.dropout_keep_prob)
         else:
             # these workflows require only *one* of the datasets to be frame-fused
+            # all fusions are performed here, hence frame and dataset fusion types need to be set to none
             # the dataset to be fused will be the one with the aux tag
             # fuse the aux dataset
             encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
@@ -535,8 +536,9 @@ class LRCN:
             elif multi_workflow == defs.workflows.multi.lstm_sbias:
                 # use the fused clip vectors as a state bias
                 lstm_model = lstm.lstm()
+                dropout = settings.train.dropout_keep_prob if settings.phase == defs.phase.train else 0.0
                 self.logits, _ = lstm_model.forward_pass_sequence(seq_dset, fused_dset, seq_dim, settings.network.lstm_params,
-                                                settings.network.num_classes, fpc, None, settings.train.dropout_keep_prob)
+                                                settings.network.num_classes, fpc, None, dropout)
 
             elif multi_workflow == defs.workflows.multi.lstm_ibias:
                 # use the fused clip vectors as an additional input at the first step
@@ -558,9 +560,10 @@ class LRCN:
                 input_biased_seq = tf.reshape(input_biased_seq ,[augmented_fpc * batch_size, seq_dim])
                 # classify
                 lstm_model = lstm.lstm()
+                dropout = settings.train.dropout_keep_prob if settings.phase == defs.phase.train else None
                 self.logits, _ = lstm_model.forward_pass_sequence(input_biased_seq, None, seq_dim, settings.network.lstm_params,
                                                                settings.network.num_classes, augmented_fpc, None,
-                                                               settings.train.dropout_keep_prob)
+                                                               dropout)
 
         info("Logits: %s" % str(self.logits.shape))
 
