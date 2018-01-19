@@ -560,7 +560,7 @@ class LRCN:
                 input_biased_seq = tf.reshape(input_biased_seq ,[augmented_fpc * batch_size, seq_dim])
                 # classify
                 lstm_model = lstm.lstm()
-                dropout = settings.train.dropout_keep_prob if settings.phase == defs.phase.train else None
+                dropout = settings.train.dropout_keep_prob if settings.phase == defs.phase.train else 0.0
                 self.logits, _ = lstm_model.forward_pass_sequence(input_biased_seq, None, seq_dim, settings.network.lstm_params,
                                                                settings.network.num_classes, augmented_fpc, None,
                                                                dropout)
