@@ -621,6 +621,7 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
     run_batch_count = 0
 
     save_interval = settings.compute_save_interval()
+    min_train_loss = (1000, -1)
     info("Starting train")
     for _ in range(settings.train.epoch_index, settings.train.epochs):
         while settings.loop():
@@ -633,6 +634,9 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
             run_batch_count += 1
             summaries_train, batch_loss, learning_rate, settings.global_step, _ = sess.run(
                 [summaries.train_merged, lrcn.loss, lrcn.current_lr, lrcn.global_step, lrcn.optimizer],feed_dict=fdict)
+            # mark minimum training loss
+            if min_train_loss[0] > batch_loss:
+                min_train_loss = (batch_loss, settings.global_step)
             # calcluate the number of bits
             nats = batch_loss / math.log(settings.network.num_classes)
             info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f / %2.3f " % \
@@ -658,6 +662,9 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
         settings.train.epoch_index = settings.train.epoch_index + 1
         # reset phase
         settings.rewind_datasets()
+
+    # Report the minimum training loss
+    info("Minimum training loss: %2.2f on global index %d" % (min_train_loss[0], min_train_loss[1]))
 
     # if we did not save already at the just completed batch, do it now at the end of training
     if run_batch_count > 0 and not (run_batch_count %  save_interval == 0):

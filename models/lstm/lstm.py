@@ -66,6 +66,8 @@ class lstm(Trainable):
 
         info("LSTM structure [hidden, layers, fusion]: %s" % lstm_params)
         num_hidden, num_layers, fusion_method = lstm_params
+        if dropout_prob is None:
+            dropout_prob = 0.0
         with tf.name_scope("lstm_net") as namescope:
             # define the cell(s)
             cells = self.make_cell(num_hidden, num_layers)
