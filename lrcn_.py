@@ -144,7 +144,7 @@ class LRCN:
             lr_per_batch.extend([current_lr for _ in range(decay_period)])
 
         lr_per_batch = lr_per_batch[:total_num_batches]
-        log_message += ", mid / last lr is: %1.5f, %1.5f, total drops: %d" % (lr_per_batch[len(lr_per_batch)//2], lr_per_batch[-1], len(lr_per_batch))
+        log_message += ", mid / last lr is: %1.5f, %1.5f, total drops: %d" % (lr_per_batch[len(lr_per_batch)//2], lr_per_batch[-1], len(set(lr_per_batch)))
         if lr_drop_offset:
             lr_per_batch = [base_lr for _ in range(lr_drop_offset)] + lr_per_batch[0:-lr_drop_offset]
             log_message += " - with a %d-step offset " % lr_drop_offset
@@ -448,7 +448,6 @@ class LRCN:
             fusion_order.append("dataset")
 
 
-        debug("Applying fusion in the order: %s" % str(fusion_order))
         for i, fusion in enumerate(fusion_order):
             if fusion == "dataset":
                 if i == 0 and fpc1 != fpc2:
@@ -505,10 +504,8 @@ class LRCN:
         elif multi_workflow == defs.workflows.multi.lstm:
             # these workflows operate on data with no fused frames
             # data has been fused across datasets - can classify
-            if settings.network.dataset_fusion_type == defs.fusion_type.none:
-                error("Multi-workflow [%s] is incompatible with fusion type [%s]" % (multi_workflow, defs.fusion_type.none))
             if settings.network.frame_fusion_type != defs.fusion_type.none:
-                error("Multi-workflow [%s] fused workflow requires frame fusion type to be [%s]" % (multi_workflow, defs.fusion_type.none))
+                error("[%s] fused workflow requires frame fusion type to be [%s]" % (multi_workflow, defs.fusion_type.none))
             self.create_actrec_lstm(settings, inputData = fused, inputLabels = self.inputLabels)
                 #self.lstm_model = lstm.lstm()
                 #dataset_fused_dim = int(fused.shape[-1])
@@ -520,8 +517,6 @@ class LRCN:
             # all fusions are performed here, hence frame and dataset fusion types need to be set to none
             # the dataset to be fused will be the one with the aux tag
             # fuse the aux dataset
-            if settings.network.dataset_fusion_type != defs.fusion_type.none:
-                error("Multi-workflow [%s] requires fusion type of [%s]" % (multi_workflow, defs.fusion_type.none))
             encoded2 = tf.reshape(encoded2, [ -1, fpc2, dim2])
             fused_dset = apply_temporal_fusion(encoded2, dim2, fpc2, settings.network.frame_fusion_method)
             seq_dset = encoded1

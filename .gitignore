@@ -1,7 +1,10 @@
-# ignore all files and folders
+
 
 config.ini.*
 !config.ini.example
+*.yml
+!config.example.yml
+
 # validation logits
 validation_logits_*
 # also ignore all:
@@ -26,8 +29,12 @@ tensorboard_graphs
 start.sh
 examples/test_run/checkpoints/
 examples/test_run/data*
+examples/data
+examples/images
+multi_workflows
 test/
 # vim
 *.swp
 tags
 experiments/
+audio/pyAudioAnalysis
