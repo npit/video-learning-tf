@@ -691,10 +691,9 @@ def test(lrcn, settings, sess, tboard_writer, summaries):
         images, ground_truth, dataset_ids = settings.get_next_batch()
         fdict, num_labels, padding = get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids)
         print_iter_info(settings, [len(im) for im in images], num_labels, padding)
-        logits, summaries_val = sess.run([lrcn.logits, summaries.val_merged], feed_dict=fdict)
+        logits = sess.run(lrcn.logits, feed_dict=fdict)
         lrcn.process_validation_logits( defs.dataset_tag.main, settings, logits, fdict, padding)
         lrcn.save_validation_logits_chunk()
-        settings.global_step += 0
     # save the complete output logits
     lrcn.save_validation_logits_chunk(save_all = True)
 
@@ -748,14 +747,15 @@ def test(lrcn, settings, sess, tboard_writer, summaries):
 
     else:
         accuracy = lrcn.get_accuracy()
-        summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
-        summaries.merge()
+        # no use in adding a single scalar accuracy summary to tensorboard
+        # summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
+        # summaries.merge()
+        # tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
         info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
         # if specified to save the logits, save the accuracy as well
         if lrcn.validation_logits_save_interval is not None:
             with open(os.path.join(settings.run_folder,"accuracy_" + settings.run_id), "w") as f:
                 f.write(str(accuracy))
-        tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
 
     tboard_writer.flush()
     return True
