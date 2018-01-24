@@ -99,6 +99,9 @@ class LRCN:
         # create the training ops
         if settings.train:
             self.create_training(settings, summaries)
+        else:
+            # print validation settings
+            info("Creating validation: %s" % settings.get_val_str())
 
     def precompute_learning_rates(self, settings):
         base_lr = settings.train.base_lr

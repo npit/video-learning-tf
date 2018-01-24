@@ -119,6 +119,11 @@ class Settings:
 
         return infostr
 
+    def get_val_str(self):
+        infostr = "clip_fusion: [%s, %s], logit save: [%d]" %\
+            (self.network.clip_fusion_type, self.network.clip_fusion_method, self.val.logits_save_interval)
+        return infostr
+
     def validation_logits_to_captions(self, logits_chunk, num_processed_logits):
         return self.datasets[self.phase].validation_logits_to_captions(logits_chunk, num_processed_logits)
 
@@ -686,7 +691,7 @@ def test(lrcn, settings, sess, tboard_writer, summaries):
         images, ground_truth, dataset_ids = settings.get_next_batch()
         fdict, num_labels, padding = get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids)
         print_iter_info(settings, [len(im) for im in images], num_labels, padding)
-        logits = sess.run(lrcn.logits, feed_dict=fdict)
+        logits, summaries_val = sess.run([lrcn.logits, summaries.val_merged], feed_dict=fdict)
         lrcn.process_validation_logits( defs.dataset_tag.main, settings, logits, fdict, padding)
         lrcn.save_validation_logits_chunk()
         settings.global_step += 0
@@ -741,16 +746,17 @@ def test(lrcn, settings, sess, tboard_writer, summaries):
             debug("evaluation command is [%s]" % command)
             os.system(command)
 
-
     else:
         accuracy = lrcn.get_accuracy()
         summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
+        summaries.merge()
         info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
         # if specified to save the logits, save the accuracy as well
         if lrcn.validation_logits_save_interval is not None:
             with open(os.path.join(settings.run_folder,"accuracy_" + settings.run_id), "w") as f:
                 f.write(str(accuracy))
         tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
+
     tboard_writer.flush()
     return True
 
