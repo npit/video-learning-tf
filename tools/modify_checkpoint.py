@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import argparse
+import shutil
 
 '''
 Script to modify checkpoint files. Based on the gist: https://gist.github.com/batzner/7c24802dd9c5e15870b4b56e22135c96
@@ -61,12 +62,17 @@ def rename(checkpoint, delete_list, rename_list, create_list, outpath):
         for i,(name, data) in enumerate(zip(variable_names, variable_data)):
             print(i+1,":",name,data)
         print()
+
         # Save the variables
         if outpath is not None:
             saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
             print("Saving modified model to", outpath)
             saver.save(sess, outpath)
+            # potentially copy associated files
+            additional_suffixes = [".snap"]
+            for suff in additional_suffixes:
+                shutil.copyfile(os.path.join(checkpoint,suff), os.path.join(outpath,suff))
         else:
             print("Will not overwrite model (simulation run)")
 
