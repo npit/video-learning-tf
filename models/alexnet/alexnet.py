@@ -269,7 +269,7 @@ class dcnn(Trainable):
             #b_init = tf.constant(0.1, shape =(num_classes,), name = "fc8_bias")
 
             name = "fc8"
-            fc8W, fc8b = self.make_w_b([4096, num_classes],[num_classes], name=name)
+            fc8W, fc8b = self.make_w_b([fc7_dim, num_classes],[num_classes], name=name)
             self.output = tf.nn.xw_plus_b(fc7, fc8W, fc8b,name="fc8")
 
 
