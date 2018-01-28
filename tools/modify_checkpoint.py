@@ -72,7 +72,10 @@ def rename(checkpoint, delete_list, rename_list, create_list, outpath):
             # potentially copy associated files
             additional_suffixes = [".snap"]
             for suff in additional_suffixes:
-                shutil.copyfile(os.path.join(checkpoint,suff), os.path.join(outpath,suff))
+                s_orig = checkpoint + suff
+                s_dest = outpath + suff
+                print("Saving %s suffix file to [%s]" % (suff, s_dest))
+                shutil.copyfile(s_orig, s_dest)
         else:
             print("Will not overwrite model (simulation run)")
 
