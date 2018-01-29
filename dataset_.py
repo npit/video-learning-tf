@@ -523,12 +523,13 @@ class Dataset:
                 # precompute the center crop
                 self.crop_h, self.crop_w = self.compute_crop(self.raw_image_shape, self.desired_image_shape, defs.imgproc.center_crop)
 
-    def compute_dataset_portion(self, freq_per_epoch):
+    def compute_dataset_portion(self, freq_per_epoch, epochs):
         # set save interval
         save_interval = math.ceil(len(self.batches) / freq_per_epoch)
-        info("Computed batch save interval (from %2.4f per %d-batched epoch) to %d batches" %
-             (freq_per_epoch, len(self.batches), save_interval))
-        return save_interval
+        num_saves = math.ceil(freq_per_epoch * epochs)
+        info("Computed batch save interval (from %2.4f per %d-batched epoch) to %d batches and %d total saves" %
+             (freq_per_epoch, len(self.batches), save_interval, num_saves))
+        return save_interval, num_saves
 
     # compute horizontal and vertical crop range
     def compute_crop(self, raw_image_shape, image_shape, mode):
