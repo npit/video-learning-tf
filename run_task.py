@@ -43,6 +43,7 @@ class Settings:
 
     # save / load configuration
     resume_file = None
+    save_interval = None
     data_path = None
     run_folder = None
     path_prepend_folder = None
@@ -101,7 +102,6 @@ class Settings:
     # misc
     saver = None
 
-
     def get_train_str(self):
         tr = self.train
         infostr = "classes: %d, epochs: %d, optim: %s" % (self.network.num_classes, tr.epochs, tr.optimizer)
@@ -134,9 +134,12 @@ class Settings:
         return  batch_sizes
 
     def compute_save_interval(self):
+        if not self.train:
+            self.save_interval, self.num_saves = -1, 0
+            return
         # just check the first
         for dset in self.datasets[self.phase]:
-            return dset.compute_dataset_portion(self.save_freq_per_epoch)
+            self.save_interval, self.num_saves = dset.compute_dataset_portion(self.save_freq_per_epoch, self.train.epochs)
 
     def get_batch_index(self):
         return self.datasets[self.phase][0].batch_index
@@ -487,11 +490,13 @@ class Settings:
             info("Restored training snapshot of epoch %d, train index %s, global step %d" % (self.train.epoch_index+1, str(batch_info), self.global_step))
 
     # restore graph variables
-    def resume_graph(self, sess, ignorable_variable_names):
+    def handle_saveload(self, sess, ignorable_variable_names):
+        # initialize graph saving / loading
+        self.compute_save_interval()
+        if self.num_saves <= 0:
+            return
+        self.saver = tf.train.Saver(max_to_keep = self.num_saves)
         if self.should_resume():
-            if self.saver is None:
-                self.saver = tf.train.Saver()
-
             if self.resume_file == defs.names.latest_savefile:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
                     for line in f:
@@ -510,7 +515,7 @@ class Settings:
             if any([ not ex for ex in exists]) :
                 for fname, ex in zip(required_files, exists):
                     print("file: [%s], exists: [%s]" % (fname, str(ex)))
-                error("Missing meta, snap or index part: [%s], from graph savefile: %s" % (str(exists), savefile_graph))
+                error("Missing meta, index or snap part: [%s], from graph savefile: %s" % (str(exists), savefile_graph))
 
             try:
                 # if we are in validation mode, the 'global_step' training variable is discardable
@@ -524,8 +529,9 @@ class Settings:
                 names_missing_from_curr = [n for n in chkpt_names if n not in curr_names and n not in ignorable_variable_names]
 
                 if names_missing_from_chkpt:
-                    missing_unignorable = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
-                    warning("Unignorable variables missing from checkpoint:[%s]" % missing_unignorable)
+                    missing_unignorables = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
+                    warning("Found %d unignorable variables missing from checkpoint:[%s]" %
+                            (len(missing_unignorables),missing_unignorables))
                     # Better warn the user and await input
                     ans = input("Continue? (y/n)")
                     if ans != "y":
@@ -548,8 +554,6 @@ class Settings:
     # save graph and dataset stuff
     def save(self, sess, progress):
         try:
-            if self.saver is None:
-                self.saver = tf.train.Saver()
             # save the graph
             checkpoints_folder = os.path.join(self.run_folder, "checkpoints")
             if not os.path.exists(checkpoints_folder):
@@ -576,6 +580,11 @@ class Settings:
                 pickle.dump(params2save,f)
         except Exception as ex:
             error(ex)
+
+    def should_save(self, step):
+        if self.save_interval < 0 or self.phase == defs.phase.val:
+            return False
+        return step % self.save_interval == 0
 
 def get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids):
     fdict = {}
@@ -606,11 +615,6 @@ def get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids):
 
     return fdict, num_labels, padding
 
-# check if we should save
-def should_save_now(self, global_step):
-    if self.save_interval == None or self.phase != defs.phase.train:
-        return False
-    return global_step % self.save_interval == 0
 
 # print information on current iteration
 def print_iter_info(settings, num_images, num_labels, padding):
@@ -624,8 +628,6 @@ def print_iter_info(settings, num_images, num_labels, padding):
 # train the network
 def train_test(settings, lrcn, sess, tboard_writer, summaries):
     run_batch_count = 0
-
-    save_interval = settings.compute_save_interval()
     min_train_loss = (1000, -1)
     info("Starting train")
     for _ in range(settings.train.epoch_index, settings.train.epochs):
@@ -654,7 +656,7 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
             tboard_writer.flush()
 
             # check if we need to save
-            if run_batch_count % save_interval == 0:
+            if settings.should_save(run_batch_count):
                 # save a checkpoint if needed
                 settings.save(sess, progress="ep_%d_btch_%d_gs_%d" % (1 + settings.train.epoch_index,
                                                                       settings.get_batch_index(), settings.global_step))
@@ -672,7 +674,7 @@ def train_test(settings, lrcn, sess, tboard_writer, summaries):
     info("Minimum training loss: %2.2f on global index %d" % (min_train_loss[0], min_train_loss[1]))
 
     # if we did not save already at the just completed batch, do it now at the end of training
-    if run_batch_count > 0 and not (run_batch_count %  save_interval == 0):
+    if run_batch_count > 0 and not settings.should_save(run_batch_count):
         info("Saving model checkpoint out of turn, since training's finished.")
         settings.save(sess,  progress="ep_%d_btch_%d_gs_%d" %
                 (1 + settings.train.epoch_index, settings.get_num_batches(), settings.global_step))
@@ -782,7 +784,7 @@ def main(init_file):
     sess.run(tf.global_variables_initializer())
 
     # restore graph variables,
-    settings.resume_graph(sess, lrcn.get_ignorable_variable_names())
+    settings.handle_saveload(sess, lrcn.get_ignorable_variable_names())
 
     # mop up all summaries. Unless you separate val and train, the training subgraph
     # will be executed when calling the summaries op. Which is bad.
