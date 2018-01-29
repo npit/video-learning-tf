@@ -33,9 +33,15 @@ def main():
     mean_image = np.uint8(mean_image / num_items)
     outpath = tfrecord_file + ".mean"
     print("\nWriting mean image to", outpath)
+    # pickle image
     with open(outpath, "wb") as f:
         pickle.dump(mean_image,f)
+    # imagey image
     imsave(outpath + ".png", mean_image)
+    # one value per channel
+    with open(outpath + ".3","w") as f:
+        for i in range(3):
+            f.write("%f " % np.mean(mean_image[:,:,i]))
 
 
 if __name__ == '__main__':
