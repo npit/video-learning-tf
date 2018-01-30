@@ -8,7 +8,8 @@ Function to run and evaluate the K last checkpoints of a given run.
 """
 
 # number of checkpoints to evaluate. Note that tensorflow has a similar param, keeping at most k checkpoints.
-num_checkpoints = 5
+# set to -1 to evaluate all available
+num_checkpoints = -1
 
 if len(sys.argv) < 2:
     print("Give config file.")
@@ -39,12 +40,11 @@ with open(join(run_folder,"checkpoints","checkpoint"),"r") as f:
 
 # skip first line on the 'checkpoints' file
 checkpoints = checkpoints[1:]
-if len(checkpoints) != num_checkpoints:
+if len(checkpoints) != num_checkpoints and num_checkpoints > 1:
     print("Limiting number to %d checkpoints available" % len(checkpoints))
+    num_checkpoints = min(num_checkpoints, len(checkpoints))
+    checkpoints = checkpoints[-num_checkpoints:]
 print("Checkpoints:")
-num_checkpoints = min(num_checkpoints, len(checkpoints))
-checkpoints = checkpoints[-num_checkpoints:]
-
 for line in checkpoints:
     print(line)
 
