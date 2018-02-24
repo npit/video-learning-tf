@@ -67,7 +67,7 @@ class serialization_settings:
                 config = yaml.load(f)[tag_to_read]
             self.output_folder = config['output_folder']
             self.path_prepend_folder = config['path_prepend_folder']
-            self.input_files = parse_seq(config['input_files'])
+            self.input_files = [ x.strip() for x in parse_seq(config['input_files'])]
             self.run_id = config['run_id'].strip()
             self.num_threads = int(config['num_threads'])
             self.num_items_per_thread = int(config['num_items_per_thread'])
@@ -87,7 +87,8 @@ class serialization_settings:
             self.logging_level = eval(self.logging_level)
 
 
-
+        print('['+self.run_id + ']',type(self.run_id))
+        print('['+config['run_id']+']', type(config['run_id']))
         if self.run_id is None or not self.run_id:
             self.run_id = "serialize_%s" % (get_datetime_str())
         else:
@@ -111,6 +112,7 @@ class serialization_settings:
             self.seed = random()
             info("Using randomized seed: %f" % self.seed)
         seed(self.seed)
+        info("Starting serialization run: [%s]" % self.run_id)
         info("Successfully initialized from file %s" % self.init_file)
 
 
@@ -366,6 +368,7 @@ def generate_frames_for_video(path, settings):
 
     clip_frame_paths = []
     files = sorted(files)
+    debug("%s:%s" % (str(path),str(clips)))
     for clip in clips:
         frame_paths=[]
         for fridx in clip:
@@ -540,8 +543,8 @@ def write_serialization(settings):
                     warning("%d/%d: %s" % (i+1, len(stored_log), logline))
                 # handle the errors according to the generation error strategy
                 if settings.generation_error == defs.generation_error.report:
-                    probl_savefile = "generation_errors_files_%s_%s"
-                    with open(probl_savefile % (settings.run_id, get_datetime_str()),"w") as f:
+                    probl_savefile = "generation_errors_files_%s_%s" % (settings.run_id, get_datetime_str())
+                    with open(probl_savefile,"w") as f:
                         for _, problematic_file in stored_log:
                             f.write(problematic_file + "\n")
                     info("Writing problematic files in %s" % probl_savefile)
@@ -709,8 +712,8 @@ def main():
     if settings.do_validate:
         info("Validating serialization")
         validate(written_data, errors_per_file, settings)
-    # move log and config files to output directory, if specified
-    if settings.output_folder is not None:
+    # move log and config files to output directory, if specified and serialization happened
+    if settings.output_folder is not None and settings.do_serialize and all([not e for e in errors_per_file]):
         copyfile(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
         copyfile(settings.init_file, os.path.join(settings.output_folder, basename(settings.init_file)))
 
