@@ -40,12 +40,12 @@ def main():
     imsave(outpath + ".png", mean_image)
     # one value per channel
     with open(outpath + ".3","w") as f:
+        f.write("[")
         for i in range(3):
-            f.write("[")
             f.write("%f " % np.mean(mean_image[:,:,i]))
             if i < 2:
                 f.write(",")
-            f.write("]")
+        f.write("]")
 
 
 
