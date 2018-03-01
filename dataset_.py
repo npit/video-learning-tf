@@ -154,7 +154,7 @@ class Dataset:
                 except:
                     print("Failed to print the length of the string record")
 
-                warning('Retrying to parse the idx %d example of %d times' % (imidx, self.read_tries))
+                warning('Retrying to parse the idx %d example a total of %d times' % (imidx, self.read_tries))
                 counter = 0
                 success = False
                 while True:
@@ -162,7 +162,7 @@ class Dataset:
                         if counter > self.read_tries:
                             break
                         counter +=1
-                        print("Try #%d", counter)
+                        print("Try #%d" % counter)
                         image, label = self.deserialize_example(string_record)
                         success = True
                     except:

@@ -41,7 +41,13 @@ def main():
     # one value per channel
     with open(outpath + ".3","w") as f:
         for i in range(3):
+            f.write("[")
             f.write("%f " % np.mean(mean_image[:,:,i]))
+            if i < 2:
+                f.write(",")
+            f.write("]")
+
+
 
 
 if __name__ == '__main__':
