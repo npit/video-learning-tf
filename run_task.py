@@ -493,10 +493,12 @@ class Settings:
     def handle_saveload(self, sess, ignorable_variable_names):
         # initialize graph saving / loading
         self.compute_save_interval()
-        if self.num_saves <= 0:
-            return
         self.saver = tf.train.Saver(max_to_keep = self.num_saves)
+
+        if self.phase == defs.phase.train and self.num_saves <= 0:
+            return
         if self.should_resume():
+            debug("Handling resume options")
             if self.resume_file == defs.names.latest_savefile:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
                     for line in f:

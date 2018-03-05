@@ -1,11 +1,11 @@
 run:
   # run type and an identifier for it
-  workflow: defs.workflows.imgdesc.statebias
+  workflow: defs.workflows.acrec.singleframe
   # save / load configuration
   resume_file: 
   # folder to store run data
   run_folder: "path/to/outputfolder"
-  phase : defs.phase.val
+  phase : defs.phase.train
 
   # data parameters; a list of input data 
   data:
@@ -21,7 +21,7 @@ run:
       batch_item: defs.batch_item.default
       phase: defs.phase.train
       tag: defs.dataset_tag.main
-      image_tries: 3
+      read_tries: 3
     # similarly, can define additional datasets
 
   network:
@@ -29,8 +29,8 @@ run:
     image_shape: (227, 227, 3)
     frame_encoding_layer: "fc7"
     lstm_params: [200, 3, defs.fusion_method.last]
-    frame_fusion : [defs.fusion_type.early, defs.fusion_method.last]
-    clip_fusion : [defs.fusion_type.late, defs.fusion_method.last]
+    frame_fusion : [defs.fusion_type.early, defs.fusion_method.avg]
+    clip_fusion : [defs.fusion_type.late, defs.fusion_method.avg]
     num_classes : 101
     # dataset fusion method, dataset fusion method, pre-workflow frame fusion method. Skip last arg if no framefusion.
     dataset_fusion: [defs.fusion_type.late, defs.fusion_method.avg, defs.fusion_method.avg]
