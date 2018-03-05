@@ -55,7 +55,9 @@ run:
   val:
     # validation settings
     batch_size: 2
+    interval: [defs.]
     logits_save_interval : -1
+
 
   logging:
     # logging

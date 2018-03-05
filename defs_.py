@@ -124,13 +124,11 @@ class defs:
 
     # learning rate decay parameters
     class decay:
-        # granularity level
-        class granularity:
-            exp, staircase = "exp", "staircase"
+        exp, staircase = "exp", "staircase"
 
-        # drop at intervals or a total number of times
-        class scheme:
-            interval, drops = "interval", "drops"
+    # periodicity
+    class periodicity:
+        interval, drops = "interval", "drops"
 
     class label_type:
         single, multiple = "single", "multiple"

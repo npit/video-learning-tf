@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import os
+import sys
 import math
 import tqdm
 import numpy
@@ -134,6 +135,7 @@ def configure_logging( logfile, logging_level):
 
 if __name__ == '__main__':
 
+    print("in main:",sys.argv)
     args = parseArguments()
     print args
     time_slice = args.time_slice[0]
@@ -147,11 +149,12 @@ if __name__ == '__main__':
     logfile = "log_spectrograms_ts_%f.log" % time_slice
     logger = configure_logging(logfile,logging.INFO)
 
+    print("Running")
     if not walk_folders:
         logger.info("Extracting from a single folder.")
         fold_prefix = os.path.basename(input_folder)
         logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice))
-        produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix)
+        produceSpectoGrams_Aug(input_folder, output_folder, time_slice, fold_prefix, logger)
     else:
         logger.info("Extracting spectrograms from %s with a time slice of %4.4f" %  (input_folder, time_slice))
         folders = [ fold for fold in os.listdir(input_folder) if os.path.isdir(os.path.join(input_folder,fold)) ]
