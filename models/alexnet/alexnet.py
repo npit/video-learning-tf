@@ -48,7 +48,7 @@ class dcnn(Trainable):
     # specify the layers
     def create(self, input, weightsFile, num_classes, final_layer ="prob", load_weights = False):
         net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
-        load_weights = False
+
         if final_layer is None:
             final_layer = "prob"
         #net_data = load("bvlc_alexnet.npy").item()

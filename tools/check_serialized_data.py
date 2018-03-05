@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 from collections import OrderedDict
 import tqdm
+import argparse
 
 # read from tfrecord
 def deserialize_from_tfrecord(iterator):
@@ -58,6 +59,7 @@ def read_size_file(sizefile):
                 line = line.strip()
                 print(line)
                 lines.append(" ".join(line.split()[1:]))
+        numitems = int(lines[0])
         cpv = eval(lines[2])[0]
         fpc = int(lines[3])
         numframes = sum([fpc * cpv[1] for _ in range(cpv[0])])
@@ -65,31 +67,22 @@ def read_size_file(sizefile):
     else:
         print("File %s does not exist." % sizefile)
         exit(1)
-    return numframes
+    return numframes, numitems, str(cpv), fpc
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Give an input .tfrecord file")
-        exit(1)
-    if len(sys.argv) > 2:
-        opts = sys.argv[2:]
-    else:
-        opts = []
-    num_items = None
-    if opts:
-        try:
-            num_items = int(opts[0])
-        except Exception as ex:
-            print(ex)
-            exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("tfrecord_path")
+    parser.add_argument("--print_max",nargs=1,type=int)
+    parser.add_argument("--verbose",action="store_true")
+    args = parser.parse_args()
 
-    filename = sys.argv[1]
+    filename = args.tfrecord_path
     print("Examining contents of %s" % filename)
     sizefile = filename + ".size"
-    expected_num = read_size_file(sizefile)
+    expected_num, numitems, cpv, fpc = read_size_file(sizefile)
 
-    if num_items is not None:
-        print("Printing %s items due to user argument" % str(num_items))
+    if args.print_max:
+        print("Printing %s items due to user argument" % str(args.print_max))
 
     iterator = tf.python_io.tf_record_iterator(path = filename)
     shapes = OrderedDict()
@@ -101,6 +94,8 @@ if __name__ == '__main__':
             try:
                 images, ex, strlen = deserialize_from_tfrecord(iterator)
                 if not images:
+                    if args.verbose:
+                        print("No images retrieved, count:",count)
                     if ex == "stop":
                         if count != expected_num:
                             messages.append("Read %d items, but the sizefile says %d" % (count, expected_num))
@@ -117,9 +112,6 @@ if __name__ == '__main__':
 
                 pbar.set_description(desc = "Processed [%d] items. " % count)
                 pbar.update()
-                if num_items is not None:
-                    if num_items == count:
-                        break
             except EOFError as ex:
                 print(ex)
                 break
@@ -129,13 +121,12 @@ if __name__ == '__main__':
 
     print("Item shape distribution in the file:")
     for shp in shapes:
-        print(shp,shapes[shp])
+        print("shape:",shp,"#items with that shape:",shapes[shp])
     print("String record length distribution in the file:")
     for s in strlens:
-        print(s, strlens[s])
+        print("strlen:",s,"#items with that len:", strlens[s])
 
-    if not messages:
-        print("Data is OK.")
+    print("Data count: %d, sizefile expected: %d = %d x %s x %d" % (count, expected_num, numitems, cpv, fpc))
     else:
         for msg in messages:
             print(msg)

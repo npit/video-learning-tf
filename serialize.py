@@ -287,17 +287,20 @@ def get_random_clips(avail_frame_idxs, settings, path):
         num_frames_missing = settings.num_frames_per_clip - num_frames
         if num_frames_missing > 0:
             message = "Video %s cannot sustain a number of %d fpc, as it has %d frames" % (basename(path), settings.num_frames_per_clip, num_frames)
+            debug(message)
             if settings.generation_error == defs.generation_error.abort:
                 error(message)
             # log the error for later
             settings.logger.add_to_log_storage("generation", (message, path))
             if settings.generation_error == defs.generation_error.compromise:
                 # duplicate start frame to match the fpc,
-                # duplicate the clip to match the cpv
                 avail_frame_idxs = [0 for _ in range(num_frames_missing)] + avail_frame_idxs
-                return [avail_frame_idxs for _ in range(settings.clip_offset_or_num)]
+                # cannot match the cpv either way - have to construct clip here, since.
+                ret = [avail_frame_idxs for _ in range(settings.clip_offset_or_num)]
+                return ret
             elif settings.generation_error == defs.generation_error.report:
-                return []
+                # pass for now, to report missing cpv on the following check, too.
+                pass
             else:
                 error("Undefined generation error strategy: %s" % settings.generation_error)
 
@@ -306,7 +309,8 @@ def get_random_clips(avail_frame_idxs, settings, path):
         # handle videos that cannot support that many clips
         num_clips_missing = settings.clip_offset_or_num - len(possible_clip_start)
         if num_clips_missing > 0:
-            message = "Video %s cannot sustain a number of %d,%d cpv, fpc in, as it has %d frames" % (basename(path), settings.num_frames_per_clip, settings.clip_offset_or_num, num_frames)
+            message = "Video %s cannot sustain a number of %d cpv as it has %d frames" % (basename(path), settings.clip_offset_or_num, num_frames)
+            debug(message)
             if settings.generation_error == defs.generation_error.abort:
                 error(message)
             # log the error for later
@@ -314,14 +318,12 @@ def get_random_clips(avail_frame_idxs, settings, path):
             if settings.generation_error == defs.generation_error.compromise:
                 # duplicate clip starts to match the required
                 possible_clip_start.extend([choice(possible_clip_start) for _ in range(num_clips_missing)])
-                settings.logger.add_to_log_storage("generation",(message, path))
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
                 error("Undefined generation error strategy: %s" % settings.generation_error)
 
-        shuffle(possible_clip_start)
-        possible_clip_start = possible_clip_start[:settings.clip_offset_or_num]
+        possible_clip_start = [choice(possible_clip_start) for _ in range(settings.clip_offset_or_num)]
         ret = [list(range(st,st+settings.num_frames_per_clip)) for st in possible_clip_start]
         return ret
 
@@ -338,7 +340,7 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
             if settings.generation_error == defs.generation_error.compromise:
                 # to compromise, just duplicate random frames until we're good
                 avail_frame_idxs.extend([choice(avail_frame_idxs) for _
-                                         in num_frames_missing])
+                                         in range(num_frames_missing)])
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
@@ -351,6 +353,7 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
 # generate frames per video, according to the input settings 
 def generate_frames_for_video(path, settings):
 
+    debug("Generating frames for video [%s]" % path)
     files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
     num_frames = len(files)
     avail_frame_idxs = list(range(num_frames))
@@ -368,7 +371,7 @@ def generate_frames_for_video(path, settings):
 
     clip_frame_paths = []
     files = sorted(files)
-    debug("%s:%s" % (str(path),str(clips)))
+    debug("Writing a total of %d frames for %d clips" % (sum([len(c) for c in clips]),len(clips)))
     for clip in clips:
         frame_paths=[]
         for fridx in clip:
@@ -475,7 +478,7 @@ def read_file(inp, settings):
                     strlen = min(len(path), len(settings.frame_format) + 1)
                     suffix = path[-strlen:]
                     info(
-                        "Set input mode to videos since paths-file item suffix [%s] differs from image format [%s]." % (
+                        "Set input mode to videos since the first item's suffix: [%s] in the paths-file differs from specified image format [%s]." % (
                         suffix, settings.frame_format))
 
             if settings.path_prepend_folder is not None:
@@ -513,6 +516,17 @@ def shuffle_paths(item_paths, paths, labels, mode, settings):
         for vid_idx in range(len(paths)):
             shuffle(paths[vid_idx])
         return item_paths, paths, labels
+
+def check_cpv_per_item(paths_per_item, items_list, settings):
+    # catch any item non-comforming to the cpv
+    erratic_items = [i for (i,p) in enumerate(paths_per_item) if len(p) != settings.clip_offset_or_num]
+    if any(erratic_items):
+        for e in erratic_items:
+            item, paths = items_list[e], paths_per_item[e]
+            warning("Item %d/%d : %s has cpv of len %d:" % (e+1, len(paths_per_item),item,len(paths)))
+            for p in paths:
+                warning(p)
+        error("Erratic item(s) encountered")
 
 def write_serialization(settings):
     # store written data per input file, to print shuffled & validate, later
@@ -560,6 +574,7 @@ def write_serialization(settings):
                 else:
                     error("Generated paths with errors, but error strategy is [%s]" % settings.generation_error)
 
+            check_cpv_per_item(paths, item_paths, settings)
             if settings.do_shuffle:
                 item_paths, paths, item_labels = shuffle_paths(item_paths, paths, item_labels, mode, settings)
             clips_per_item = [ len(vid) for vid in paths ]

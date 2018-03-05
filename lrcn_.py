@@ -279,7 +279,8 @@ class LRCN:
     # Activity recognition
     def create_actrec_singleframe(self, settings, inputData = None, inputLabels = None):
         if inputData is None:
-            info("Dcnn workflow [%s][%s][%s]" % (settings.network.frame_fusion_type, settings.network.frame_fusion_method, settings.network.frame_encoding_layer))
+            loadinfo = "load" if settings.network.load_weights else "noload"
+            info("Dcnn workflow [%s][%s][%s][%s]" % (settings.network.frame_fusion_type, settings.network.frame_fusion_method, settings.network.frame_encoding_layer, loadinfo))
             # define label inputs
             self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
             self.inputData = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames')
