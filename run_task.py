@@ -5,9 +5,10 @@ import sys
 import tensorflow as tf
 import argparse
 from parse_opts import *
+import lrcn_
 
 # project modules
-import lrcn_
+from models.model import Model
 import dataset_
 
 # utils
@@ -56,6 +57,7 @@ class Settings:
         lstm_num_hidden = 256
         num_classes = None
 
+
     class train:
         # training settings
         batch_size_train = 100
@@ -64,7 +66,7 @@ class Settings:
         optimizer = defs.optim.sgd
         base_lr = 0.001
         lr_mult = 2
-        lr_decay = (defs.decay.granularity.exp, defs.decay.scheme.interval, 1000, 0.96)
+        lr_decay = (defs.decay.exp, defs.periodicity.interval, 1000, 0.96)
         dropout_keep_prob = 0.5
         batch_item = defs.batch_item.default
 
@@ -102,6 +104,10 @@ class Settings:
     # misc
     saver = None
 
+    def get_dropout(self):
+        if self.phase == defs.phase.train:
+            return self.train.dropout_keep_prob
+        return 0.0
     def get_train_str(self):
         tr = self.train
         infostr = "classes: %d, epochs: %d, optim: %s" % (self.network.num_classes, tr.epochs, tr.optimizer)
@@ -178,6 +184,7 @@ class Settings:
 
     def read_config(self, config):
 
+
         # read global stuff
         self.workflow = defs.check(config['workflow'], defs.workflows)
         self.resume_file = config['resume_file']
@@ -193,6 +200,9 @@ class Settings:
 
         # read network  architecture stuff
         self.network = Settings.network()
+        self.network.representation = defs.check(config['network']['representation'], defs.representation)
+        self.network.classifier = defs.check(config['network']['classifier'], defs.classifier)
+
         if self.workflow == defs.workflows.acrec.multi:
             self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
         self.network.load_weights = config['network']['load_weights']
@@ -233,8 +243,8 @@ class Settings:
                 self.train.lr_mult = float(obj['lr_mult']) if obj['lr_mult'] != 'None' else None
                 lr_decay = parse_seq(obj['lr_decay'])
                 self.train.lr_decay = []
-                self.train.lr_decay.append(defs.check(lr_decay[0],defs.decay.granularity))
-                self.train.lr_decay.append(defs.check(lr_decay[1],defs.decay.scheme))
+                self.train.lr_decay.append(defs.check(lr_decay[0],defs.decay))
+                self.train.lr_decay.append(defs.check(lr_decay[1],defs.periodicity))
                 self.train.lr_decay.append(int(lr_decay[2]))
                 self.train.lr_decay.append(float(lr_decay[3]))
                 self.train.clip_norm = int(obj['clip_norm'])
@@ -775,7 +785,8 @@ def main(init_file):
     # init summaries for printage
     summaries = Summaries()
 
-    # create and configure the nets : CNN and / or lstm
+    # create and configure the model
+    model = Model(settings)
     lrcn = lrcn_.LRCN()
     lrcn.create(settings, summaries)
 

@@ -47,7 +47,6 @@ class lstm(Trainable):
         cell_vars = [v for v in tf.trainable_variables() if v.name.startswith('rnn')]
         self.train_modified.extend(fc_vars + cell_vars)
 
-
     def apply_dropout(self, input_tensor, dropout_keep_prob):
         # add dropout
         if dropout_keep_prob > 0:

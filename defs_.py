@@ -35,6 +35,11 @@ class defs:
         return curr_class
 
 
+    class representation:
+        dcnn, nop = "dcnn", "nop"
+    class classifier:
+        fc, lstm = "fc", "lstm"
+
     # run phase
     class phase:
         train, val ="train", "val"

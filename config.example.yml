@@ -25,10 +25,13 @@ run:
     # similarly, can define additional datasets
 
   network:
+    representation: dcnn
+    classifier: fc
+
     # architecture settings
     image_shape: (227, 227, 3)
     frame_encoding_layer: "fc7"
-    lstm_params: [200, 3, defs.fusion_method.last]
+    lstm_params: [200, 3, defs.fusion_method.last, defs.lstm.]
     frame_fusion : [defs.fusion_type.early, defs.fusion_method.avg]
     clip_fusion : [defs.fusion_type.late, defs.fusion_method.avg]
     num_classes : 101

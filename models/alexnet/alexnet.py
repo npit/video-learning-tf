@@ -47,6 +47,8 @@ class dcnn(Trainable):
 
     # specify the layers
     def create(self, input, weightsFile, num_classes, final_layer ="prob", load_weights = False):
+        if weightsFile is None:
+            weightsFile = "models/alexnet/bvlc_alexnet.npy"
         net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
 
         if final_layer is None:
@@ -287,3 +289,9 @@ class dcnn(Trainable):
             # prob
             # softmax(name='prob'))
             # prob = tf.nn.softmax(fc8,name="softmax")
+
+
+
+
+
+
