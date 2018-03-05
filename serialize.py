@@ -309,7 +309,7 @@ def get_random_clips(avail_frame_idxs, settings, path):
         # handle videos that cannot support that many clips
         num_clips_missing = settings.clip_offset_or_num - len(possible_clip_start)
         if num_clips_missing > 0:
-            message = "Video %s cannot sustain a number of %d,%d cpv, fpc in, as it has %d frames" % (basename(path), settings.num_frames_per_clip, settings.clip_offset_or_num, num_frames)
+            message = "Video %s cannot sustain a number of %d cpv as it has %d frames" % (basename(path), settings.clip_offset_or_num, num_frames)
             debug(message)
             if settings.generation_error == defs.generation_error.abort:
                 error(message)
@@ -318,7 +318,6 @@ def get_random_clips(avail_frame_idxs, settings, path):
             if settings.generation_error == defs.generation_error.compromise:
                 # duplicate clip starts to match the required
                 possible_clip_start.extend([choice(possible_clip_start) for _ in range(num_clips_missing)])
-                settings.logger.add_to_log_storage("generation",(message, path))
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:
@@ -341,7 +340,7 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
             if settings.generation_error == defs.generation_error.compromise:
                 # to compromise, just duplicate random frames until we're good
                 avail_frame_idxs.extend([choice(avail_frame_idxs) for _
-                                         in num_frames_missing])
+                                         in range(num_frames_missing)])
             elif settings.generation_error == defs.generation_error.report:
                 return []
             else:

@@ -126,8 +126,7 @@ if __name__ == '__main__':
     for s in strlens:
         print("strlen:",s,"#items with that len:", strlens[s])
 
-    if not messages:
-        print("Data is OK: count: %d, sizefile expected: %d = %d x %s x %d" % (count, expected_num, numitems, cpv, fpc))
+    print("Data count: %d, sizefile expected: %d = %d x %s x %d" % (count, expected_num, numitems, cpv, fpc))
     else:
         for msg in messages:
             print(msg)
