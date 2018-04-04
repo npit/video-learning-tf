@@ -48,7 +48,7 @@ run:
     optimizer : defs.optim.sgd
     base_lr: 0.1
     lr_mult : None
-    lr_decay : [ defs.decay.granularity.exp, defs.decay.scheme.interval, 8, 0.96 ]
+    lr_decay : [ defs.decay.exp, defs.periodicity.interval, 8, 0.96 ]
     #clip_grads : (-1.,1.)
     clip_grads : None
     clip_norm : 5
