@@ -115,20 +115,20 @@ class LRCN:
         lr_drop_offset = 0 if len(tuple(decay_params)) == 4 else decay_params[-1]
         decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params[:4])
 
-        if decay_strategy == defs.decay.granularity.exp:
+        if decay_strategy == defs.decay.exp:
             staircase = False
             log_message += "smoothly "
-        elif decay_strategy == defs.decay.granularity.staircase:
+        elif decay_strategy == defs.decay.staircase:
             staircase = True
             log_message += "jaggedly "
         else:
             error("Undefined decay strategy %s" % decay_strategy)
 
-        if decay_scheme == defs.decay.scheme.interval:
+        if decay_scheme == defs.periodicity.interval:
             # reduce every decay_freq batches
             decay_period = decay_freq
             log_message += "every %d step(s) " % decay_period
-        elif decay_scheme == defs.decay.scheme.drops:
+        elif decay_scheme == defs.periodicity.drops:
             # reduce a total of decay_freq times
             decay_period = math.ceil(total_num_batches / decay_freq)
             log_message += "every ceil[(%d batches x %d epochs) / %d total steps] = %d steps" % \
@@ -408,6 +408,7 @@ class LRCN:
 
 
         info("%s workflow type: [%s]" % (settings.workflow, settings.network.multi_workflow))
+        assert settings.get_dataset_by_tag(defs.dataset_tag.aux), "No dataset tag [%s] supplied in actrec dual" % defs.dataset_tag.aux
 
         # a dcnn for each dataset, mapping an image to a vector.
         self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")

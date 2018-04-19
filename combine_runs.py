@@ -8,9 +8,11 @@ import subprocess
 from serialize import deserialize_from_tfrecord
 import tensorflow as tf
 import tqdm
+
 """
 Script to combine validation runs
 """
+
 def load_labels(config):
     # load the labels
     datapath = eval(config['data_path'])
@@ -19,7 +21,7 @@ def load_labels(config):
     else:
         datafile = datapath + ".tfrecord"
     sizefile = datafile+".size"
-    with open(sizefile,"r") as f:
+    with open(sizefile, "r") as f:
         lines = []
         for line in f:
             lines.append(line)
@@ -63,8 +65,12 @@ def load_labels(config):
 
     print("Aggregated from cpi: %s and fpc: %s to  %d labels." % (str(cpi_rlc), str(fpc), len(labels)))
     return num, labels
+
+
 def get_accuracy(logits, labels):
     return np.mean(np.equal(logits, labels))
+
+
 def show_results(logits, labels):
     print("Amean of logits: %f" % get_accuracy(np.mean(logits), labels))
     if not np.any([l < 0 for l in logits]):
@@ -73,7 +79,9 @@ def show_results(logits, labels):
     else:
         print("[Gmean not applicable, negative logits exist]")
 
+
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser()
     parser.add_argument('run_folders', nargs='+', help='Run folders or validation files to include in the aggregation.')
     parser.add_argument('config_file', help='The validation configuration file to use.')
@@ -94,7 +102,6 @@ if __name__ == "__main__":
     num_classes = int(config['num_classes'])
     num_items, labels = load_labels(config)
 
-
     logits_per_run = []
     accuracies_per_run = []
     for source_path in args.run_folders:
@@ -104,11 +111,11 @@ if __name__ == "__main__":
 
         if isdir(source_path):
             # directory, get all logits chunks, in order
-            val_files = sorted([ f for f in listdir(source_path) if f.startswith("validation_logits") and isfile(join(source_path, f)) ])
+            val_files = sorted([f for f in listdir(source_path) if f.startswith("validation_logits") and isfile(join(source_path, f))])
             run_logits = np.zeros([0, num_classes], np.float32)
             for valfile in val_files:
                 valfile = join(source_path, valfile)
-                with open(valfile,"rb") as f:
+                with open(valfile, "rb") as f:
                      res = pickle.load(f)
                      run_logits = np.vstack((run_logits, res))
         else:
@@ -130,8 +137,7 @@ if __name__ == "__main__":
     sm_logits_per_run = [l/denom for l in sm_logits_per_run]
     show_results(sm_logits_per_run, labels)
 
-    # weighted average
-    # for unequal weights, try 2x equal weight per participant
+    # weighted average: for unequal weights, try 2x equal weight per participant
     print("Weighted:")
     w = 1/len(logits_per_run)
     print("Equal weights are:", w)

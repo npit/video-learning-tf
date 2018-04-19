@@ -64,7 +64,7 @@ class Settings:
         optimizer = defs.optim.sgd
         base_lr = 0.001
         lr_mult = 2
-        lr_decay = (defs.decay.granularity.exp, defs.decay.scheme.interval, 1000, 0.96)
+        lr_decay = (defs.decay.exp, defs.periodicity.interval, 1000, 0.96)
         dropout_keep_prob = 0.5
         batch_item = defs.batch_item.default
 
@@ -233,8 +233,8 @@ class Settings:
                 self.train.lr_mult = float(obj['lr_mult']) if obj['lr_mult'] != 'None' else None
                 lr_decay = parse_seq(obj['lr_decay'])
                 self.train.lr_decay = []
-                self.train.lr_decay.append(defs.check(lr_decay[0],defs.decay.granularity))
-                self.train.lr_decay.append(defs.check(lr_decay[1],defs.decay.scheme))
+                self.train.lr_decay.append(defs.check(lr_decay[0],defs.decay))
+                self.train.lr_decay.append(defs.check(lr_decay[1],defs.periodicity))
                 self.train.lr_decay.append(int(lr_decay[2]))
                 self.train.lr_decay.append(float(lr_decay[3]))
                 self.train.clip_norm = int(obj['clip_norm'])
@@ -449,6 +449,9 @@ class Settings:
                         savefile_metapars = savefile_graph + ".snap"
                         msg = "Resuming latest tf metadata: [%s]" % savefile_metapars
                         break
+            elif self.resume_file.endswith(".yml"):
+                # combo load
+                return
             else:
                 savefile_metapars = self.resume_file + ".snap"
                 msg = "Resuming specified tf metadata: [%s]" % savefile_metapars
@@ -489,15 +492,92 @@ class Settings:
 
             info("Restored training snapshot of epoch %d, train index %s, global step %d" % (self.train.epoch_index+1, str(batch_info), self.global_step))
 
+    def load_combo(self, sess, ignorable_variable_names):
+        '''
+        Function to load existing networks as parts of a multi workflow
+        :param sess:
+        :param ignorable_variable_names:
+        :return:
+        '''
+        # check that workflow matches
+        assert self.workflow == defs.workflows.acrec.multi, \
+            "combo resume file only commpatible with the [%s] workflow" % defs.workflows.multi
+        with open(self.resume_file,"r") as f:
+            config = yaml.load(f)
+
+        # specify
+        required_tags = ["aux", "main"]
+        layers_per_tag = []
+        read_tags = []
+        for part in config:
+            info("Loading combo part: [%s]" % part)
+            model_path = config[part]["model_path"]
+            read_tags.append(config[part]["tag"])
+            saver = tf.train.Saver()
+            self.load_model(model_path, sess, ignorable_variable_names, saver = saver)
+        missing_tags = [r for r in required_tags if r not in read_tags]
+        if missing_tags:
+            error("Missing required tags from the combo files %s" % str(missing_tags))
+
+
+    def load_model(self, savefile_graph, sess, ignorable_variable_names, saver = None):
+        # use full saver if not specified
+        if saver is None:
+            saver = self.saver
+
+        required_files = [savefile_graph + "." + suf for suf in ["meta","index","snap"]]
+        exists = [os.path.exists(f) for f in required_files]
+        if any([ not ex for ex in exists]) :
+            for fname, ex in zip(required_files, exists):
+                print("file: [%s], exists: [%s]" % (fname, str(ex)))
+            error("Missing meta, index or snap part: [%s], from graph savefile: %s" % (str(exists), savefile_graph))
+
+        try:
+            # if we are in validation mode, the 'global_step' training variable is discardable
+            if self.val:
+                ignorable_variable_names.append(defs.names.global_step)
+
+            chkpt_names = get_checkpoint_tensor_names(savefile_graph)
+            # get all variables the project, omitting the :<num> appendices
+            curr_graph_names = [ drop_tensor_name_index(t.name) for t in tf.global_variables()]
+            names_missing_from_chkpt = [n for n in curr_graph_names if n not in chkpt_names and n not in ignorable_variable_names]
+            names_missing_from_curr = [n for n in chkpt_names if n not in curr_graph_names and n not in ignorable_variable_names]
+
+            if names_missing_from_chkpt:
+                missing_unignorables = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
+                warning("Found %d unignorable variables missing from checkpoint:[%s]" %
+                        (len(missing_unignorables),missing_unignorables))
+                # Better warn the user and await input
+                ans = input("Continue? (y/n)")
+                if ans != "y":
+                    error("Failed to load checkpoint")
+            if names_missing_from_curr:
+                warning("There are checkpoint variables missing in the project:[%s]" % names_missing_from_curr)
+                # Better warn the user and await input
+                ans = input("Continue? (y/n)")
+                if ans != "y":
+                    error("Failed to load checkpoint")
+            # load saved graph file
+            tf.reset_default_graph()
+            saver.restore(sess, savefile_graph)
+        except tf.errors.NotFoundError as err:
+            # warning(err.message)
+            pass
+        except:
+            error("Failed to load checkpoint!")
+
     # restore graph variables
     def handle_saveload(self, sess, ignorable_variable_names):
         # initialize graph saving / loading
         self.compute_save_interval()
+        # initialize default saveloader
         self.saver = tf.train.Saver(max_to_keep = self.num_saves)
 
         if self.phase == defs.phase.train and self.num_saves <= 0:
             return
         if self.should_resume():
+            if self.resume_file.endswith(".yml"):
+                self.load_combo(sess, ignorable_variable_names)
             debug("Handling resume options")
             if self.resume_file == defs.names.latest_savefile:
                 with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
@@ -510,48 +590,10 @@ class Settings:
                 msg = "Resuming specified tf graph: [%s]" % savefile_graph
 
             # handle surrounding quotes
-            if savefile_graph.startswith('"') or savefile_graph.startswith("'"): savefile_graph = savefile_graph[1:-1]
+            if savefile_graph.startswith('"') or savefile_graph.startswith("'"):
+                savefile_graph = savefile_graph[1:-1]
             info(msg)
-            required_files = [savefile_graph + "." + suf for suf in ["meta","index","snap"]]
-            exists = [os.path.exists(f) for f in required_files]
-            if any([ not ex for ex in exists]) :
-                for fname, ex in zip(required_files, exists):
-                    print("file: [%s], exists: [%s]" % (fname, str(ex)))
-                error("Missing meta, index or snap part: [%s], from graph savefile: %s" % (str(exists), savefile_graph))
-
-            try:
-                # if we are in validation mode, the 'global_step' training variable is discardable
-                if self.val:
-                    ignorable_variable_names.append(defs.names.global_step)
-
-                chkpt_names = get_checkpoint_tensor_names(savefile_graph)
-                # get all variables the project, omitting the :<num> appendices
-                curr_names = [ drop_tensor_name_index(t.name) for t in tf.global_variables()]
-                names_missing_from_chkpt = [n for n in curr_names if n not in chkpt_names and n not in ignorable_variable_names]
-                names_missing_from_curr = [n for n in chkpt_names if n not in curr_names and n not in ignorable_variable_names]
-
-                if names_missing_from_chkpt:
-                    missing_unignorables = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
-                    warning("Found %d unignorable variables missing from checkpoint:[%s]" %
-                            (len(missing_unignorables),missing_unignorables))
-                    # Better warn the user and await input
-                    ans = input("Continue? (y/n)")
-                    if ans != "y":
-                        error("Failed to load checkpoint")
-                if names_missing_from_curr:
-                    warning("There are checkpoint variables missing in the project:[%s]" % names_missing_from_curr)
-                    # Better warn the user and await input
-                    ans = input("Continue? (y/n)")
-                    if ans != "y":
-                        error("Failed to load checkpoint")
-                # load saved graph file
-                tf.reset_default_graph()
-                self.saver.restore(sess, savefile_graph)
-            except tf.errors.NotFoundError as err:
-                # warning(err.message)
-                pass
-            except:
-                error("Failed to load checkpoint!")
+            self.load_model(savefile_graph, sess, ignorable_variable_names)
 
     # save graph and dataset stuff
     def save(self, sess, progress):
