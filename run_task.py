@@ -62,6 +62,7 @@ class Settings:
         epochs = 15
         epoch_index = 0
         optimizer = defs.optim.sgd
+        momentum = 0.0
         base_lr = 0.001
         lr_mult = 2
         lr_decay = (defs.decay.exp, defs.periodicity.interval, 1000, 0.96)
@@ -108,8 +109,13 @@ class Settings:
 
         lrstr = ", lr: [%2.2f," % tr.base_lr
         if tr.lr_mult is not None: lrstr += " mult: %2.2f," % tr.lr_mult
-        if tr.lr_decay is not None: lrstr += " %s]" % ", ".join([str(x) for x in tr.lr_decay])
-        else: lrstr += " static]"
+        if not defs.optim.adapts_lr(tr.optimizer):
+            if tr.lr_decay is not None: lrstr += " %s" % ", ".join([str(x) for x in tr.lr_decay])
+            else: lrstr += " static"
+        else:
+            lrstr += " adaptive"
+        if tr.momentum and defs.optim.uses_momentum(tr.optimizer): lrstr += ", mom: %2.2f" % tr.momentum
+        lrstr += "]"
 
         infostr += lrstr
 
@@ -229,6 +235,7 @@ class Settings:
                 self.train.batch_size = int(obj['batch_size'])
                 self.train.epochs = int(obj['epochs'])
                 self.train.optimizer = defs.check(obj['optimizer'], defs.optim)
+                self.train.momentum = obj['momentum'] if 'momentum' in obj else self.train.momentum
                 self.train.base_lr = float(obj['base_lr'])
                 self.train.lr_mult = float(obj['lr_mult']) if obj['lr_mult'] != 'None' else None
                 lr_decay = parse_seq(obj['lr_decay'])
