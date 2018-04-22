@@ -501,10 +501,11 @@ class Dataset:
             self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
 
     # restore from a checkpoint
-    def restore(self, batch_index, epoch_index, sequence_length):
+    #def restore(self, batch_index, epoch_index, sequence_length):
+    def restore(self, batch_index, epoch_index):
         self.batch_index = batch_index
         self.epoch_index = epoch_index
-        self.sequence_length = sequence_length
+        #self.sequence_length = sequence_length
         self.fast_forward_iter()
 
     def initialize_imgproc(self):

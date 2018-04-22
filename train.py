@@ -11,10 +11,10 @@ from defs_ import *
 from tf_util import *
 
 
-class train:
+class Train:
     # placeholders
     inputData = None
-    inputLabels = None
+    labels = None
     caption_lengths = None
     workflow = None
 
@@ -46,12 +46,11 @@ class train:
     run_folder = None
 
     # input
-    input = []
+    required_input = []
 
-    def precompute_learning_rates(self, settings):
+    def precompute_learning_rates(self, settings, num_batches):
         base_lr = settings.train.base_lr
         decay_params = settings.train.lr_decay
-        num_batches = settings.get_num_batches()
         total_num_batches = num_batches * settings.train.epochs
         lr_per_batch = []
         if decay_params is None:
@@ -60,20 +59,20 @@ class train:
         lr_drop_offset = 0 if len(tuple(decay_params)) == 4 else decay_params[-1]
         decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params[:4])
 
-        if decay_strategy == defs.decay.granularity.exp:
+        if decay_strategy == defs.decay.exp:
             staircase = False
             log_message += "smoothly "
-        elif decay_strategy == defs.decay.granularity.staircase:
+        elif decay_strategy == defs.decay.staircase:
             staircase = True
             log_message += "jaggedly "
         else:
             error("Undefined decay strategy %s" % decay_strategy)
 
-        if decay_scheme == defs.decay.scheme.interval:
+        if decay_scheme == defs.periodicity.interval:
             # reduce every decay_freq batches
             decay_period = decay_freq
             log_message += "every %d step(s) " % decay_period
-        elif decay_scheme == defs.decay.scheme.drops:
+        elif decay_scheme == defs.periodicity.drops:
             # reduce a total of decay_freq times
             decay_period = math.ceil(total_num_batches / decay_freq)
             log_message += "every ceil[(%d batches x %d epochs) / %d total steps] = %d steps" % \
@@ -102,7 +101,7 @@ class train:
             batches = [ x for _ in range(settings.train.epochs) for x in range(num_batches)]
             if len(batches) != total_num_batches:
                 error("Batch length precomputation mismatch")
-            epochs = [ep for ep in range(settings.train.epochs) for _ in range(settings.get_num_batches())]
+            epochs = [ep for ep in range(settings.train.epochs) for _ in range(num_batches)]
             batches_lr = list(zip(epochs, batches, lr_per_batch))
 
             for b in batches_lr:
@@ -111,19 +110,23 @@ class train:
         return lr_per_batch
 
     # training ops
-    def create_training(self, settings, summaries):
+    def __init__(self, settings, feeder, logits, summaries):
+        if not settings.train:
+            return
         info("Creating training: { %s }" % settings.get_train_str())
 
-        self.logits = print_tensor(self.logits, "training: logits : ")
+        self.labels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
+        self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
         # configure loss
         with tf.name_scope("cross_entropy_loss"):
-            loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.inputLabels, name="loss")
+            loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels, name="loss")
             with tf.name_scope('total'):
                 self.loss = tf.reduce_mean(loss_per_vid)
             summaries.train.append(add_descriptive_summary(self.loss))
 
         # configure the learning rate
-        learning_rates = self.precompute_learning_rates(settings)
+        num_batches = feeder.get_num_batches()
+        learning_rates = self.precompute_learning_rates(settings, num_batches)
         self.learning_rates = tf.constant(learning_rates,tf.float32,name="Learning_rates")
         self.global_step = tf.Variable(settings.global_step, dtype = tf.int32, trainable=False,name="global_step")
         with tf.name_scope("lr"):
@@ -140,7 +143,7 @@ class train:
         with tf.name_scope('training_accuracy'):
             with tf.name_scope('correct_prediction_train'):
                 # ok for this argmax we gotta squash the labels down to video level.
-                correct_predictionTrain = tf.equal(tf.argmax(self.logits, 1), tf.argmax(self.inputLabels, 1))
+                correct_predictionTrain = tf.equal(tf.argmax(logits, 1), tf.argmax(self.labels, 1))
             with tf.name_scope('accuracy_train'):
                 self.accuracyTrain = tf.reduce_mean(tf.cast(correct_predictionTrain, tf.float32))
 
@@ -218,17 +221,5 @@ class train:
             grads_norm = tf.reduce_mean(list(map(tf.norm, grads)))
             grads_norm = print_tensor(grads_norm, "grads_clipped" )
             summaries.train.append(add_descriptive_summary(grads_norm))
-
-    def get_ignorable_variable_names(self):
-        ignorables = []
-
-        if self.dcnn_model:
-            ignorables.extend(self.dcnn_model.ignorable_variable_names)
-        if self.lstm_model:
-            ignorables.extend(self.lstm_model.ignorable_variable_names)
-        if ignorables:
-            info("Getting lrcn raw ignorables: %s" % str(ignorables))
-        ignorables = [drop_tensor_name_index(s) for s in ignorables]
-        return list(set(ignorables))
 
 

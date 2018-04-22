@@ -142,6 +142,7 @@ def print_tensor(tensor, message):
 
     tensor_cols = 20
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
+    debug(message + str(tensor.shape))
     return tens
 
 # duplicate elements from list

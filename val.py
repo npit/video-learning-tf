@@ -1,6 +1,41 @@
-class val:
-    # process description logits
+from defs_ import *
+from utils_ import *
+import pickle
+import json
+
+class Validation:
+    required_input = []
+    def __init__(self, settings, logits):
+        if not settings.val:
+            return
+        # frame-level logits
+        self.logits = logits
+        # clip / item - level logits
+        self.item_logits = None
+        self.validation_logits_save_counter = 0
+        self.validation_logits_save_interval = None
+
+        if defs.workflows.is_description(settings.workflow) and defs.workflows.is_image(settings.workflow):
+            self.item_logits = []
+            self.item_labels = []
+            self.non_padding_word_idxs = tf.placeholder(tf.int32, (None))
+        else:
+            # items refer to the primary unit we operate one, i.e. videos or frames
+            self.item_logits = np.zeros([0, settings.network.num_classes], np.float32)
+            self.item_labels = np.zeros([0, settings.network.num_classes], np.float32)
+            # clips refers to image groups that compose a video, for training with clip information
+            self.clip_logits = np.zeros([0, settings.network.num_classes], np.float32)
+            self.clip_labels = np.zeros([0, settings.network.num_classes], np.float32)
+
+        self.workflow = settings.workflow
+        self.labels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
+        self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
+        self.run_folder = settings.run_folder
+        self.run_id = settings.run_id
+        self.timestamp = settings.timestamp
+
     def process_description_validation_logits(self, logits, labels, dataset, fdict, padding):
+        error("Not implemented")
         caption_lengths = fdict[self.caption_lengths]
         assert (len(logits) - padding == len(caption_lengths)), "Logits, labels length mismatch (%d, %d)" % (len(logits)-padding, len(caption_lengths))
         eos_index = dataset.vocabulary.index("EOS")
@@ -28,8 +63,8 @@ class val:
 
     # validation accuracy computation
     def process_validation_logits(self, tag, settings, logits, fdict, padding):
-        labels = fdict[self.inputLabels]
-        dataset = settings.get_dataset_by_tag(tag)[0]
+        labels = fdict[self.labels]
+        dataset = settings.feeder.get_dataset_by_tag(tag)[0]
         # processing for image description
         if defs.workflows.is_description(self.workflow):
             self.process_description_validation_logits(logits, labels, dataset, fdict, padding)
@@ -173,3 +208,51 @@ class val:
         predicted_classes = np.argmax(logits, axis=1)
         correct_classes = np.argmax(labels, axis=1)
         return  np.mean(np.equal(predicted_classes, correct_classes))
+
+    def process_description(self, settings):
+        # get description metric
+        # do an ifthenelse on the evaluation type (eg coco)
+
+        # default eval. should be sth like a json production
+        if settings.eval_type == defs.eval_type.coco:
+            # evaluate coco
+            # format expected is as per  http://mscoco.org/dataset/#format
+            # [{ "image_id" : int, "caption" : str, }]
+
+            # get captions from logits, write them in the needed format,
+            # pass them to the evaluation function
+            ids_captions = []
+            num_processed_logits = 0
+
+            for idx in range(self.validation_logits_save_counter):
+                logits_chunk = self.load_validation_logits_chunk(idx)
+                ids_captions_chunk = settings.validation_logits_to_captions(logits_chunk, num_processed_logits)
+                ids_captions.extend(ids_captions_chunk)
+                num_processed_logits  += len(logits_chunk)
+                info("Processed saved chunk %d/%d containing %d items - item total: %d" %
+                     (idx+1, self.validation_logits_save_counter, len(logits_chunk), num_processed_logits))
+            if len(self.item_logits) > 0:
+                error("Should never get item logits last chunk in runtask!!")
+                ids_captions_chunk = settings.validation_logits_to_captions(self.item_logits, num_processed_logits)
+                ids_captions.extend(ids_captions_chunk)
+                info("Processed existing chunk containing %d items - item total: %d" % (len(self.item_logits), len(ids_captions)))
+
+            # check for erroneous duplicates
+            dupl = [obj["image_id"] for obj in ids_captions]
+            if duplicates(dupl):
+                error("Duplicate image ids in coco validation: %s" % str(dupl))
+
+            # write results
+            results_file = os.path.join(settings.run_folder, "coco.results.json")
+            info("Writing captioning results to %s" % results_file)
+            with open(results_file , "w") as fp:
+                json.dump(ids_captions, fp)
+
+            # also, get captions from the read image paths - labels files
+            # initialize with it the COCO object
+            # ....
+            info("Evaluating captioning using ground truth file %s" % str(settings.caption_ground_truth))
+            command = '$(which python2) tools/python2_coco_eval/coco_eval.py %s %s' % (results_file, settings.caption_ground_truth)
+            debug("evaluation command is [%s]" % command)
+            os.system(command)
+

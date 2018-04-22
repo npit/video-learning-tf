@@ -17,10 +17,10 @@ class Vectorizer:
 
 class NOP(Vectorizer):
     """
-    No change; input is already vectors
+    No change; input is already in vector form
     """
-    def __init__(self, name):
-        Vectorizer.__init__(name, "Does not transform its input")
+    def __init__(self):
+        Vectorizer.__init__("NOP", "Does not transform its input")
     def build(self, io, settings):
         pass
     def forward(self, io):
