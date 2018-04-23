@@ -19,8 +19,11 @@ class NOP(Vectorizer):
     """
     No change; input is already in vector form
     """
+
+    name = "nop"
+    description = "Does not transform input"
     def __init__(self):
-        Vectorizer.__init__("NOP", "Does not transform its input")
+        Vectorizer.__init__(NOP.name, NOP.description)
     def build(self, io, settings):
         pass
     def forward(self, io):
@@ -32,8 +35,10 @@ class DCNN(Vectorizer, Trainable):
     DCNN vectorizer
     """
 
+    name = "dcnn"
+    description = "Deep convolutional neural net"
     def __init__(self):
-        Vectorizer.__init__(self, name = "dcnn", description="Deep convolutional neural net")
+        Vectorizer.__init__(self, name = DCNN.name, description=DCNN.description)
 
     def build(self, io, settings):
         self.dcnn = dcnn()
@@ -41,15 +46,18 @@ class DCNN(Vectorizer, Trainable):
         return self.dcnn.get_output()
 
 class LSTM(Vectorizer, Trainable):
+    name="lstm"
+    description="Long short-term memory network"
     def __init__(self):
-        Vectorizer.__init__("lstm", "Long Short-Term Memory net")
+        Vectorizer.__init__(self, LSTM.name, LSTM.description)
 
     #def set_params(self):
     #    input_vec, input_state, len(input_vec), settings.network.lstm_params, output_dim,
     #                          sequence_length, nonzero_sequence, dropout_prob=0.0, omit_output_fc = False
     def build(self, io, settings):
         self.lstm = lstm()
-        input_vec, input_state, output_dim, seqlen, nonzero_seq, dropout, omit_fc = io
-        self.lstm.forward_pass_sequence(input_vec, input_state, len(input_vec), settings.network.lstm_params, output_dim,
-                              seqlen, nonzero_seq, dropout, omit_fc)
+        input_vec, input_dim, input_state, output_dim, seqlen, nonzero_seq, dropout, omit_fc = io
+        output, state = self.lstm.forward_pass_sequence(input_vec, input_state, input_dim, settings.network.lstm_params,
+                                        output_dim, seqlen, nonzero_seq, dropout, omit_fc)
+        return output, state
 

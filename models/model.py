@@ -32,10 +32,13 @@ class Model:
         fusion_method = settings.network.frame_fusion_method
 
         # print model
-        components = [repr, classif]
-        components = components + [fusion_method] if fusion_type == defs.fusion_type.late else components[:1] + [fusion_method] + components[1:]
-        model_str = "-".join(components)
-        info("Model:[%s]" % model_str)
+        components = [repr]
+        if components[-1] == DCNN.name: components[-1] += "-" + settings.network.frame_encoding_layer
+        if fusion_type == defs.fusion_type.early: components.append(fusion_method)
+        components.append(classif)
+        if components[-1] == LSTM.name: components[-1] += "-" + "-".join(map(str,settings.network.lstm_params))
+        if fusion_type == defs.fusion_type.late: components.append(fusion_method)
+        info("Model:[%s]" % ",".join(components))
 
         # define input
         # ------------
@@ -71,10 +74,18 @@ class Model:
             else:
                 self.logits = self.feature_vectors
         elif classif == defs.classifier.lstm:
+            assert fusion_type == defs.fusion_type.none, "The LSTM classifier should be used only with [%s] fusion" % defs.fusion_type.none
             self.classifier = LSTM()
             self.tf_components.append(self.classifier)
-            io_params = (self.feature_vectors, None, num_classes, fpc, None, settings.get_dropout(), False)
-            self.logits, _ = self.classifier.build(io_params, settings)
+            io_params = (self.feature_vectors, self.feature_dim, None, num_classes, fpc, None, settings.get_dropout(), False)
+            output, state = self.classifier.build(io_params, settings)
+            if settings.network.lstm_params[-1] == defs.fusion_method.state:
+                self.logits = state[-1].h
+            else:
+                self.logits = output
+
+            if int(self.logits.shape[1]) != settings.network.num_classes:
+                self.logits = convert_dim_fc(self.logits, settings.network.num_classes)
         else:
             error("Undefined classifier [%s]" % repr)
 

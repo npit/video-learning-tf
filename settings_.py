@@ -346,7 +346,6 @@ class Settings:
             error("Neither training nor validation is enabled.")
 
         # set the tensorboard mode-dependent folder
-        mode_folder = defs.phase.train if self.train else defs.phase.val
         self.tensorboard_folder = os.path.join(self.run_folder, self.tensorboard_folder, self.phase)
 
 
@@ -360,7 +359,7 @@ class Settings:
                 # load batch and epoch where training left off
                 info("Resuming training.")
                 # resume training metadata only in training
-                self.feeder.resume_snap()
+                self.feeder.resume_snap(self.resume_file)
             if self.val:
                 info("Evaluating trained network.")
         else:
