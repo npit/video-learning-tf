@@ -1,6 +1,7 @@
 import tensorflow as tf
 import itertools
 import numpy as np
+import pandas as pd
 from random import shuffle, choice, random, seed
 from scipy.misc import imread, imresize, imsave
 
@@ -13,6 +14,7 @@ from defs_ import *
 import pickle
 import yaml
 from parse_opts import *
+import string
 '''
 Script for production of training / testing data collections and serialization to tf.record files.
 '''
@@ -208,7 +210,7 @@ def serialize_multithread(item_paths, clips_per_item, frame_paths, labels, outfi
                 if not frames[t]:
                     error("Thread # %d encountered an error." % t)
                     exit(1)
-                serialize_to_tfrecord(frames[t], labels_per_thread[t], outfile, writer)
+                serialize_frames_to_tfrecord(frames[t], labels_per_thread[t], writer)
                 count += len(frames[t])
                 pbar.set_description("Run %d/%d, processed %7d/%7d frames" %
                                      (run_index + 1, len(paths_per_run), count,
@@ -243,7 +245,7 @@ def read_item_list_threaded(paths, storage, id, settings):
             return
         storage[id].append(image)
 
-def serialize_to_tfrecord( frames, labels, outfil, writer):
+def serialize_frames_to_tfrecord( frames, labels, writer):
     for idx in range(len(frames)):
         frame = frames[idx]
         label = labels[idx]
@@ -253,6 +255,17 @@ def serialize_to_tfrecord( frames, labels, outfil, writer):
             'depth': _int64_feature(frame.shape[2]),
             'label': _int64_feature(label),
             'image_raw': _bytes_feature(frame.tostring())}))
+        writer.write(example.SerializeToString())
+
+def serialize_vectors_to_tfrecord( vectors, labels, writer):
+    dim = vectors.shape[-1]
+    for idx in range(len(vectors)):
+        vector = vectors[idx]
+        label = labels[idx]
+        example = tf.train.Example(features=tf.train.Features(feature={
+            'dimension': _int64_feature(dim),
+            'label': _int64_feature(label),
+            'vector_raw': _bytes_feature(vector.tostring())}))
         writer.write(example.SerializeToString())
 
 def get_random_frames(avail_frame_idxs, settings, path):
@@ -405,6 +418,40 @@ def read_image(imagepath, settings):
         error("Error reading image.")
         return None
     return image
+
+def deserialize_vector(iterator, num_vectors):
+    vectors, labels = [], []
+    for _ in range(num_vectors):
+        try:
+            string_record = next(iterator)
+            example = tf.train.Example()
+            example.ParseFromString(string_record)
+            vec_string = (example.features.feature['vector_raw']
+                .bytes_list
+                .value[0])
+            dim = int(example.features.feature['dimension']
+                         .int64_list
+                         .value[0])
+            label = (example.features.feature['label']
+                     .int64_list
+                     .value)
+            label = list(label)
+            label = label[0] if len(label) == 0 else label
+            vector = np.fromstring(vec_string, dtype=np.float32)
+            if dim != len(vector):
+                error("Deserialized vector length %d but dimension stored is %d." % (len(vector), dim))
+
+            vectors.append(vector)
+            labels.append(label)
+
+        except StopIteration:
+            break
+        except Exception as ex:
+            warning(ex)
+            error("Error reading tfrecord vector.")
+
+    return vectors, labels
+
 # read from tfrecord
 def deserialize_from_tfrecord(iterator, images_per_iteration):
     # images_per_iteration :
@@ -462,7 +509,13 @@ def read_file(inp, settings):
             if not line:
                 continue
 
-            path, label = line.strip().split(" ",1)
+            line = line.strip()
+            path, label = line.split(" ",1)
+            # if all elements are numeric, it's a features file
+            if not any([x in string.ascii_letters for x in path]):
+                mode = defs.input_mode.vectors
+                info("Set input mode to [%s] due to non-letter path value." % (mode))
+                break
             label = [ int(l) for l in label.split() ]
             # document the maximum number of labels
             if len(label) > max_num_labels:
@@ -535,6 +588,10 @@ def write_serialization(settings):
     for idx in range(len(settings.input_files)):
         inp = settings.input_files[idx]
         item_paths, item_labels, mode, max_num_labels = read_file(inp, settings)
+        if mode == defs.input_mode.vectors:
+            input_file_and_sidx, ids, labels, outfile = serialize_ascii(inp, settings)
+            framepaths_per_input.append((input_file_and_sidx, labels, ids, None, mode))
+            continue
 
         if mode == defs.input_mode.image:
             if settings.do_shuffle:
@@ -628,9 +685,12 @@ def validate(written_data, errors, settings):
         if mode == defs.input_mode.image:
             paths = item_paths
             labels = item_labels
+        if mode == defs.input_mode.vectors:
+            _, shuffle_idx = item_paths
+
+        num_validate = round(len(paths) * settings.validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
 
         # validate
-        num_validate = round(len(paths) * settings.validate_pcnt / 100) if len(paths) >= 10000 else len(paths)
         info("Will validate %d%% of a total of %d items (but at least 10K), i.e. %d items." % (settings.validate_pcnt, len(paths), num_validate))
         sys.stdout.flush()
         error_free = True
@@ -641,23 +701,39 @@ def validate(written_data, errors, settings):
         lidx = 0
         testidx = idx_list[lidx]
         iter = tf.python_io.tf_record_iterator(output_file)
-        with tqdm.tqdm(total=num_validate, desc="Validating [%s]" %
-                  basename(output_file), ascii=True) as pbar:
+        vectors = None
+        with tqdm.tqdm(total=num_validate, desc="Validating [%s]" % basename(output_file), ascii=True) as pbar:
             for i in range(len(paths)):
                 if not i == testidx:
                     next(iter)
                     continue
-                frame, label = read_image(paths[i], settings), labels[i]
 
-                fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
-                frametf, labeltf = fframetf[0], llabeltf[0]
+                if mode == defs.input_mode.vectors:
+                    print("Problem is that in the input file, data are not sorted")
+                    if vectors is None:
+                        vectors, labels, maxlabels = read_vectors(inp)
+                        if settings.do_shuffle:
+                            vectors = vectors[shuffle_idx]
+                            labels = [labels[s] for s in shuffle_idx]
+                    dvectors, dlabels = deserialize_vector(iter, 1)
+                    while type(dlabels) == list and len(dlabels) == 1: dlabels = dlabels[0]
+                    if not np.array_equal(dvectors[0] , vectors[i]):
+                        error("Unequal image @ idx %s : (%s)(%s)" % (str(i), str(dvectors[0][:10]), str(vectors[i][:10])))
+                        error_free = False
+                    if not dlabels == labels[i]:
+                        error("Unequal label @ %s. Found %s, expected %s" % ( paths[i], str(dlabels), str(labels[i])))
+                        error_free = False
+                else:
+                    frame, label = read_image(paths[i], settings), labels[i]
+                    fframetf, llabeltf = deserialize_from_tfrecord(iter,1)
+                    frametf, labeltf = fframetf[0], llabeltf[0]
 
-                if not np.array_equal(frame , frametf):
-                    error("Unequal image @ %s" % paths[i])
-                    error_free = False
-                if not label == labeltf:
-                    error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
-                    error_free = False
+                    if not np.array_equal(frame , frametf):
+                        error("Unequal image @ %s" % paths[i])
+                        error_free = False
+                    if not label == labeltf:
+                        error("Unequal label @ %s. Found %d, expected %d" % ( paths[i], label, labeltf))
+                        error_free = False
 
                 lidx = lidx + 1
                 pbar.update()
@@ -690,33 +766,103 @@ def write_paths_file(data, errors, settings):
 
         if settings.do_shuffle:
             # re-write paths, if they got shuffled, renaming the original
-
-            copyfile(inp, output_file + ".unshuffled")
             shuffled_paths_file= output_file + ".shuffled"
             info("Documenting shuffled video order to %s" % (shuffled_paths_file))
-            with open(shuffled_paths_file,'w') as f:
-                for v in range(len(item_paths)):
-                    item = item_paths[v]
-                    f.write("%s " % item)
-                    if type(item_labels[v]) == list:
-                        for l in item_labels[v]:
-                            f.write("%d " % l)
-                    else:
-                        f.write("%d" % item_labels[v])
-                    f.write("\n")
 
-        clip_info = "" if settings.clipframe_mode == defs.clipframe_mode.rand_frames or \
-                          mode == defs.input_mode.image else ".%d.cpv" % settings.clip_offset_or_num
-        frame_info = "" if mode == defs.input_mode.image else ".%d.fpc" % settings.num_frames_per_clip
-        clipframe_mode_info = "" if mode == defs.input_mode.image else ".%s.cfm" % settings.clipframe_mode
-        outfile = "%s%s%s%s" % (output_file, clip_info, frame_info, clipframe_mode_info)
+            if mode == defs.input_mode.vectors:
+                with open(shuffled_paths_file,'w') as f:
+                    for item_id, label in zip(item_labels,paths):
+                        f.write("%s %s\n" % (item_id, str(label)))
+            else:
+                copyfile(inp, output_file + ".unshuffled")
+                with open(shuffled_paths_file,'w') as f:
+                    for v in range(len(item_paths)):
+                        item = item_paths[v]
+                        f.write("%s " % item)
+                        if type(item_labels[v]) == list:
+                            for l in item_labels[v]:
+                                f.write("%d " % l)
+                        else:
+                            f.write("%d" % item_labels[v])
+                        f.write("\n")
 
-        if not mode == defs.input_mode.video:
-            continue
-        info("Documenting selected clip/frame/... info to %s" % (basename(outfile)))
-        with open(outfile, "w") as f:
-            for path, label in zip(paths, labels):
-                f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))
+        if mode == defs.input_mode.vectors:
+            info("Will not write clip information, as input is vectors")
+            info("Possible TODO is for input frame vectors")
+            pass
+        else:
+            clip_info = "" if settings.clipframe_mode == defs.clipframe_mode.rand_frames or \
+                              mode == defs.input_mode.image else ".%d.cpv" % settings.clip_offset_or_num
+            frame_info = "" if mode == defs.input_mode.image else ".%d.fpc" % settings.num_frames_per_clip
+            clipframe_mode_info = "" if mode == defs.input_mode.image else ".%s.cfm" % settings.clipframe_mode
+            outfile = "%s%s%s%s" % (output_file, clip_info, frame_info, clipframe_mode_info)
+
+            if not mode == defs.input_mode.video:
+                continue
+            info("Documenting selected clip/frame/... info to %s" % (basename(outfile)))
+            with open(outfile, "w") as f:
+                for path, label in zip(paths, labels):
+                    f.write("%s %s\n" % (path, " ".join(list(map(str,label)))))
+
+def read_vectors(input_file):
+
+    data = pd.read_csv(input_file, header=None, delimiter=" ").values
+    vectors, labels, max_num_labels = None, None, 1
+    with tqdm.tqdm(total=len(data), ascii=True) as pbar:
+        for i in range(len(data)):
+            feature_vector, labels_vector = data[i][0], data[i][-1]
+            row = np.asarray(feature_vector.split(","),np.float32)
+            if type(labels_vector) is not int:
+                labels_vector = np.fromstring(labels_vector.split(","),np.float32)
+            dim = len(row)
+            if i == 0:
+                vectors = np.ndarray((0, dim), np.float32)
+                labels = []
+                stored_dim = dim
+            if vectors.shape[-1] != stored_dim:
+                error("Inconsistent dimension: Encountered dim: %d at line %d, had stored %d." % (dim, i+1, stored_dim))
+            vectors = np.vstack((vectors, row))
+            labels.append(labels_vector)
+            if type(labels_vector) != int:
+                max_num_labels = max(max_num_labels, len(labels_vector))
+            pbar.update()
+        # return the read data
+    return vectors, labels, max_num_labels
+
+
+def serialize_ascii(input_file, settings):
+
+    info("Reading existing features from file: [%s]" % input_file)
+    feature_file, ids_file = input_file, input_file + ".ids"
+
+    # output folder
+    if settings.output_folder:
+        outfile = os.path.join(settings.output_folder, os.path.basename(feature_file) + ".tfrecord")
+        if not os.path.exists(settings.output_folder):
+            info("Creating output folder [%s]" % settings.output_folder)
+            os.mkdir(settings.output_folder)
+    else:
+        outfile = feature_file + ".tfrecord"
+
+    # convert string to numpy vector
+    vectors, labels, max_num_labels = read_vectors(feature_file)
+    ids = [ line.split()[0] for line in  read_file_lines(ids_file)]
+
+    if settings.do_shuffle:
+        info("Shuffling features, random seed: [%s]" % str(settings.seed))
+        shuffle_idx = np.arange(len(vectors))
+        np.random.shuffle(shuffle_idx)
+        shuffle_idx = np.ndarray.tolist(shuffle_idx)
+        vectors = vectors[shuffle_idx]
+        labels = [labels[i] for i in shuffle_idx]
+        ids = [ids[i] for i in shuffle_idx]
+    info("Serializing existing features to file: [%s]" % outfile)
+    write_size_file(vectors, [1 for _ in vectors], outfile, defs.input_mode.vectors, max_num_labels, settings)
+    writer = tf.python_io.TFRecordWriter(outfile)
+    serialize_vectors_to_tfrecord(vectors, labels, writer)
+    info("Done serializing to file: [%s]" % outfile)
+    return ((input_file, shuffle_idx), ids, labels, outfile)
+
 
 def main():
     settings = serialization_settings()

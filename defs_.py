@@ -41,7 +41,7 @@ class defs:
 
     # input mode is framewise dataset vs videowise, each video having n frames
     class input_mode:
-        video, image = "video", "image"
+        video, image, vectors = "video", "image", "vectors"
         def get_from_workflow(arg):
             if defs.workflows.is_image(arg):
                 return defs.input_mode.image
