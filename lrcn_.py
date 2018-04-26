@@ -115,20 +115,20 @@ class LRCN:
         lr_drop_offset = 0 if len(tuple(decay_params)) == 4 else decay_params[-1]
         decay_strategy, decay_scheme, decay_freq, decay_factor = tuple(decay_params[:4])
 
-        if decay_strategy == defs.decay.granularity.exp:
+        if decay_strategy == defs.decay.exp:
             staircase = False
             log_message += "smoothly "
-        elif decay_strategy == defs.decay.granularity.staircase:
+        elif decay_strategy == defs.decay.staircase:
             staircase = True
             log_message += "jaggedly "
         else:
             error("Undefined decay strategy %s" % decay_strategy)
 
-        if decay_scheme == defs.decay.scheme.interval:
+        if decay_scheme == defs.periodicity.interval:
             # reduce every decay_freq batches
             decay_period = decay_freq
             log_message += "every %d step(s) " % decay_period
-        elif decay_scheme == defs.decay.scheme.drops:
+        elif decay_scheme == defs.periodicity.drops:
             # reduce a total of decay_freq times
             decay_period = math.ceil(total_num_batches / decay_freq)
             log_message += "every ceil[(%d batches x %d epochs) / %d total steps] = %d steps" % \
@@ -177,13 +177,19 @@ class LRCN:
                 self.loss = tf.reduce_mean(loss_per_vid)
             summaries.train.append(add_descriptive_summary(self.loss))
 
-        # configure the learning rate
-        learning_rates = self.precompute_learning_rates(settings)
-        self.learning_rates = tf.constant(learning_rates,tf.float32,name="Learning_rates")
         self.global_step = tf.Variable(settings.global_step, dtype = tf.int32, trainable=False,name="global_step")
-        with tf.name_scope("lr"):
-            self.current_lr = self.learning_rates[self.global_step ]
-            summaries.train.append(add_descriptive_summary(self.current_lr))
+
+        # configure the learning rate
+        if defs.optim.adapts_lr(settings.train.optimizer):
+            # if the optimizer adapts it, use the base learning rate only
+            self.current_lr = tf.constant(settings.train.base_lr, tf.float32, name="Learning_rate")
+        else:
+            # else, precompute the values wrt the decay schedule
+            learning_rates = self.precompute_learning_rates(settings)
+            self.learning_rates = tf.constant(learning_rates,tf.float32,name="Learning_rates")
+            with tf.name_scope("lr"):
+                self.current_lr = self.learning_rates[self.global_step ]
+                summaries.train.append(add_descriptive_summary(self.current_lr))
 
         # setup the training ops, with a potential lr per-layer variation
         if settings.train.lr_mult is not None:
@@ -201,6 +207,18 @@ class LRCN:
 
         summaries.train.append(tf.summary.scalar('accuracyTrain', self.accuracyTrain))
 
+    def get_optimizer(self, settings, lr, name = ""):
+        optimizer = settings.train.optimizer
+        name = optimizer + name
+        if optimizer == defs.optim.sgd:
+            return tf.train.GradientDescentOptimizer(lr, name=name)
+        elif optimizer == defs.optim.adam:
+            return tf.train.AdamOptimizer(lr, name = name)
+        elif optimizer == defs.optim.rmsprop:
+            return tf.train.RMSPropOptimizer(lr, momentum = settings.train.momentum, name = name)
+        else:
+            error("Undefined optimizer %s" % optimizer)
+
     # establish the training ops with slow and fast learning parameters
     def create_multi_tier_learning(self, settings, summaries):
         with tf.name_scope("two_tier_optimizer"):
@@ -215,13 +233,8 @@ class LRCN:
             info("Setting up two-tier training with a factor of %f for the %d layer(s): %s" % (
             settings.train.lr_mult, len(modified_vars), [ m.name for m in modified_vars]))
 
-            # setup the two optimizer
-            if settings.train.optimizer == defs.optim.sgd:
-                opt = tf.train.GradientDescentOptimizer(self.current_lr, name="sgd_base")
-            elif settings.train.optimizer == defs.optim.adam:
-                opt = tf.train.AdamOptimizer(self.current_lr)
-            else:
-                error("Undefined optimizer %s" % settings.train.optimizer)
+            # setup the optimizer
+            opt = self.get_optimizer(settings, self.current_lr)
 
             # computer two-tier grads
             grads = opt.compute_gradients(self.loss, var_list=regular_vars)
@@ -231,7 +244,7 @@ class LRCN:
             trainer_base = opt.apply_gradients(grads)
 
             modified_lr = self.current_lr * settings.train.lr_mult
-            opt_mod = tf.train.GradientDescentOptimizer(modified_lr, name="sgd_mod")
+            opt_mod = self.get_optimizer(settings, modified_lr, name="mod")
             grads_mod = opt_mod.compute_gradients(self.loss, var_list=modified_vars)
             if settings.train.clip_grads is not None:
                 clipmin, clipmax = settings.train.clip_grads
@@ -253,12 +266,7 @@ class LRCN:
         # single lr for all
         info("Setting up training with a global learning rate.")
         with tf.name_scope("single_tier_optimizer"):
-            if settings.train.optimizer == defs.optim.sgd:
-                opt = tf.train.GradientDescentOptimizer(self.current_lr)
-            elif settings.train.optimizer == defs.optim.adam:
-                opt = tf.train.AdamOptimizer(self.current_lr)
-            else:
-                error("Undefined optimizer %s" % settings.train.optimizer)
+            opt = self.get_optimizer(settings, self.current_lr)
 
             grads_vars = opt.compute_gradients(self.loss)
             grads = [grad for grad, _ in grads_vars]
@@ -408,6 +416,7 @@ class LRCN:
 
 
         info("%s workflow type: [%s]" % (settings.workflow, settings.network.multi_workflow))
+        assert settings.get_dataset_by_tag(defs.dataset_tag.aux), "No dataset tag [%s] supplied in actrec dual" % defs.dataset_tag.aux
 
         # a dcnn for each dataset, mapping an image to a vector.
         self.inputLabels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")

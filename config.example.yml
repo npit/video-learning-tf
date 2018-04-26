@@ -47,6 +47,7 @@ run:
     batch_size: 1
     epochs : 2
     optimizer : defs.optim.sgd
+    momentum: 0.9
     base_lr: 0.1
     lr_mult : None
     lr_decay : [ defs.decay.exp, defs.periodicity.interval, 8, 0.96 ]

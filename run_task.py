@@ -11,7 +11,6 @@ from models.model import Model
 from utils_ import *
 from defs_ import defs
 
-
 # print information on current iteration
 def print_iter_info(settings, feeder, num_images, num_labels, padding):
     dataset = feeder.datasets[settings.phase][0]
@@ -27,7 +26,7 @@ def do_train(settings, train, feeder, model, sess, tboard_writer, summaries):
     # mop up all summaries. Unless you separate val and train, the training subgraph
     # will be executed when calling the summaries op. Which is bad.
     ops = [summaries.train_merged, train.loss, train.current_lr, train.global_step, train.optimizer]
-    required_input = [ i for component in [train, model] for i in component.required_input ]
+    required_input = [i for component in [train, model] for i in component.required_input]
 
     run_batch_count = 0
     min_train_loss = (1000, -1)
@@ -116,128 +115,6 @@ def do_test(settings, val, feeder, model, sess, tboard_writer, summaries):
     tboard_writer.flush()
     return True
 
-
-# test the network on validation data
-#def test(lrcn, settings, sess, tboard_writer, summaries):
-#    tic = time.time()
-#
-#    settings.global_step = 0
-#
-#    # validation
-#    while settings.loop():
-#        # get images and labels
-#        images, ground_truth, dataset_ids = settings.get_next_batch()
-#        fdict, num_labels, padding = get_feed_dict(lrcn, settings, images, ground_truth, dataset_ids)
-#        print_iter_info(settings, [len(im) for im in images], num_labels, padding)
-#        logits = sess.run(lrcn.logits, feed_dict=fdict)
-#        lrcn.process_validation_logits( defs.dataset_tag.main, settings, logits, fdict, padding)
-#        lrcn.save_validation_logits_chunk()
-#    # save the complete output logits
-#    lrcn.save_validation_logits_chunk(save_all = True)
-#
-#    # done, get accuracy
-#    if defs.workflows.is_description(settings.workflow):
-#        # get description metric
-#        # do an ifthenelse on the evaluation type (eg coco)
-#
-#        # default eval. should be sth like a json production
-#        if settings.eval_type == defs.eval_type.coco:
-#            # evaluate coco
-#            # format expected is as per  http://mscoco.org/dataset/#format
-#            # [{ "image_id" : int, "caption" : str, }]
-#
-#            # get captions from logits, write them in the needed format,
-#            # pass them to the evaluation function
-#            ids_captions = []
-#            num_processed_logits = 0
-#
-#            for idx in range(lrcn.validation_logits_save_counter):
-#                logits_chunk = lrcn.load_validation_logits_chunk(idx)
-#                ids_captions_chunk = settings.validation_logits_to_captions(logits_chunk, num_processed_logits)
-#                ids_captions.extend(ids_captions_chunk)
-#                num_processed_logits  += len(logits_chunk)
-#                info("Processed saved chunk %d/%d containing %d items - item total: %d" %
-#                    (idx+1,lrcn.validation_logits_save_counter, len(logits_chunk), num_processed_logits))
-#            if len(lrcn.item_logits) > 0:
-#                error("Should never get item logits last chunk in runtask!!")
-#                ids_captions_chunk = settings.validation_logits_to_captions(lrcn.item_logits, num_processed_logits)
-#                ids_captions.extend(ids_captions_chunk)
-#                info("Processed existing chunk containing %d items - item total: %d" % (len(lrcn.item_logits), len(ids_captions)))
-#
-#            # check for erroneous duplicates
-#            dupl = [obj["image_id"] for obj in ids_captions]
-#            if duplicates(dupl):
-#                error("Duplicate image ids in coco validation: %s" % str(dupl))
-#
-#            # write results
-#            results_file = os.path.join(settings.run_folder, "coco.results.json")
-#            info("Writing captioning results to %s" % results_file)
-#            with open(results_file , "w") as fp:
-#                json.dump(ids_captions, fp)
-#
-#            # also, get captions from the read image paths - labels files
-#            # initialize with it the COCO object
-#            # ....
-#            info("Evaluating captioning using ground truth file %s" % str(settings.caption_ground_truth))
-#            command = '$(which python2) tools/python2_coco_eval/coco_eval.py %s %s' % (results_file, settings.caption_ground_truth)
-#            debug("evaluation command is [%s]" % command)
-#            os.system(command)
-#
-#    else:
-#        accuracy = lrcn.get_accuracy()
-#        # no use in adding a single scalar accuracy summary to tensorboard
-        # summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
-        # summaries.merge()
-        # tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
-        #info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
-        # if specified to save the logits, save the accuracy as well
-        #if lrcn.validation_logits_save_interval is not None:
-            #with open(os.path.join(settings.run_folder,"accuracy_" + settings.run_id), "w") as f:
-                #f.write(str(accuracy))
-
-    #tboard_writer.flush()
-    #return True
-
-
-# the main function
-#def main(init_file):
-#    # create and initialize settings and dataset objects
-#    settings = Settings()
-#    settings.initialize(init_file)
-#
-#
-#    # init summaries for printage
-#    summaries = Summaries()
-#
-#    # create and configure the model
-#    model = Model(settings)
-#    lrcn = lrcn_.LRCN()
-#    lrcn.create(settings, summaries)
-#
-#    # view_print_tensors(lrcn,dataset,settings,lrcn.print_tensors)
-#
-#    # create and init. session and visualization
-#    sess = tf.Session()
-#    sess.run(tf.global_variables_initializer())
-#
-#    # restore graph variables,
-#    settings.handle_saveload(sess, lrcn.get_ignorable_variable_names())
-#
-#    # mop up all summaries. Unless you separate val and train, the training subgraph
-#    # will be executed when calling the summaries op. Which is bad.
-#    summaries.merge()
-#
-#    # create the writer for visualizashuns
-#    tboard_writer = tf.summary.FileWriter(settings.tensorboard_folder, sess.graph)
-#    if settings.train:
-#        train_test(settings, lrcn,  sess, tboard_writer, summaries)
-#    elif settings.val:
-#        test(lrcn, settings,  sess, tboard_writer, summaries)
-#
-#    # mop up
-#    tboard_writer.close()
-#    sess.close()
-#    info("Run [%s] complete." % settings.run_id)
 
 def main(init_file):
     # create and initialize settings and dataset objects

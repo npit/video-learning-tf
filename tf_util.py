@@ -137,6 +137,8 @@ def vec_seq_concat(seq_tensor, vec_tensor, sequence_length, order = 'vecfirst'):
 def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
     encoded_frames = tf.reshape(encoded_frames, (-1, fpc, encoded_dim),
                                 name="aggregate_clips")
+
+    encoded_frames = print_tensor(encoded_frames, "Reshaped vectors")
     encoded_frames = apply_temporal_fusion(encoded_frames, encoded_dim, fpc, fusion_method)
     return encoded_frames
 

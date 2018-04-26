@@ -31,6 +31,10 @@ class Model:
         fusion_type = settings.network.frame_fusion_type
         fusion_method = settings.network.frame_fusion_method
 
+
+        if fpc ==1 and fusion_type != defs.fusion_type.none:
+            info("Omitting specified fusion [%s][%s] due to singular fpc" % (fusion_type, fusion_method))
+
         # print model
         components = [repr]
         if components[-1] == DCNN.name: components[-1] += "-" + settings.network.frame_encoding_layer
@@ -61,9 +65,9 @@ class Model:
         self.feature_vectors = print_tensor(self.feature_vectors, "Vectorized output")
 
         # early fusion - aggregate before classification
-        if fusion_type == defs.fusion_type.early:
+        if fusion_type == defs.fusion_type.early and fpc > 1:
             self.feature_vectors = aggregate_clip_vectors(self.feature_vectors, self.feature_dim, fpc, fusion_method=fusion_method)
-            print_tensor(self.feature_vectors, "Early fusion")
+            self.feature_vectors = print_tensor(self.feature_vectors, "Early fusion")
 
         # classification
         self.logits = None
@@ -84,17 +88,18 @@ class Model:
             else:
                 self.logits = output
 
-            if int(self.logits.shape[1]) != settings.network.num_classes:
-                self.logits = convert_dim_fc(self.logits, settings.network.num_classes)
+            if int(self.logits.shape[1]) != num_classes:
+                self.logits = convert_dim_fc(self.logits, num_classes)
         else:
             error("Undefined classifier [%s]" % repr)
 
+        self.logits = print_tensor(self.logits, "Post-classification logits")
         # late fusion - aggregate after classification
-        if fusion_type == defs.fusion_type.late:
-            self.feature_vectors = aggregate_clip_vectors(self.feature_vectors, self.feature_dim, fpc, fusion_method=fusion_method)
-            print_tensor(self.feature_vectors, "Late fusion")
+        if fusion_type == defs.fusion_type.late and fpc > 1:
+            self.logits = aggregate_clip_vectors(self.logits, num_classes, fpc, fusion_method=fusion_method)
+            self.logits = print_tensor(self.logits, "Late fusion")
 
-        print_tensor(self.feature_vectors, "Logits")
+        self.logits = print_tensor(self.logits, "Final logits")
 
 
     def get_output(self):
