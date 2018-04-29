@@ -11,6 +11,7 @@ from models.model import Model
 from utils_ import *
 from defs_ import defs
 
+
 # print information on current iteration
 def print_iter_info(settings, feeder, num_images, num_labels, padding):
     dataset = feeder.datasets[settings.phase][0]
@@ -19,6 +20,7 @@ def print_iter_info(settings, feeder, num_images, num_labels, padding):
     msg = "Mode: [%s], %s batch %4d / %4d : %s images%s, %3d labels" % \
           (settings.phase, epoch_str , dataset.batch_index, len(dataset.batches), str(num_images), padinfo, num_labels)
     info(msg)
+
 
 # train the network
 def do_train(settings, train, feeder, model, sess, tboard_writer, summaries):
@@ -109,7 +111,7 @@ def do_test(settings, val, feeder, model, sess, tboard_writer, summaries):
         info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
         # if specified to save the logits, save the accuracy as well
         if val.validation_logits_save_interval is not None:
-            with open(os.path.join(settings.run_folder,"accuracy_" + settings.run_id), "w") as f:
+            with open(os.path.join(settings.run_folder, "accuracy_" + settings.run_id), "w") as f:
                 f.write(str(accuracy))
 
     tboard_writer.flush()
@@ -152,6 +154,7 @@ def main(init_file):
     tboard_writer.close()
     sess.close()
     info("Run [%s] complete." % settings.run_id)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

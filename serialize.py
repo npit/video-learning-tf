@@ -89,8 +89,6 @@ class serialization_settings:
             self.logging_level = eval(self.logging_level)
 
 
-        print('['+self.run_id + ']',type(self.run_id))
-        print('['+config['run_id']+']', type(config['run_id']))
         if self.run_id is None or not self.run_id:
             self.run_id = "serialize_%s" % (get_datetime_str())
         else:
@@ -497,7 +495,6 @@ def deserialize_from_tfrecord(iterator, images_per_iteration):
 
 def read_file(inp, settings):
     mode = None
-    info("Reading input file [%s] " % (inp))
     if settings.path_prepend_folder is not None:
         info("Prepending path:[%s]" % settings.path_prepend_folder)
     max_num_labels = -1
@@ -587,6 +584,7 @@ def write_serialization(settings):
     errors_per_input = [False for _ in settings.input_files]
     for idx in range(len(settings.input_files)):
         inp = settings.input_files[idx]
+        info("Reading input file %d/%d: [%s] " % (idx+1, len(settings.input_files), inp))
         item_paths, item_labels, mode, max_num_labels = read_file(inp, settings)
         if mode == defs.input_mode.vectors:
             input_file_and_sidx, ids, labels, outfile = serialize_ascii(inp, settings)
@@ -807,25 +805,24 @@ def read_vectors(input_file):
 
     data = pd.read_csv(input_file, header=None, delimiter=" ").values
     vectors, labels, max_num_labels = None, None, 1
-    with tqdm.tqdm(total=len(data), ascii=True) as pbar:
-        for i in range(len(data)):
-            feature_vector, labels_vector = data[i][0], data[i][-1]
-            row = np.asarray(feature_vector.split(","),np.float32)
-            if type(labels_vector) is not int:
-                labels_vector = np.fromstring(labels_vector.split(","),np.float32)
-            dim = len(row)
-            if i == 0:
-                vectors = np.ndarray((0, dim), np.float32)
-                labels = []
-                stored_dim = dim
-            if vectors.shape[-1] != stored_dim:
-                error("Inconsistent dimension: Encountered dim: %d at line %d, had stored %d." % (dim, i+1, stored_dim))
-            vectors = np.vstack((vectors, row))
-            labels.append(labels_vector)
-            if type(labels_vector) != int:
-                max_num_labels = max(max_num_labels, len(labels_vector))
-            pbar.update()
-        # return the read data
+    for i in range(len(data)):
+        feature_vector, labels_vector = data[i][0], data[i][-1]
+        row = np.asarray(feature_vector.split(","),np.float32)
+        if type(labels_vector) is not int:
+            print(i,":",labels_vector)
+            labels_vector = np.asarray(labels_vector.split(","),np.int32)
+        dim = len(row)
+        if i == 0:
+            vectors = np.ndarray((0, dim), np.float32)
+            labels = []
+            stored_dim = dim
+        if vectors.shape[-1] != stored_dim:
+            error("Inconsistent dimension: Encountered dim: %d at line %d, had stored %d." % (dim, i+1, stored_dim))
+        vectors = np.vstack((vectors, row))
+        labels.append(labels_vector)
+        if type(labels_vector) != int:
+            max_num_labels = max(max_num_labels, len(labels_vector))
+    # return the read data
     return vectors, labels, max_num_labels
 
 
@@ -848,7 +845,7 @@ def serialize_ascii(input_file, settings):
     ids = [ line.split()[0] for line in  read_file_lines(ids_file)]
 
     if settings.do_shuffle:
-        info("Shuffling features, random seed: [%s]" % str(settings.seed))
+        info("Shuffling vector features, random seed: [%s]" % str(settings.seed))
         shuffle_idx = np.arange(len(vectors))
         np.random.shuffle(shuffle_idx)
         shuffle_idx = np.ndarray.tolist(shuffle_idx)

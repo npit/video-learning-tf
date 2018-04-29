@@ -223,19 +223,19 @@ class Settings:
 
             # imgproc options
             path = dataobj['data_path']
-            mean_image = parse_seq(dataobj['mean_image'])
+            mean_image = parse_seq(dataobj['mean_image']) if 'mean_image' in dataobj else None
             batch_item = defs.check(dataobj['batch_item'], defs.batch_item)
-            prepend_folder = dataobj['prepend_folder']
-            image_shape = parse_seq(dataobj['image_shape'])
-            imgproc_raw = parse_seq(dataobj['imgproc'])
+            prepend_folder = dataobj['prepend_folder'] if 'prepend_folder' in dataobj else None
+            image_shape = parse_seq(dataobj['image_shape']) if 'image_shape' in dataobj else None
+            imgproc_raw = parse_seq(dataobj['imgproc']) if 'imgproc' in dataobj else []
             imgproc = []
             for opt in imgproc_raw:
                 imgproc.append(defs.check(opt, defs.imgproc))
             if defs.imgproc.raw_resize in imgproc and not mean_image:
                 error("[%s] option requires a supplied mean image intensity." % defs.imgproc.raw_resize)
-            raw_image_shape = parse_seq(dataobj['raw_image_shape'])
+            raw_image_shape = parse_seq(dataobj['raw_image_shape']) if 'raw_image_shape' in dataobj else None
             data_format = defs.check(dataobj['data_format'], defs.data_format)
-            frame_format = dataobj['frame_format']
+            frame_format = dataobj['frame_format'] if 'frame_format' in dataobj else None
             tag = defs.check(dataobj['tag'], defs.dataset_tag)
 
             # read image processing params

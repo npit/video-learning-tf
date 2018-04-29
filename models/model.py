@@ -78,7 +78,8 @@ class Model:
             else:
                 self.logits = self.feature_vectors
         elif classif == defs.classifier.lstm:
-            assert fusion_type == defs.fusion_type.none, "The LSTM classifier should be used only with [%s] fusion" % defs.fusion_type.none
+            if fpc == 1: error("The LSTM classifier requires an fpc greater than 1")
+            if fusion_type != defs.fusion_type.none: error("The LSTM classifier should be used only with [%s] fusion" % defs.fusion_type.none)
             self.classifier = LSTM()
             self.tf_components.append(self.classifier)
             io_params = (self.feature_vectors, self.feature_dim, None, num_classes, fpc, None, settings.get_dropout(), False)
