@@ -52,19 +52,14 @@ class serialization_settings:
         if self.init_file is None:
             return
         if not os.path.exists(self.init_file):
-            error("Initialization file does not exist")
+            error("Initialization file [%s] does not exist" % self.init_file)
             return
         tag_to_read = "serialize"
         print("Initializing from file %s" % self.init_file)
         if self.init_file.endswith(".ini"):
-            config = configparser.ConfigParser()
-            config.read(self.init_file)
-            if not config[tag_to_read]:
-                error('Expected header [%s] in the configuration file!' % tag_to_read)
-            config = config[tag_to_read]
-            for key in config:
-                exec("self.%s=%s" % (key, config[key]))
-        elif self.init_file.endswith(".yml"):
+            error("Ini files deprecated")
+        
+        if ".yml" in self.init_file:
             with open(self.init_file,"r") as f:
                 config = yaml.load(f)[tag_to_read]
             self.output_folder = config['output_folder']
@@ -87,6 +82,9 @@ class serialization_settings:
             if not self.logging_level in loglevels:
                 error("Invalid logging level: [%s]" % (self.logging_level))
             self.logging_level = eval(self.logging_level)
+        else:
+            error("Need a yml initialization file")
+
 
 
         if self.run_id is None or not self.run_id:
@@ -295,6 +293,8 @@ def get_random_clips(avail_frame_idxs, settings, path):
         # the clips may overlap
         # handle videos with too few frames
         num_frames = len(avail_frame_idxs)
+        if num_frames == 0:
+            error("No frames for path [%s]" % path)
         num_frames_missing = settings.num_frames_per_clip - num_frames
         if num_frames_missing > 0:
             message = "Video %s cannot sustain a number of %d fpc, as it has %d frames" % (basename(path), settings.num_frames_per_clip, num_frames)
@@ -334,8 +334,22 @@ def get_random_clips(avail_frame_idxs, settings, path):
             else:
                 error("Undefined generation error strategy: %s" % settings.generation_error)
 
-        possible_clip_start = [choice(possible_clip_start) for _ in range(settings.clip_offset_or_num)]
-        ret = [list(range(st,st+settings.num_frames_per_clip)) for st in possible_clip_start]
+        # random clip selection ensuring frame coverage
+        debug("Random clip selection out of %d possible clip starts" % (len(possible_clip_start)))
+        clip_starts = []
+        curr_possible_clip_starts = possible_clip_start.copy()
+        for _ in range(settings.clip_offset_or_num):
+            # select clip start
+            start = choice(curr_possible_clip_starts)
+            clip_starts.append(start)
+            # remove previous clip frames
+            for i in range(start - settings.num_frames_per_clip + 1, start + settings.num_frames_per_clip):
+                if i in curr_possible_clip_starts: curr_possible_clip_starts.remove(i)
+            # if none left, reset
+            if not curr_possible_clip_starts:
+                curr_possible_clip_starts = possible_clip_start.copy()
+
+        ret = [list(range(st,st+settings.num_frames_per_clip)) for st in clip_starts]
         return ret
 
 def get_sequential_clips(avail_frame_idxs, settings, path):
