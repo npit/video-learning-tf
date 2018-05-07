@@ -23,6 +23,15 @@ class Model:
             pass
 
     def __init__(self, settings):
+
+        each component is a list
+
+        if len > 1, gotta fuse somehow
+
+        temporal point of fusion depends on early or late
+
+        mutli workflow gr8ly simplified
+
         # get settings
         repr = settings.network.representation
         classif = settings.network.classifier

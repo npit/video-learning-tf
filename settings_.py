@@ -141,8 +141,12 @@ class Settings:
 
         # read network  architecture stuff
         self.network = Settings.network()
-        self.network.representation = defs.check(config['network']['representation'], defs.representation)
-        self.network.classifier = defs.check(config['network']['classifier'], defs.classifier)
+        self.network.representation = to_list(config['network']['representation'])
+        self.network.classifier = to_list(config['network']['classifier'])
+        for r in self.network.representation:
+            defs.check( r, defs.representation)
+        for c in self.network.classifier:
+            defs.check(c, defs.classifier)
 
         if self.workflow == defs.workflows.acrec.multi:
             self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
@@ -224,7 +228,7 @@ class Settings:
             # imgproc options
             path = dataobj['data_path']
             mean_image = parse_seq(dataobj['mean_image']) if 'mean_image' in dataobj else None
-            batch_item = defs.check(dataobj['batch_item'], defs.batch_item)
+            batch_item = defs.check(dataobj['batch_item'], defs.batch_item) if 'batch_item' in dataobj else defs.batch_item.default
             prepend_folder = dataobj['prepend_folder'] if 'prepend_folder' in dataobj else None
             image_shape = parse_seq(dataobj['image_shape']) if 'image_shape' in dataobj else None
             imgproc_raw = parse_seq(dataobj['imgproc']) if 'imgproc' in dataobj else []
