@@ -866,6 +866,8 @@ def serialize_ascii(input_file, settings):
         vectors = vectors[shuffle_idx]
         labels = [labels[i] for i in shuffle_idx]
         ids = [ids[i] for i in shuffle_idx]
+    else:
+        shuffle_idx = None
     info("Serializing existing features to file: [%s]" % outfile)
     write_size_file(vectors, [1 for _ in vectors], outfile, defs.input_mode.vectors, max_num_labels, settings)
     writer = tf.python_io.TFRecordWriter(outfile)
