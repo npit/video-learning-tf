@@ -64,7 +64,7 @@ class lstm(Trainable):
         '''
 
         info("LSTM structure [hidden, layers, fusion]: %s" % lstm_params)
-        num_hidden, num_layers, fusion_method = lstm_params
+        num_hidden, num_layers, fusion_method = lstm_params[:3]
         if dropout_prob is None:
             dropout_prob = 0.0
         with tf.name_scope("lstm_net") as namescope:
@@ -73,6 +73,7 @@ class lstm(Trainable):
 
             if input_state is not None:
                 # make input state conversion fc layer if necessary
+                input_state = print_tensor(input_state, "lstm input state")
                 input_state = convert_dim_fc(input_state, num_hidden, name="input_state_fc")
             # evaluate it via dynamic_rnn
             output, state = self.evaluate_sequence(input_tensor, input_dim, cells, num_hidden, sequence_length, nonzero_sequence, input_state)

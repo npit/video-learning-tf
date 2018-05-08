@@ -26,6 +26,10 @@ class Summaries:
 # Generic run settings and parameters should go here
 #
 
+class Network:
+    # architecture settings
+    description = "Network representative class"
+
 class Settings:
     # user - settable parameters
     ################################
@@ -43,11 +47,8 @@ class Settings:
 
     feeder = None
 
-    class network:
-        # architecture settings
-        frame_encoding_layer = "fc7"
-        lstm_num_hidden = 256
-        num_classes = None
+    pipelines = {}
+
 
 
     class train:
@@ -96,6 +97,12 @@ class Settings:
     # misc
     saver = None
 
+    def get_batch_size(self):
+        if defs.phase.train in self.phases:
+            return self.train.batch_size
+        else:
+            return self.val.batch_size
+
     def get_dropout(self):
         if self.phase == defs.phase.train:
             return self.train.dropout_keep_prob
@@ -103,7 +110,7 @@ class Settings:
 
     def get_train_str(self):
         tr = self.train
-        infostr = "classes: %d, epochs: %d, optim: %s" % (self.network.num_classes, tr.epochs, tr.optimizer)
+        infostr = "classes: %d, epochs: %d, optim: %s" % (self.num_classes, tr.epochs, tr.optimizer)
 
         lrstr = ", lr: [%2.2f," % tr.base_lr
         if tr.lr_mult is not None: lrstr += " mult: %2.2f," % tr.lr_mult
@@ -124,14 +131,86 @@ class Settings:
         return infostr
 
 
-    def read_config(self, config):
+    def read_field(self, config, fieldname, validate = None, required = False, listify = False):
+        debug("Reading field [%s]" % fieldname)
+        val = None
+        if fieldname in config:
+            val = config[fieldname]
 
+        if fieldname not in config or val == None:
+            if required:
+                error("No default value specified for missing field [%s]" % fieldname)
+            else:
+                if listify:
+                    val = [None]
+                return val
+
+
+        if validate is not None:
+            if type(validate) in [list, tuple]:
+                if len(validate) != len(val):
+                    error("Field [%s] required %d entries, found: [%s]" % (fieldname, len(validate), str(val)))
+                    for i, el, v in enumerate(zip(val, validate)):
+                        val[i] = defs.check(el,v)
+            else:
+                val = defs.check(val, validate)
+
+        if listify:
+            if type(val) not in [list, tuple]:
+                val = [val]
+        return val
+
+
+    def read_network(self, config):
+        network = Network()
+        network.representation = self.read_field(config, 'representation', required = True, validate = defs.representation)
+        if network.representation == defs.representation.dcnn:
+            network.frame_encoding_layer = self.read_field(config, 'frame_encoding_layer')
+
+        network.classifier = self.read_field(config, 'classifier', validate = defs.classifier)
+        if network.classifier == defs.classifier.lstm:
+            params = self.read_field(config,"lstm_params")
+            network.lstm_params = [int(params[0]), int(params[1]), defs.check(params[2], defs.fusion_method)]
+            if len(params) > 3:
+                network.lstm_params.append(defs.check(params[3],defs.combo))
+
+        network.weights_file = self.read_field(config, 'weights_file')
+        network.frame_fusion = self.read_field(config, 'frame_fusion', validate = (defs.fusion_type, defs.fusion_method))
+        network.input = self.read_field(config, 'input', validate=None, listify=True)
+        network.input_shape = self.read_field(config, 'input_shape', validate=None, listify=True)
+        for i in range(len(network.input_shape)):
+            shp = network.input_shape[i]
+            if shp == "None": network.input_shape[i] = None
+            elif shp == None: pass
+            else: network.input_shape[i] = parse_seq(shp)
+
+        # input has to be either a dataset or a pipeline output
+        for inp in network.input:
+            if inp not in self.pipelines:
+                idx = network.input.index(inp)
+                network.input[idx] = defs.check(inp, defs.dataset_tag)
+        network.idx = len(self.pipelines)
+        return network
+
+    def read_config(self, config):
         # read global stuff
         self.workflow = defs.check(config['workflow'], defs.workflows)
         self.resume_file = config['resume_file']
         self.run_folder = config["run_folder"]
         if "run_id" in config:
             self.run_id = config["run_id"]
+
+        # read logging information
+        self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
+        self.logging_level = config['logging']['level']
+        loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
+        if not self.logging_level in loglevels:
+            error("Invalid logging level: %s" % (self.logging_level))
+        self.logging_level = eval(self.logging_level)
+        self.tensorboard_folder = config['logging']['tensorboard_folder']
+        self.print_tensors = config['logging']['print_tensors']
+        self.configure_logging()
+
 
         # read phase information
         self.phases = defs.check(config["phase"], defs.phase)
@@ -140,43 +219,17 @@ class Settings:
         self.phase = self.phases[0]
 
         # read network  architecture stuff
-        self.network = Settings.network()
-        self.network.representation = to_list(config['network']['representation'])
-        self.network.classifier = to_list(config['network']['classifier'])
-        for r in self.network.representation:
-            defs.check( r, defs.representation)
-        for c in self.network.classifier:
-            defs.check(c, defs.classifier)
-        self.network.tags = to_list(config['network']['tags'])
-        for t in self.network.tags:
-            defs.check(t, defs.dataset_tag)
+        pipelines = config['network']['pipelines']
+        for pname in pipelines:
+            debug("Reading network [%s]" % pname)
+            self.pipelines[pname]= self.read_network(pipelines[pname])
 
-        if self.workflow == defs.workflows.acrec.multi:
-            self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
-        self.network.load_weights = config['network']['load_weights']
-        self.network.image_shape = parse_seq(config["network"]["image_shape"])
-        # encoding layer. For multi workflow (only), it can be a list
-        self.network.frame_encoding_layer = config["network"]["frame_encoding_layer"]
-        if type(self.network.frame_encoding_layer) == list and self.workflow != defs.workflows.acrec.multi:
-            error("Multiple frame encoding methods supplied: %s in %s workflow, but that is available only for [%s] workflow" %
-                  (self.network.frame_encoding_layer, self.workflow, defs.workflows.acrec.multi))
-        self.network.lstm_params = parse_seq(config['network']['lstm_params'])
-        if len(self.network.lstm_params) != 3:
-            error("Expected lstm params are [num_hidden, num_layers, fusion_method]")
-        self.network.lstm_params[2] = defs.check(self.network.lstm_params[2], defs.fusion_method)
-        self.network.num_classes = config["network"]["num_classes"]
-        dataset_fusion = parse_seq(config["network"]["dataset_fusion"])
-        self.network.dataset_fusion_type, self.network.dataset_fusion_method = \
-            defs.check(dataset_fusion[0], defs.fusion_type), defs.check(dataset_fusion[1], defs.fusion_method),
+        #if self.workflow == defs.workflows.acrec.multi:
+        #    self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
+        #self.network.load_weights = config['network']['load_weights']
+        #self.network.image_shape = parse_seq(config["network"]["image_shape"])
+        self.num_classes = config["network"]["num_classes"]
 
-
-        frame_fusion = parse_seq(config["network"]["frame_fusion"])
-        self.network.frame_fusion_type, self.network.frame_fusion_method = \
-            defs.check(frame_fusion[0], defs.fusion_type), defs.check(frame_fusion[1], defs.fusion_method)
-
-        clip_fusion = parse_seq(config["network"]["clip_fusion"])
-        self.network.clip_fusion_type, self.network.clip_fusion_method = \
-            defs.check(clip_fusion[0], defs.fusion_type), defs.check(clip_fusion[1], defs.fusion_method)
 
         self.train, self.val = None, None
         for phase in self.phases:
@@ -203,16 +256,10 @@ class Settings:
                 obj = config[phase]
                 self.val.batch_size = int(obj['batch_size'])
                 self.val.logits_save_interval = int(obj['logits_save_interval'])
+                clip_fusion = parse_seq(obj["clip_fusion"])
+                self.val.clip_fusion_type, self.val.clip_fusion_method = \
+                    defs.check(clip_fusion[0], defs.fusion_type), defs.check(clip_fusion[1], defs.fusion_method)
 
-        # read logging information
-        self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
-        self.logging_level = config['logging']['level']
-        loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
-        if not self.logging_level in loglevels:
-            error("Invalid logging level: %s" % (self.logging_level))
-        self.logging_level = eval(self.logging_level)
-        self.tensorboard_folder = config['logging']['tensorboard_folder']
-        self.print_tensors = config['logging']['print_tensors']
 
         # read data sources
         self.feeder = Feeder(self.workflow, defs.input_mode.get_from_workflow(self.workflow), self.phases, \
@@ -238,7 +285,7 @@ class Settings:
             imgproc = []
             for opt in imgproc_raw:
                 imgproc.append(defs.check(opt, defs.imgproc))
-            if defs.imgproc.raw_resize in imgproc and not mean_image:
+            if defs.imgproc.sub_mean in imgproc and not mean_image:
                 error("[%s] option requires a supplied mean image intensity." % defs.imgproc.raw_resize)
             raw_image_shape = parse_seq(dataobj['raw_image_shape']) if 'raw_image_shape' in dataobj else None
             data_format = defs.check(dataobj['data_format'], defs.data_format)
@@ -280,7 +327,7 @@ class Settings:
                 captioning_config = None
 
             self.feeder.add_dataset(dataset_phase, id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
-                            frame_format, batch_item, self.network.num_classes, tag, read_tries, captioning_config)
+                            frame_format, batch_item, self.num_classes, tag, read_tries, captioning_config)
 
     # should resume, if set and non-empty
     def should_resume(self):
@@ -325,6 +372,16 @@ class Settings:
         print("Initialized run [%s] from file %s" % (self.run_id, init_file))
         sys.stdout.flush()
 
+
+    def configure_logging(self):
+        # configure the logs
+        self.timestamp = get_datetime_str()
+        logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + self.timestamp + ".log")
+        self.logger = CustomLogger()
+        CustomLogger.instance = self.logger
+        self.logger.configure_logging(logfile, self.logging_level)
+        sys.stdout.flush(), sys.stderr.flush()
+
     # initialize stuff
     def initialize(self, init_file):
 
@@ -338,13 +395,6 @@ class Settings:
         if not (os.path.dirname(init_file) == self.run_folder):
             copyfile(init_file,  os.path.join(self.run_folder, os.path.basename(init_file)))
 
-        # configure the logs
-        self.timestamp = get_datetime_str()
-        logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + self.timestamp + ".log")
-        self.logger = CustomLogger()
-        CustomLogger.instance = self.logger
-        self.logger.configure_logging(logfile, self.logging_level)
-        sys.stdout.flush(), sys.stderr.flush()
 
         # train-val mode has become unsupported
         if self.train and self.val:

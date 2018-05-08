@@ -876,4 +876,8 @@ class Dataset:
         if type(self.clips_per_video) == int:
             return self.clips_per_video == 1
         return False
+    def get_image_shape(self):
+        if self.desired_image_shape is None:
+            return self.raw_image_shape
+        return self.desired_image_shape
 

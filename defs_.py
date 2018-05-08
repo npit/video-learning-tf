@@ -40,6 +40,8 @@ class defs:
     class classifier:
         fc, lstm = "fc", "lstm"
 
+    class combo:
+        sbias, ibias, conc = "sbias", "ibias", "conc"
     # run phase
     class phase:
         train, val ="train", "val"
@@ -71,8 +73,6 @@ class defs:
         state_bias, input_bias, input_concat = "state_bias", "input_bias", "input_concat"
     # run type indicates usage of lstm or singleframe dcnn
     class workflows:
-        class multi:
-            fc, singleframe, lstm, lstm_sbias, lstm_ibias, lstm_conc = "fc", "singleframe", "lstm", "lstm_sbias", "lstm_ibias", "lstm_conc"
         class acrec:
             singleframe, lstm, audio, multi = "acrec_singleframe", "acrec_lstm", "acrec_audio", "multi"
             def is_workflow(arg):

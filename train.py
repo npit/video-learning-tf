@@ -115,7 +115,7 @@ class Train:
             return
         info("Creating training: { %s }" % settings.get_train_str())
 
-        self.labels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
+        self.labels = tf.placeholder(tf.int32, [None, settings.num_classes], name="input_labels")
         self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
         # configure loss
         with tf.name_scope("cross_entropy_loss"):

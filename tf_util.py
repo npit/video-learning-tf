@@ -142,3 +142,10 @@ def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
     encoded_frames = apply_temporal_fusion(encoded_frames, encoded_dim, fpc, fusion_method)
     return encoded_frames
 
+def aggregate_tensor_list(inputs, fusion_method):
+    if fusion_method == defs.fusion_method.avg:
+        return tf.reduce_mean(inputs)
+    elif fusion_method == defs.fusion_method.concat:
+        return tf.concat(inputs, axis=1)
+    else:
+        error("Unsupported tensor list aggregation method: [%s]" % fusion_method)

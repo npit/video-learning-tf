@@ -21,14 +21,14 @@ class Validation:
             self.non_padding_word_idxs = tf.placeholder(tf.int32, (None))
         else:
             # items refer to the primary unit we operate one, i.e. videos or frames
-            self.item_logits = np.zeros([0, settings.network.num_classes], np.float32)
-            self.item_labels = np.zeros([0, settings.network.num_classes], np.float32)
+            self.item_logits = np.zeros([0, settings.num_classes], np.float32)
+            self.item_labels = np.zeros([0, settings.num_classes], np.float32)
             # clips refers to image groups that compose a video, for training with clip information
-            self.clip_logits = np.zeros([0, settings.network.num_classes], np.float32)
-            self.clip_labels = np.zeros([0, settings.network.num_classes], np.float32)
+            self.clip_logits = np.zeros([0, settings.num_classes], np.float32)
+            self.clip_labels = np.zeros([0, settings.num_classes], np.float32)
 
         self.workflow = settings.workflow
-        self.labels = tf.placeholder(tf.int32, [None, settings.network.num_classes], name="input_labels")
+        self.labels = tf.placeholder(tf.int32, [None, settings.num_classes], name="input_labels")
         self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
         self.run_folder = settings.run_folder
         self.run_id = settings.run_id
@@ -108,7 +108,7 @@ class Validation:
                         break
                     cpv = dataset.clips_per_video[vidx]
                     debug("Aggregating %d clips for video %d in video batch mode" % (cpv, vidx + 1))
-                    self.apply_clip_fusion(logits, cpv, labels, settings.network.clip_fusion_method)
+                    self.apply_clip_fusion(logits, cpv, labels, settings.val.clip_fusion_method)
                     logits = logits[cpv:,:]
                     labels = labels[cpv:,:]
                 if not (len(logits) == 0 and len(labels) == 0):

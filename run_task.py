@@ -47,7 +47,7 @@ def do_train(settings, train, feeder, model, sess, tboard_writer, summaries):
             if min_train_loss[0] > batch_loss:
                 min_train_loss = (batch_loss, settings.global_step)
             # calcluate the number of bits
-            nats = batch_loss / math.log(settings.network.num_classes)
+            nats = batch_loss / math.log(settings.num_classes)
             info("Learning rate %2.8f, global step: %d, batch loss/nats : %2.5f / %2.3f " % \
                  (learning_rate, settings.global_step, batch_loss, nats))
             info("Dataset global step %d, epoch index %d, batch sizes %s, batch index train %d" %

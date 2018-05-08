@@ -273,6 +273,9 @@ class Feeder:
             except:
                 error("Failed to load checkpoint!")
 
+    def get_dataset_item_shape(self):
+        return self.sh
+
     # save graph and dataset stuff
     def save(self, sess, progress, global_step):
         try:
