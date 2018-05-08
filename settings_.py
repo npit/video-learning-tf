@@ -147,6 +147,9 @@ class Settings:
             defs.check( r, defs.representation)
         for c in self.network.classifier:
             defs.check(c, defs.classifier)
+        self.network.tags = to_list(config['network']['tags'])
+        for t in self.network.tags:
+            defs.check(t, defs.dataset_tag)
 
         if self.workflow == defs.workflows.acrec.multi:
             self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
