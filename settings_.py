@@ -161,7 +161,8 @@ class Settings:
         return val
 
 
-    def read_network(self, config):
+    def read_network(self, pipeline_name, config):
+        config = config[pipeline_name]
         network = Network()
         network.representation = self.read_field(config, 'representation', required = True, validate = defs.representation)
         if network.representation == defs.representation.dcnn:
@@ -176,7 +177,6 @@ class Settings:
 
         network.weights_file = self.read_field(config, 'weights_file')
         network.frame_fusion = self.read_field(config, 'frame_fusion', validate = (defs.fusion_type, defs.fusion_method))
-        network.input = self.read_field(config, 'input', validate=None, listify=True)
         network.input_shape = self.read_field(config, 'input_shape', validate=None, listify=True)
         for i in range(len(network.input_shape)):
             shp = network.input_shape[i]
@@ -185,6 +185,9 @@ class Settings:
             else: network.input_shape[i] = parse_seq(shp)
 
         # input has to be either a dataset or a pipeline output
+        network.input = self.read_field(config, 'input', validate=None, listify=True)
+        if any([x is None for x in network.input]):
+            error("<None> input resolved in pipeline [%s] : [%s]" % ( pipeline_name, network.input))
         for inp in network.input:
             if inp not in self.pipelines:
                 idx = network.input.index(inp)
@@ -222,7 +225,7 @@ class Settings:
         pipelines = config['network']['pipelines']
         for pname in pipelines:
             debug("Reading network [%s]" % pname)
-            self.pipelines[pname]= self.read_network(pipelines[pname])
+            self.pipelines[pname]= self.read_network(pname, pipelines)
 
         #if self.workflow == defs.workflows.acrec.multi:
         #    self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
