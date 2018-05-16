@@ -12,12 +12,11 @@ class Feeder:
     Input and delegation from here.
     feeddict from here, too.
     """
-    def __init__(self, workflow, input_mode, phases, trainval, save_freq_per_epoch, run_folder, resume):
+    def __init__(self, input_mode, phases, trainval, save_freq_per_epoch, run_folder, resume):
         self.inputs = []
         self.datasets = {}
 
         self.input_mode = input_mode
-        self.workflow = workflow
         self.phases = phases
         self.phase = None
 
@@ -36,11 +35,6 @@ class Feeder:
         self.datasets[dataset_phase].append(dset)
         dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
                             frame_format, batch_item, num_classes, tag, read_tries)
-        # embeddings file
-        if captioning_config:
-            word_embeddings_file = captioning_config[-1]
-            dset.initialize_workflow(word_embeddings_file[-1])
-
 
     def set_phase(self, phase):
         self.phase = phase
@@ -107,17 +101,6 @@ class Feeder:
 
         assert num_labels is not None, "Unset num. labels in feed dict!"
         padding = 0
-        # for description workflows, supply wordvectors and caption lengths
-        #if defs.workflows.is_description(settings.workflow):
-            # get words per caption, onehot labels, embeddings
-        #    fdict[model.inputLabels] = ground_truth["onehot_labels"]
-        #    fdict[model.caption_lengths] = ground_truth['caption_lengths']
-        #    fdict[model.word_embeddings] = ground_truth['word_embeddings']
-        #    fdict[model.non_padding_word_idxs] = ground_truth['non_padding_index']
-        #    num_labels = len(ground_truth["onehot_labels"])
-        #else:
-        #    fdict[lrcn.inputLabels] = ground_truth
-        #    num_labels = len(ground_truth)
 
         return fdict, num_data, num_labels, padding
 
@@ -191,8 +174,6 @@ class Feeder:
             global_step_str = os.path.basename(savefile_metapars).split(".")[-2].split("-")[-1]
             global_step = int(global_step_str)
 
-        #if defs.workflows.is_description(self.workflow):
-        #    self.sequence_length = params[2:]
 
         # inform datasets - if batch index info is paired with a dataset id, inform that dataset. Else, inform the 1st
         for dset in self.get_datasets():
@@ -284,7 +265,7 @@ class Feeder:
             if not os.path.exists(checkpoints_folder):
                 os.makedirs(checkpoints_folder)
 
-            basename = os.path.join(checkpoints_folder, get_datetime_str() + "_" + self.workflow + "_" + progress)
+            basename = os.path.join(checkpoints_folder, get_datetime_str() + "_"  + progress)
             savefile_graph = basename + ".graph"
 
             info("Saving graph  to [%s]" % savefile_graph)
@@ -298,8 +279,6 @@ class Feeder:
                  (self.train.epoch_index + 1, self.get_batch_index()))
 
             params2save = [self.get_batch_index(), self.train.epoch_index, global_step]
-            if defs.workflows.is_description(self.workflow):
-                params2save += [ dat.max_caption_length for dat in self.get_datasets()]
 
             with open(savefile_metapars,'wb') as f:
                 pickle.dump(params2save,f)

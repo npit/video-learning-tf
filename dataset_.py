@@ -15,7 +15,6 @@ from defs_ import *
 # Dataset class
 class Dataset:
 
-    workflow = None
     num_classes = None
 
     # single frame paths and classes, for raw input mode
@@ -268,16 +267,7 @@ class Dataset:
             elif self.input_mode == defs.input_mode.image:
                 images, labels = self.get_next_batch_frame_tfr(currentBatch)
 
-        if defs.workflows.is_description(self.workflow):
-
-            if self.do_validation:
-                # pad incomplete batch with zeros in both images and captions
-                num_pad = self.batch_size_val - len(images)
-                images.extend( [ np.zeros(images[0].shape, images[0].dtype) for _ in range(num_pad)] )
-                labels.extend( [[-1] for _ in range(num_pad)])
-            ground_truth = self.labels_to_words(labels)
-        else:
-            ground_truth = labels_to_one_hot(labels, self.num_classes)
+        ground_truth = labels_to_one_hot(labels, self.num_classes)
 
         self.advance_batch_index()
         return images, ground_truth
@@ -584,40 +574,6 @@ class Dataset:
             crop_h = [i for i in range(0, raw_image_shape[0] - image_shape[0] - 1)]
             crop_w = [i for i in range(0, raw_image_shape[1] - image_shape[1] - 1)]
         return crop_h, crop_w
-
-
-    # initialize run mode specific data
-    def initialize_workflow(self, word_embeddings_file):
-        if defs.workflows.is_description(self.workflow):
-            # read embedding matrix
-            info("Reading embedding matrix from file [%s]" % word_embeddings_file)
-            self.vocabulary = []
-            vectors = []
-            with open(word_embeddings_file,"r") as f:
-                for line in f:
-                    token, vector = line.strip().split("\t")
-                    # add to vocabulary checking for duplicates
-                    if token in self.vocabulary:
-                        error("Duplicate token [%s] in vocabulary!")
-                    self.vocabulary.append(token)
-                    vector = [float(v) for v in vector.split()]
-                    vectors.append(vector)
-
-            self.embedding_matrix = np.asarray(vectors, np.float32)
-            debug("Read embedding matrix of shape %s " % str(self.embedding_matrix.shape))
-            if "BOS" not in self.vocabulary:
-                error("BOS not found in vocabulary.")
-            if "EOS" not in self.vocabulary:
-                error("EOS not found in vocabulary.")
-            if self.vocabulary.index("BOS") != len(self.vocabulary) -1:
-                error("The BOS index in the vocabulary has be the last one (%d), but it currently is %d" \
-                       % (len(self.vocabulary) - 1, self.vocabulary.index("BOS")) )
-            # classes are all tokens minus the BOS
-            self.num_classes = len(self.vocabulary) - 1
-            # if a max caption length is read, assign it
-            if self.sequence_length is not None:
-                info("Restricting to a caption length of", self.max_caption_length)
-                self.max_caption_length = self.sequence_length
 
     def get_embedding_dim(self):
         return int(self.embedding_matrix.shape[-1])

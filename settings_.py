@@ -35,7 +35,6 @@ class Settings:
     ################################
     # run mode and type
     run_id = ""
-    workflow = defs.workflows.acrec.singleframe
 
     # save / load configuration
     resume_file = None
@@ -197,7 +196,6 @@ class Settings:
 
     def read_config(self, config):
         # read global stuff
-        self.workflow = defs.check(config['workflow'], defs.workflows)
         self.resume_file = config['resume_file']
         self.run_folder = config["run_folder"]
         if "run_id" in config:
@@ -227,12 +225,7 @@ class Settings:
             debug("Reading network [%s]" % pname)
             self.pipelines[pname]= self.read_network(pname, pipelines)
 
-        #if self.workflow == defs.workflows.acrec.multi:
-        #    self.network.multi_workflow = defs.check(config['network']['multi_workflow'], defs.workflows.multi)
-        #self.network.load_weights = config['network']['load_weights']
-        #self.network.image_shape = parse_seq(config["network"]["image_shape"])
         self.num_classes = config["network"]["num_classes"]
-
 
         self.train, self.val = None, None
         for phase in self.phases:
@@ -264,9 +257,8 @@ class Settings:
                     defs.check(clip_fusion[0], defs.fusion_type), defs.check(clip_fusion[1], defs.fusion_method)
 
 
-        # read data sources
-        self.feeder = Feeder(self.workflow, defs.input_mode.get_from_workflow(self.workflow), self.phases, \
-                             (self.train, self.val), self.save_freq_per_epoch, self.run_folder, self.should_resume())
+        # read data sources - assume video mode by default
+        self.feeder = Feeder(defs.input_mode.video, self.phases, (self.train, self.val), self.save_freq_per_epoch, self.run_folder, self.should_resume())
 
         for dataid in config['data']:
             dataobj = config['data'][dataid]
@@ -366,10 +358,10 @@ class Settings:
 
         # if run id specified, use it
         if self.run_id:
-            run_identifiers = [self.workflow ,self.run_id , trainval_str]
+            run_identifiers = [self.run_id , trainval_str]
         else:
             # use the configuration filename
-            run_identifiers = [self.workflow, os.path.basename(init_file), trainval_str]
+            run_identifiers = [ os.path.basename(init_file), trainval_str]
 
         self.run_id = "_".join(run_identifiers)
         print("Initialized run [%s] from file %s" % (self.run_id, init_file))
@@ -428,7 +420,7 @@ class Settings:
             if self.val:
                 warning("Starting validation-only run with an untrained network.")
 
-        info("Starting [%s] workflow on folder [%s]." % (self.workflow, self.run_folder))
+        info("Starting run on folder [%s]." % (self.run_folder))
         return self.feeder
 
     def resume_graph(self):

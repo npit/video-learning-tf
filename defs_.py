@@ -49,16 +49,6 @@ class defs:
     # input mode is framewise dataset vs videowise, each video having n frames
     class input_mode:
         video, image, vectors = "video", "image", "vectors"
-        def get_from_workflow(arg):
-            if defs.workflows.is_image(arg):
-                return defs.input_mode.image
-            elif defs.workflows.is_video(arg):
-                return defs.input_mode.video
-            elif defs.check("defs.workflows.multi."+arg, defs.workflows.multi):
-                return defs.input_mode.video
-            else:
-                error("No input mode discernible from workflow %s" % arg)
-                return None
 
     class net_input:
         visual, labels = "visual", "labels"
@@ -71,39 +61,6 @@ class defs:
         raw, tfrecord = "raw", "tfrecord"
     class rnn_visual_mode:
         state_bias, input_bias, input_concat = "state_bias", "input_bias", "input_concat"
-    # run type indicates usage of lstm or singleframe dcnn
-    class workflows:
-        class acrec:
-            singleframe, lstm, audio, multi = "acrec_singleframe", "acrec_lstm", "acrec_audio", "multi"
-            def is_workflow(arg):
-                return arg == defs.workflows.acrec.singleframe or \
-                       arg == defs.workflows.acrec.lstm
-        class imgdesc:
-            statebias, inputstep, inputbias = "imgdesc_statebias", "imgdesc_inputstep", "imgdesc_inputbias"
-            def is_workflow(arg):
-                return arg == defs.workflows.imgdesc.statebias or \
-                       arg == defs.workflows.imgdesc.inputstep or \
-                       arg == defs.workflows.imgdesc.inputbias
-        class videodesc:
-            fused, encdec = "videodesc_fused", "videodesc_encdec"
-            def is_workflow(arg):
-                return arg == defs.workflows.videodesc.fused or \
-                       arg == defs.workflows.videodesc.encdec
-        def is_description(arg):
-            return defs.workflows.imgdesc.is_workflow(arg) or \
-                    defs.workflows.videodesc.is_workflow(arg)
-        def is_video(arg):
-            return defs.workflows.acrec.singleframe == arg or \
-                   defs.workflows.acrec.lstm == arg or \
-                   defs.workflows.videodesc.encdec == arg or \
-                   defs.workflows.videodesc.fused == arg or \
-                   defs.workflows.acrec.audio == arg or \
-                   defs.workflows.acrec.multi == arg
-        def is_image(arg):
-            return defs.workflows.imgdesc.statebias == arg or \
-                   defs.workflows.imgdesc.inputstep == arg or \
-                   defs.workflows.imgdesc.inputbias == arg
-                #lstm, singleframe, imgdesc, videodesc = "lstm","singleframe", "imgdesc", "videodesc"
 
     # sequence fusion methods
     class fusion_method:

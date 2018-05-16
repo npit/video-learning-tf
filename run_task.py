@@ -100,19 +100,16 @@ def do_test(settings, val, feeder, model, sess, tboard_writer, summaries):
     val.save_validation_logits_chunk(save_all = True)
 
     # done, get accuracy
-    if defs.workflows.is_description(settings.workflow):
-        val.process_description(settings)
-    else:
-        accuracy = val.get_accuracy()
-        # no use in adding a single scalar accuracy summary to tensorboard
-        # summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
-        # summaries.merge()
-        # tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
-        info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
-        # if specified to save the logits, save the accuracy as well
-        if val.validation_logits_save_interval is not None:
-            with open(os.path.join(settings.run_folder, "accuracy_" + settings.run_id), "w") as f:
-                f.write(str(accuracy))
+    accuracy = val.get_accuracy()
+    # no use in adding a single scalar accuracy summary to tensorboard
+    # summaries.val.append(tf.summary.scalar('accuracyVal', accuracy))
+    # summaries.merge()
+    # tboard_writer.add_summary(summaries.val_merged, global_step= settings.global_step)
+    info("Validation run complete in [%s], accuracy: %2.5f" % (elapsed_str(tic), accuracy))
+    # if specified to save the logits, save the accuracy as well
+    if val.validation_logits_save_interval is not None:
+        with open(os.path.join(settings.run_folder, "accuracy_" + settings.run_id), "w") as f:
+            f.write(str(accuracy))
 
     tboard_writer.flush()
     return True

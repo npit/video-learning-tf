@@ -15,19 +15,13 @@ class Validation:
         self.validation_logits_save_counter = 0
         self.validation_logits_save_interval = None
 
-        if defs.workflows.is_description(settings.workflow) and defs.workflows.is_image(settings.workflow):
-            self.item_logits = []
-            self.item_labels = []
-            self.non_padding_word_idxs = tf.placeholder(tf.int32, (None))
-        else:
-            # items refer to the primary unit we operate one, i.e. videos or frames
-            self.item_logits = np.zeros([0, settings.num_classes], np.float32)
-            self.item_labels = np.zeros([0, settings.num_classes], np.float32)
-            # clips refers to image groups that compose a video, for training with clip information
-            self.clip_logits = np.zeros([0, settings.num_classes], np.float32)
-            self.clip_labels = np.zeros([0, settings.num_classes], np.float32)
+        # items refer to the primary unit we operate one, i.e. videos or frames
+        self.item_logits = np.zeros([0, settings.num_classes], np.float32)
+        self.item_labels = np.zeros([0, settings.num_classes], np.float32)
+        # clips refers to image groups that compose a video, for training with clip information
+        self.clip_logits = np.zeros([0, settings.num_classes], np.float32)
+        self.clip_labels = np.zeros([0, settings.num_classes], np.float32)
 
-        self.workflow = settings.workflow
         self.labels = tf.placeholder(tf.int32, [None, settings.num_classes], name="input_labels")
         self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
         self.run_folder = settings.run_folder
@@ -65,10 +59,6 @@ class Validation:
     def process_validation_logits(self, tag, settings, logits, fdict, padding):
         labels = fdict[self.labels]
         dataset = settings.feeder.get_dataset_by_tag(tag)[0]
-        # processing for image description
-        if defs.workflows.is_description(self.workflow):
-            self.process_description_validation_logits(logits, labels, dataset, fdict, padding)
-            return
 
         # batch item contains logits that correspond to whole clips. Accumulate to clip storage, and check for aggregation.
         if dataset.batch_item == defs.batch_item.clip:

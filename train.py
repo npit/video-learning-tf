@@ -16,7 +16,6 @@ class Train:
     inputData = None
     labels = None
     caption_lengths = None
-    workflow = None
 
     # output data
     logits = None
