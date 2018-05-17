@@ -160,37 +160,41 @@ class Settings:
         return val
 
 
-    def read_network(self, pipeline_name, config):
-        config = config[pipeline_name]
+    def read_network(self, pipeline_content):
         network = Network()
-        network.representation = self.read_field(config, 'representation', required = True, validate = defs.representation)
-        if network.representation == defs.representation.dcnn:
-            network.frame_encoding_layer = self.read_field(config, 'frame_encoding_layer', required = True)
+        # input has to be either a dataset or a pipeline output - if it's a pipeline, if that has not been read, bail and retry later
+        network.input = self.read_field(pipeline_content, 'input', validate=None, listify=True)
+        if any([x is None for x in network.input]):
+            error("<None> input in pipeline: %s" % pipeline_content)
+        for inp in network.input:
+            if inp not in self.pipelines:
+                idx = network.input.index(inp)
+                is_dataset_tag, tagname = defs.check(inp,  defs.dataset_tag, do_boolean = True)
+                if is_dataset_tag:
+                    network.input[idx] = tagname
+                else:
+                    error("Input identifier [%s] is not a dataset tag, but no such pipeline has been declared yet." % (inp))
 
-        network.classifier = self.read_field(config, 'classifier', validate = defs.classifier)
+        network.representation = self.read_field(pipeline_content, 'representation', required = True, validate = defs.representation)
+        if network.representation == defs.representation.dcnn:
+            network.frame_encoding_layer = self.read_field(pipeline_content, 'frame_encoding_layer', required = True)
+
+        network.classifier = self.read_field(pipeline_content, 'classifier', validate = defs.classifier)
         if network.classifier == defs.classifier.lstm:
-            params = self.read_field(config,"lstm_params")
+            params = self.read_field(pipeline_content,"lstm_params")
             network.lstm_params = [int(params[0]), int(params[1]), defs.check(params[2], defs.fusion_method)]
             if len(params) > 3:
                 network.lstm_params.append(defs.check(params[3],defs.combo))
 
-        network.weights_file = self.read_field(config, 'weights_file')
-        network.frame_fusion = self.read_field(config, 'frame_fusion', validate = (defs.fusion_type, defs.fusion_method))
-        network.input_shape = self.read_field(config, 'input_shape', validate=None, listify=True)
+        network.weights_file = self.read_field(pipeline_content, 'weights_file')
+        network.frame_fusion = self.read_field(pipeline_content, 'frame_fusion', validate = (defs.fusion_type, defs.fusion_method))
+        network.input_shape = self.read_field(pipeline_content, 'input_shape', validate=None, listify=True)
         for i in range(len(network.input_shape)):
             shp = network.input_shape[i]
             if shp == "None": network.input_shape[i] = None
             elif shp == None: pass
             else: network.input_shape[i] = parse_seq(shp)
 
-        # input has to be either a dataset or a pipeline output
-        network.input = self.read_field(config, 'input', validate=None, listify=True)
-        if any([x is None for x in network.input]):
-            error("<None> input resolved in pipeline [%s] : [%s]" % ( pipeline_name, network.input))
-        for inp in network.input:
-            if inp not in self.pipelines:
-                idx = network.input.index(inp)
-                network.input[idx] = defs.check(inp, defs.dataset_tag)
         network.idx = len(self.pipelines)
         return network
 
@@ -211,11 +215,9 @@ class Settings:
         loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
         if not self.logging_level in loglevels:
             error("Invalid logging level: %s" % (self.logging_level))
-        self.logging_level = eval(self.logging_level)
         self.tensorboard_folder = config['logging']['tensorboard_folder']
         self.print_tensors = config['logging']['print_tensors']
         self.configure_logging()
-
 
         # read phase information
         self.phases = defs.check(config["phase"], defs.phase)
@@ -223,11 +225,15 @@ class Settings:
             self.phases = [self.phases]
         self.phase = self.phases[0]
 
-        # read network  architecture stuff
-        pipelines = config['network']['pipelines']
-        for pname in pipelines:
-            debug("Reading network [%s]" % pname)
-            self.pipelines[pname]= self.read_network(pname, pipelines)
+        # read network architecture stuff
+        pipelines = list(reversed(config['network']['pipelines']))
+        while pipelines:
+            pipeline = pipelines.pop()
+            pname, content = list(pipeline.items())[0]
+            debug("Reading network [%s]" % (pname))
+            parsed_pipeline = self.read_network(content)
+            self.pipelines[pname]= parsed_pipeline
+            print("Pipelines now:", self.pipelines)
 
         self.num_classes = config["network"]["num_classes"]
 

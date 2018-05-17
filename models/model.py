@@ -156,6 +156,7 @@ class Model:
         # combination-only pipeline
         for i in  range(len(pipeline_inputs)):
             input_name = pipeline_inputs[i]
+            debug("Resolving pipeline input: [%s]" % input_name)
             if input_name in settings.pipelines:
                 # get input from existing pipeline
                 input = self.pipeline_output[input_name]

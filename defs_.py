@@ -3,7 +3,7 @@ import inspect
 # constants, like C defines. Nesting indicates just convenient hierarchy.
 class defs:
     # checks non full def names
-    def check(arg, should_belong_to):
+    def check(arg, should_belong_to, do_boolean = False ):
         parts = arg.split(".")
         belongs_ok = False
         if not parts[0] == "defs":
@@ -17,12 +17,21 @@ class defs:
             fields = inspect.getmembers(curr_class,  lambda a:not(inspect.isroutine(a)))
             fields = [v[0] for v in fields if not(v[0].startswith('__') or v[0].endswith('__'))]
             if not part in fields:
-                error('Parameter [%s] is not defined for [%s]' % (part, curr_class))
+                if not do_boolean:
+                    error('Parameter [%s] is not defined for [%s]' % (part, curr_class))
+                else:
+                    return (False, None)
             else:
                 curr_class = getattr(curr_class, part)
         if not belongs_ok:
-            error("Supplied parameter [%s] should be a child of def [%s]" % (arg, should_belong_to))
-        return curr_class
+            if not do_boolean:
+                error("Supplied parameter [%s] should be a child of def [%s]" % (arg, should_belong_to))
+            else:
+                return (False, None)
+        if do_boolean:
+            return (True, curr_class)
+        else:
+            return curr_class
 
     # checks full def names
     def check_full(self,arg):
