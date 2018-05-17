@@ -1,6 +1,5 @@
 # generic IO
 import argparse
-import lrcn_
 from settings_ import *
 from train import Train
 from val import Validation

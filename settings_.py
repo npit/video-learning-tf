@@ -165,7 +165,7 @@ class Settings:
         network = Network()
         network.representation = self.read_field(config, 'representation', required = True, validate = defs.representation)
         if network.representation == defs.representation.dcnn:
-            network.frame_encoding_layer = self.read_field(config, 'frame_encoding_layer')
+            network.frame_encoding_layer = self.read_field(config, 'frame_encoding_layer', required = True)
 
         network.classifier = self.read_field(config, 'classifier', validate = defs.classifier)
         if network.classifier == defs.classifier.lstm:
@@ -200,6 +200,10 @@ class Settings:
         self.run_folder = config["run_folder"]
         if "run_id" in config:
             self.run_id = config["run_id"]
+
+        if not os.path.exists(self.run_folder):
+            warning("Non existent run folder %s - creating." % self.run_folder)
+            os.mkdir(self.run_folder)
 
         # read logging information
         self.save_freq_per_epoch = config['logging']['save_freq_per_epoch']
@@ -383,9 +387,6 @@ class Settings:
         self.initialize_from_file(init_file)
         info("Initialized from configuration file: [%s]" % init_file)
 
-        if not os.path.exists(self.run_folder):
-            warning("Non existent run folder %s - creating." % self.run_folder)
-            os.mkdir(self.run_folder)
         # if config file is not in the run folder, copy it there to preserve a settings log
         if not (os.path.dirname(init_file) == self.run_folder):
             copyfile(init_file,  os.path.join(self.run_folder, os.path.basename(init_file)))
