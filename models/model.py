@@ -43,7 +43,10 @@ class Model:
         input_names = pipeline.input
         classif = pipeline.classifier
         num_classes = settings.num_classes
-        fusion_type, fusion_method = pipeline.frame_fusion if pipeline.frame_fusion else None,None
+        if pipeline.frame_fusion:
+            fusion_type, fusion_method = pipeline.frame_fusion
+        else:
+            fusion_type, fusion_method = None, None
         cpv1, cpv2 = cpvs
 
         if fusion_type == defs.fusion_type.early:
@@ -60,7 +63,7 @@ class Model:
             lstm_params = pipeline.lstm_params
             # exactly one dataset needs to be frame-fused
             if fpc1 == 1: error("The LSTM-dual classifier requires a main fpc greater than 1")
-            if fpc2 != 1: error("The LSTM-dual classifier requires an auxilliary fpc equal to 1")
+            if fpc2 != 1: error("The LSTM-dual classifier requires an auxilliary fpc equal to 1, found [%d] instead." % fpc2)
             classifier = LSTM()
             self.tf_components.append(classifier)
             combo_type = lstm_params[3]
@@ -129,7 +132,7 @@ class Model:
 
     def build_pipeline(self, pipeline_name, settings):
 
-        debug("Building pipeline [%s]" % pipeline_name)
+        info("Building pipeline [%s]" % pipeline_name)
 
         # inits for multi-input layer
         inputs, cpvs, fpcs = [], [], []
@@ -140,7 +143,14 @@ class Model:
         repr = pipeline.representation
         classif = pipeline.classifier
         num_classes = settings.num_classes
-        fusion_type, fusion_method = pipeline.frame_fusion if pipeline.frame_fusion else None, None
+        if pipeline.frame_fusion:
+            fusion_type, fusion_method = pipeline.frame_fusion
+        else:
+            fusion_type, fusion_method = None, None
+
+        # sanity checks
+        if classif is None and fusion_type == defs.fusion_type.late:
+            error("Specified late fusion with no classifier selected")
 
         # define input
         # combination-only pipeline
@@ -153,9 +163,6 @@ class Model:
             else:
                 shp = pipeline.input_shape[i]
                 if shp is None:
-                    dset = settings.feeder.get_dataset_by_tag(input_name)
-                    if not dset:
-                        error("No source dataset found with tag [%s] for pipeline [%s]" % (input_name, pipeline_name))
                     shp = settings.feeder.get_dataset_by_tag(input_name)[0].get_image_shape()
                 # shp has to be the same as the image shape in the dataset configuration
                 input = tf.placeholder(tf.float32, (None,) + shp, name='%s_%s_input' % (pipeline_name, input_name))
@@ -194,7 +201,7 @@ class Model:
         if fusion_type == defs.fusion_type.early and fpc > 1:
             feature_vectors = aggregate_clip_vectors(feature_vectors, dim, fpc, fusion_method=fusion_method)
             feature_vectors = print_tensor(feature_vectors, "Early fusion")
-            output_fpc = fpc
+            output_fpc = 1
         elif fpc ==1 and fusion_type != defs.fusion_type.none:
                 info("Omitting specified fusion [%s][%s] due to singular fpc" % (fusion_type, fusion_method))
 
@@ -239,7 +246,8 @@ class Model:
 
 
     def __init__(self, settings):
-        for pname in settings.pipelines:
+        pnames = sorted(settings.pipelines, key = lambda x : settings.pipelines[x].idx)
+        for pname in pnames:
             pipeline_output = self.build_pipeline(pname, settings)
             self.pipeline_output[pname] = pipeline_output
         # get last defined element for the output

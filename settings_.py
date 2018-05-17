@@ -149,8 +149,8 @@ class Settings:
             if type(validate) in [list, tuple]:
                 if len(validate) != len(val):
                     error("Field [%s] required %d entries, found: [%s]" % (fieldname, len(validate), str(val)))
-                    for i, el, v in enumerate(zip(val, validate)):
-                        val[i] = defs.check(el,v)
+                for i, (el, v) in enumerate(zip(val, validate)):
+                    val[i] = defs.check(el,v)
             else:
                 val = defs.check(val, validate)
 
