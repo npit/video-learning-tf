@@ -223,7 +223,7 @@ class Model:
             self.tf_components.append(classifier)
             io_params = (feature_vectors, dim, None, num_classes, fpc, None, settings.get_dropout(), False)
             lstm_output, lstm_state = classifier.build(io_params, pipeline.lstm_params)
-            if settings.network.lstm_params[-1] == defs.fusion_method.state:
+            if pipeline.lstm_params[-1] == defs.fusion_method.state:
                 logits = lstm_state[-1].h
             else:
                 logits = lstm_output
