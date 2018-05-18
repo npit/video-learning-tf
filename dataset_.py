@@ -15,7 +15,6 @@ from defs_ import *
 # Dataset class
 class Dataset:
 
-    workflow = None
     num_classes = None
 
     # single frame paths and classes, for raw input mode
@@ -132,6 +131,41 @@ class Dataset:
         image = img_1d.reshape(height, width, depth)
         return image, label
 
+
+
+    def deserialize_vector(self, num_vectors):
+        vectors, labels = [], []
+        for _ in range(num_vectors):
+            try:
+                string_record = next(self.iterator)
+                example = tf.train.Example()
+                example.ParseFromString(string_record)
+                vec_string = (example.features.feature['vector_raw']
+                    .bytes_list
+                    .value[0])
+                dim = int(example.features.feature['dimension']
+                          .int64_list
+                          .value[0])
+                label = (example.features.feature['label']
+                         .int64_list
+                         .value)
+                label = list(label)
+                label = label[0] if len(label) == 0 else label
+                vector = np.fromstring(vec_string, dtype=np.float32)
+                if dim != len(vector):
+                    error("Deserialized vector length %d but dimension stored is %d." % (len(vector), dim))
+
+                vectors.append(vector)
+                labels.append(label)
+
+            except StopIteration:
+                break
+            except Exception as ex:
+                warning(ex)
+                error("Error reading tfrecord vector.")
+
+        return vectors, labels
+
     # read from tfrecord
     def deserialize_from_tfrecord(self, images_per_iteration):
         # images_per_iteration :
@@ -228,21 +262,12 @@ class Dataset:
                     labels = currentBatch[1]
         else:
             # for video mode, get actual number of frames for the batch items
-            if self.input_mode == defs.input_mode.video:
+            if self.input_mode in [defs.input_mode.video, defs.input_mode.vectors]:
                 images, labels = self.get_next_batch_video_tfr()
-            else:
+            elif self.input_mode == defs.input_mode.image:
                 images, labels = self.get_next_batch_frame_tfr(currentBatch)
 
-        if defs.workflows.is_description(self.workflow):
-
-            if self.do_validation:
-                # pad incomplete batch with zeros in both images and captions
-                num_pad = self.batch_size_val - len(images)
-                images.extend( [ np.zeros(images[0].shape, images[0].dtype) for _ in range(num_pad)] )
-                labels.extend( [[-1] for _ in range(num_pad)])
-            ground_truth = self.labels_to_words(labels)
-        else:
-            ground_truth = labels_to_one_hot(labels, self.num_classes)
+        ground_truth = labels_to_one_hot(labels, self.num_classes)
 
         self.advance_batch_index()
         return images, ground_truth
@@ -366,7 +391,10 @@ class Dataset:
             if not num_frames_in_batch:
                 error("Computed 0 frames in next batch.")
             # read the frames from the TFrecord serialization file
-            images, labels_per_frame = self.deserialize_from_tfrecord(num_frames_in_batch)
+            if self.input_mode ==  defs.input_mode.vectors:
+                images, labels_per_frame = self.deserialize_vector(num_frames_in_batch)
+            else:
+                images, labels_per_frame = self.deserialize_from_tfrecord(num_frames_in_batch)
 
             # limit to <numclips> labels per video.
             fpv = [self.num_frames_per_clip * clip for clip in curr_cpv]
@@ -501,13 +529,20 @@ class Dataset:
             self.mean_image = np.transpose(self.mean_image, [1, 2, 0])
 
     # restore from a checkpoint
-    def restore(self, batch_index, epoch_index, sequence_length):
+    #def restore(self, batch_index, epoch_index, sequence_length):
+    def restore(self, batch_index, epoch_index):
         self.batch_index = batch_index
         self.epoch_index = epoch_index
-        self.sequence_length = sequence_length
+        #self.sequence_length = sequence_length
         self.fast_forward_iter()
 
     def initialize_imgproc(self):
+        if self.input_mode == defs.input_mode.vectors:
+            if self.imgproc:
+                info("Ignoring imgproc due to input mode: [%s]" % self.input_mode)
+            self.imgproc = []
+            return
+
         self.build_mean_image()
 
         if defs.imgproc.rand_crop in self.imgproc:
@@ -539,40 +574,6 @@ class Dataset:
             crop_h = [i for i in range(0, raw_image_shape[0] - image_shape[0] - 1)]
             crop_w = [i for i in range(0, raw_image_shape[1] - image_shape[1] - 1)]
         return crop_h, crop_w
-
-
-    # initialize run mode specific data
-    def initialize_workflow(self, word_embeddings_file):
-        if defs.workflows.is_description(self.workflow):
-            # read embedding matrix
-            info("Reading embedding matrix from file [%s]" % word_embeddings_file)
-            self.vocabulary = []
-            vectors = []
-            with open(word_embeddings_file,"r") as f:
-                for line in f:
-                    token, vector = line.strip().split("\t")
-                    # add to vocabulary checking for duplicates
-                    if token in self.vocabulary:
-                        error("Duplicate token [%s] in vocabulary!")
-                    self.vocabulary.append(token)
-                    vector = [float(v) for v in vector.split()]
-                    vectors.append(vector)
-
-            self.embedding_matrix = np.asarray(vectors, np.float32)
-            debug("Read embedding matrix of shape %s " % str(self.embedding_matrix.shape))
-            if "BOS" not in self.vocabulary:
-                error("BOS not found in vocabulary.")
-            if "EOS" not in self.vocabulary:
-                error("EOS not found in vocabulary.")
-            if self.vocabulary.index("BOS") != len(self.vocabulary) -1:
-                error("The BOS index in the vocabulary has be the last one (%d), but it currently is %d" \
-                       % (len(self.vocabulary) - 1, self.vocabulary.index("BOS")) )
-            # classes are all tokens minus the BOS
-            self.num_classes = len(self.vocabulary) - 1
-            # if a max caption length is read, assign it
-            if self.sequence_length is not None:
-                info("Restricting to a caption length of", self.max_caption_length)
-                self.max_caption_length = self.sequence_length
 
     def get_embedding_dim(self):
         return int(self.embedding_matrix.shape[-1])
@@ -706,8 +707,11 @@ class Dataset:
         datainfo = read_file_dict(size_file)
         self.num_items = eval(datainfo['items'])
 
-        if self.input_mode is not None and (datainfo['type'] != self.input_mode):
-            error("Specified input mode %s but the size file contains %s" % (self.input_mode, datainfo['type']))
+        if datainfo['type'] != defs.input_mode.vectors:
+            if self.input_mode is not None and (datainfo['type'] != self.input_mode):
+                error("Specified input mode is [%s] but the size file contains [%s]" % (self.input_mode, datainfo['type']))
+        else:
+            self.input_mode = defs.input_mode.vectors
 
         cpv = eval(datainfo['cpi'])
         fpc = eval(datainfo['fpc'])
@@ -828,4 +832,8 @@ class Dataset:
         if type(self.clips_per_video) == int:
             return self.clips_per_video == 1
         return False
+    def get_image_shape(self):
+        if self.desired_image_shape is None:
+            return self.raw_image_shape
+        return self.desired_image_shape
 

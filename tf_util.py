@@ -134,3 +134,18 @@ def vec_seq_concat(seq_tensor, vec_tensor, sequence_length, order = 'vecfirst'):
     vec_tensor = print_tensor(vec_tensor, "concatted tensor")
     return res
 
+def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
+    encoded_frames = tf.reshape(encoded_frames, (-1, fpc, encoded_dim),
+                                name="aggregate_clips")
+
+    encoded_frames = print_tensor(encoded_frames, "Reshaped vectors")
+    encoded_frames = apply_temporal_fusion(encoded_frames, encoded_dim, fpc, fusion_method)
+    return encoded_frames
+
+def aggregate_tensor_list(inputs, fusion_method):
+    if fusion_method == defs.fusion_method.avg:
+        return tf.reduce_mean(inputs)
+    elif fusion_method == defs.fusion_method.concat:
+        return tf.concat(inputs, axis=1)
+    else:
+        error("Unsupported tensor list aggregation method: [%s]" % fusion_method)

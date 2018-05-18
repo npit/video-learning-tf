@@ -55,13 +55,12 @@ class CustomLogger:
 
 
 
-
     # configure logging settings
     def configure_logging(self, logfile, logging_level):
-        print("Initializing logging to logfile: %s" % logfile)
+        print("Initializing logging with level [%s] to logfile: %s" % (logging_level, logfile))
         sys.stdout.flush()
 
-        self.logging_level = logging_level
+        self.logging_level = eval(logging_level)
         self.logger = logging.getLogger('default')
         self.logger.setLevel(self.logging_level)
 
@@ -142,6 +141,7 @@ def print_tensor(tensor, message):
 
     tensor_cols = 20
     tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
+    debug(message + str(tensor.shape))
     return tens
 
 # duplicate elements from list

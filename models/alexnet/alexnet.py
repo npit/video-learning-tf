@@ -46,8 +46,10 @@ class dcnn(Trainable):
         return W,b
 
     # specify the layers
-    def create(self, input, weightsFile, num_classes, final_layer ="prob", load_weights = False):
-        net_data = load(open(weightsFile, "rb"), encoding="latin1").item()
+    def create(self, input, num_classes, final_layer ="prob", weights_file = None):
+        if weights_file is not None:
+            net_data = load(open(weights_file, "rb"), encoding="latin1").item()
+        load_weights = True if weights_file is not None else False
 
         if final_layer is None:
             final_layer = "prob"
@@ -287,3 +289,9 @@ class dcnn(Trainable):
             # prob
             # softmax(name='prob'))
             # prob = tf.nn.softmax(fc8,name="softmax")
+
+
+
+
+
+
