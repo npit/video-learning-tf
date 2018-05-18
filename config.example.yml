@@ -1,72 +1,86 @@
 run:
-  # run type and an identifier for it
-  workflow: defs.workflows.acrec.singleframe
   # save / load configuration
   resume_file: 
   # folder to store run data
-  run_folder: "path/to/outputfolder"
+  run_folder:  /path/to/runfolder
   phase : defs.phase.train
+  # phase : defs.phase.val
 
-  # data parameters; a list of input data 
+  # data parameters; #a list of input data 
   data:
-    data_source_1:
-      data_path: "path/to/data"
+    dataset1-train:
+      data_path: /path/to/pathlabels.txt
       prepend_folder: ""
       raw_image_shape: (240, 320, 3)
       image_shape: (227, 227, 3)
-      mean_image: [103.939, 116.779, 123.68]
+      mean_image: [99.197148 ,105.293620 ,109.503945 ]
       data_format: defs.data_format.tfrecord
       frame_format: "jpg"
-      imgproc: []
+      imgproc: [defs.imgproc.rand_crop, defs.imgproc.rand_mirror, defs.imgproc.sub_mean]
       batch_item: defs.batch_item.default
       phase: defs.phase.train
       tag: defs.dataset_tag.main
-      read_tries: 3
-    # similarly, can define additional datasets
+    dataset1-test:
+      data_path: /media/npittaras/SAMSUNG/Data/msc-thesis/ccv/serialized/frames_test/test.existing.txt
+      prepend_folder: ""
+      raw_image_shape: (240, 320, 3)
+      image_shape: (227, 227, 3)
+      mean_image: [99.197148 ,105.293620 ,109.503945 ]
+      data_format: defs.data_format.tfrecord
+      frame_format: "jpg"
+      imgproc: [defs.imgproc.center_crop, defs.imgproc.sub_mean]
+      batch_item: defs.batch_item.default
+      phase: defs.phase.val
+      tag: defs.dataset_tag.main
+
 
   network:
-    # how to get from the raw input to feature vectors
-    representation: dcnn
-    classifier: fc
-
-    # architecture settings
-    image_shape: (227, 227, 3)
-    frame_encoding_layer: "fc7"
-    lstm_params: [200, 3, defs.fusion_method.last, defs.lstm.]
-    frame_fusion : [defs.fusion_type.early, defs.fusion_method.avg]
-    clip_fusion : [defs.fusion_type.late, defs.fusion_method.avg]
-    num_classes : 101
-    # dataset fusion method, dataset fusion method, pre-workflow frame fusion method. Skip last arg if no framefusion.
-    dataset_fusion: [defs.fusion_type.late, defs.fusion_method.avg, defs.fusion_method.avg]
-    multi_workflow: defs.workflow.lstm
-    load_weights: True
+    num_classes : 20
+    pipelines:
+      - frames:
+          input: defs.dataset_tag.main
+          representation: defs.representation.dcnn
+          load_weights: models/alexnet/bvlc_alexnet.npy
+          frame_encoding_layer: "fc7"
+          #input_shape: (227, 227,3)
+      - spectros:
+          input: defs.dataset_tag.aux
+          representation: defs.representation.dcnn
+          load_weights: models/alexnet/bvlc_alexnet.npy
+          frame_encoding_layer: "fc7"
+          #input_shape: (227, 227,3)
+          frame_fusion: [defs.fusion_type.early, defs.fusion_method.avg]
+      - ibias:
+          input: [frames, spectros]
+          representation: defs.representation.nop
+          classifier: defs.classifier.lstm
+          lstm_params: [500, 2, defs.fusion_method.avg, defs.combo.ibias]
 
   # phase settings
   train:
     # training settings
-    batch_size: 1
-    epochs : 2
+    batch_size: 20
+    epochs : 10
     optimizer : defs.optim.sgd
-    momentum: 0.9
-    base_lr: 0.1
+    #momentum: 0.9
+    base_lr: 0.05
     lr_mult : None
-    lr_decay : [ defs.decay.exp, defs.periodicity.interval, 8, 0.96 ]
+    lr_decay : [ defs.decay.exp, defs.periodicity.drops, 100, 0.96 ]
     #clip_grads : (-1.,1.)
     clip_grads : None
-    clip_norm : 5
+    clip_norm : 10
     #clip_grads : None
     dropout_keep_prob : 0.5
 
   val:
     # validation settings
     batch_size: 2
-    interval: [defs.]
     logits_save_interval : -1
-
+    clip_fusion : [defs.fusion_type.late, defs.fusion_method.avg]
 
   logging:
     # logging
-    save_freq_per_epoch : 0.5
+    save_freq_per_epoch : 1
     level : logging.DEBUG
     print_tensors : False
     tensorboard_folder : "tensorboard"
@@ -89,8 +103,6 @@ serialize:
   input_files: [ "/path/to/imgfile1", "/path/to/imgfile2"]
 
   # run type
-  run_id: ""
-  seed: 1936
   do_shuffle: True
   do_serialize: True
   do_validate: True
@@ -108,8 +120,6 @@ serialize:
   raw_image_shape: (240,320,3)
   clipframe_mode: defs.clipframe_mode.iterative
   frame_format: "jpg"
-
-  logging_level : logging.INFO
 
 captions:
   # vocabulary to encode captions or produce embeddings.Set to None to generate.
