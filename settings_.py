@@ -132,6 +132,8 @@ class Settings:
 
     def read_field(self, config, fieldname, validate = None, required = False, listify = False):
         debug("Reading field [%s]" % fieldname)
+        # keep track of pipeline fields read
+        self.pipeline_field_cache.append(fieldname)
         val = None
         if fieldname in config:
             val = config[fieldname]
@@ -162,6 +164,7 @@ class Settings:
 
     def read_network(self, pipeline_content):
         network = Network()
+        self.pipeline_field_cache = []
         # input has to be either a dataset or a pipeline output - if it's a pipeline, if that has not been read, bail and retry later
         network.input = self.read_field(pipeline_content, 'input', validate=None, listify=True)
         if any([x is None for x in network.input]):
@@ -195,7 +198,10 @@ class Settings:
             elif shp == None: pass
             else: network.input_shape[i] = parse_seq(shp)
 
-        network.idx = len(self.pipelines)
+        # check for unread pipeline fields
+        unread_fields = [x for x in pipeline_content if x not in self.pipeline_field_cache]
+        if unread_fields:
+            error("Undefined pipeline field(s):" + str(unread_fields))
         return network
 
     def read_config(self, config):
@@ -232,8 +238,8 @@ class Settings:
             pname, content = list(pipeline.items())[0]
             debug("Reading network [%s]" % (pname))
             parsed_pipeline = self.read_network(content)
-            self.pipelines[pname]= parsed_pipeline
-            print("Pipelines now:", self.pipelines)
+            self.pipelines[pname] = parsed_pipeline
+            self.last_pipeline_name = pname
 
         self.num_classes = config["network"]["num_classes"]
 

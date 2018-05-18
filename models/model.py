@@ -247,13 +247,11 @@ class Model:
 
 
     def __init__(self, settings):
-        pnames = sorted(settings.pipelines, key = lambda x : settings.pipelines[x].idx)
-        for pname in pnames:
+        for pname in settings.pipelines:
             pipeline_output = self.build_pipeline(pname, settings)
             self.pipeline_output[pname] = pipeline_output
         # get last defined element for the output
-        last_name = max(settings.pipelines, key=lambda x : settings.pipelines[x].idx)
-        self.logits = self.pipeline_output[last_name]
+        self.logits = self.pipeline_output[settings.last_pipeline_name]
 
     def __init2__(self, settings):
 
