@@ -47,6 +47,7 @@ class Settings:
     feeder = None
 
     pipelines = {}
+    pipeline_names = []
 
 
 
@@ -239,7 +240,7 @@ class Settings:
             debug("Reading network [%s]" % (pname))
             parsed_pipeline = self.read_network(content)
             self.pipelines[pname] = parsed_pipeline
-            self.last_pipeline_name = pname
+            self.pipeline_names.append(pname)
 
         self.num_classes = config["network"]["num_classes"]
 

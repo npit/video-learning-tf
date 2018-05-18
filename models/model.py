@@ -247,11 +247,11 @@ class Model:
 
 
     def __init__(self, settings):
-        for pname in settings.pipelines:
+        for pname in settings.pipeline_names:
             pipeline_output = self.build_pipeline(pname, settings)
             self.pipeline_output[pname] = pipeline_output
         # get last defined element for the output
-        self.logits = self.pipeline_output[settings.last_pipeline_name]
+        self.logits = self.pipeline_output[settings.pipeline_names[-1]]
 
     def __init2__(self, settings):
 
