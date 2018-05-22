@@ -41,6 +41,7 @@ class Model:
         # get settings
         pipeline = settings.pipelines[pipeline_name]
         input_names = pipeline.input
+        input_fusion = pipeline.input_fusion
         classif = pipeline.classifier
         num_classes = settings.num_classes
         if pipeline.frame_fusion:
@@ -49,13 +50,34 @@ class Model:
             fusion_type, fusion_method = None, None
         cpv1, cpv2 = cpvs
 
-        if fusion_type == defs.fusion_type.early:
+        if input_fusion is not None:
+            info("Applying input fusion with [%s]"%input_fusion)
             input = aggregate_tensor_list(inputs, fusion_method)
             if fusion_method == defs.fusion_method.avg:
                 fpc = fpcs[0]
             elif fusion_method == defs.fusion_method.concat:
                 fpc = sum(fpcs)
+            else:
+                error("Undefined input fusion method:" + fusion_method)
 
+        if classif == defs.classifier.fc:
+            info("Multi-classify with fc")
+            if input_fusion is None:
+                error("Arrived at fc-multi pipeline with multiple inputs")
+            input = print_tensor(input,"fc input")
+            dim = tf.shape(input)[-1]
+            if dim != num_classes:
+                info("Converting dim with fc")
+                logits = convert_dim_fc(input, num_classes)
+            else:
+                logits = input
+            info("Converted! dim with fc")
+            if fusion_type == defs.fusion_type.late and fpc > 1:
+                info("Late fusion")
+                logits = aggregate_clip_vectors(logits, num_classes, fpc, fusion_method=fusion_method)
+                logits = print_tensor(logits, "Late fusion")
+            return logits
+            
         if classif == defs.classifier.lstm and len(inputs) == 2:
             input1, input2 = inputs
             dim1, dim2 = int(input1.shape[-1]), int(input2.shape[-1])

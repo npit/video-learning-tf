@@ -193,6 +193,7 @@ class Settings:
         network.weights_file = self.read_field(pipeline_content, 'weights_file')
         network.frame_fusion = self.read_field(pipeline_content, 'frame_fusion', validate = (defs.fusion_type, defs.fusion_method))
         network.input_shape = self.read_field(pipeline_content, 'input_shape', validate=None, listify=True)
+        network.input_fusion = self.read_field(pipeline_content, 'input_fusion', validate=defs.fusion_method)
         for i in range(len(network.input_shape)):
             shp = network.input_shape[i]
             if shp == "None": network.input_shape[i] = None

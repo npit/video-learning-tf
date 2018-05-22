@@ -144,7 +144,7 @@ def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
 
 def aggregate_tensor_list(inputs, fusion_method):
     if fusion_method == defs.fusion_method.avg:
-        return tf.reduce_mean(inputs)
+        return tf.reduce_mean(inputs, axis=0)
     elif fusion_method == defs.fusion_method.concat:
         return tf.concat(inputs, axis=1)
     else:

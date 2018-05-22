@@ -143,7 +143,10 @@ class Feeder:
         if not self.resume:
            return
         if resume_file == defs.names.latest_savefile:
-            with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
+            checkpoints_file = os.path.join(self.run_folder,"checkpoints","checkpoint")
+            if not os.path.exists(checkpoints_file):
+                error("Specified resume file: [%s], but the checkpoints file does not exist." % resume_file)
+            with open(checkpoints_file, "r") as f:
                 for line in f:
                     savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
                     if savefile_graph[::len(savefile_graph)-1] == '""': savefile_graph = savefile_graph[1:-1]
@@ -201,7 +204,10 @@ class Feeder:
         if self.resume:
             debug("Handling resume options")
             if resume_file == defs.names.latest_savefile:
-                with open(os.path.join(self.run_folder,"checkpoints","checkpoint"),"r") as f:
+                checkpoints_file = os.path.join(self.run_folder,"checkpoints","checkpoint")
+                if not os.path.exists(checkpoints_file):
+                    error("Specified resume file: [%s], but the checkpoints file does not exist." % resume_file)
+                with open(checkpoints_file ,"r") as f:
                     for line in f:
                         savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
                         msg = "Resuming latest tf graph: [%s]" % savefile_graph
