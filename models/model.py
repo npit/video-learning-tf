@@ -51,14 +51,15 @@ class Model:
         cpv1, cpv2 = cpvs
 
         if input_fusion is not None:
-            info("Applying input fusion with [%s]"%input_fusion)
-            input = aggregate_tensor_list(inputs, fusion_method)
-            if fusion_method == defs.fusion_method.avg:
+            info("Applying input fusion with [%s]"% input_fusion)
+            input = aggregate_tensor_list(inputs, input_fusion)
+            if input_fusion == defs.fusion_method.avg:
                 fpc = fpcs[0]
-            elif fusion_method == defs.fusion_method.concat:
+            elif input_fusion == defs.fusion_method.concat:
                 fpc = sum(fpcs)
             else:
                 error("Undefined input fusion method:" + fusion_method)
+            input = print_tensor(input, "after input fusion")
 
         if classif == defs.classifier.fc:
             info("Multi-classify with fc")
