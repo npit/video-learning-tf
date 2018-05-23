@@ -44,61 +44,47 @@ class Model:
         input_fusion = pipeline.input_fusion
         classif = pipeline.classifier
         num_classes = settings.num_classes
+        dims = [int(inp.shape[-1]) for inp in inputs]
+        cpv1, cpv2 = cpvs
+
         if pipeline.frame_fusion:
             fusion_type, fusion_method = pipeline.frame_fusion
         else:
             fusion_type, fusion_method = None, None
-        cpv1, cpv2 = cpvs
 
         if input_fusion is not None:
-            info("Applying input fusion with [%s]"% input_fusion)
-            input = aggregate_tensor_list(inputs, input_fusion)
-            if input_fusion == defs.fusion_method.avg:
-                fpc = fpcs[0]
-            elif input_fusion == defs.fusion_method.concat:
-                fpc = sum(fpcs)
-            else:
-                error("Undefined input fusion method:" + fusion_method)
-            input = print_tensor(input, "after input fusion")
+            info("Applying input fusion with [%s]"% input_fusion, dims, fpcs, cpvs)
+            inputs, dims, fpcs, cpvs = apply_tensor_list_fusion(inputs, fusion_method)
 
         if classif == defs.classifier.fc:
             info("Multi-classify with fc")
-            if input_fusion is None:
+            if len(inputs) > 1:
                 error("Arrived at fc-multi pipeline with multiple inputs")
-            input = print_tensor(input,"fc input")
-            dim = tf.shape(input)[-1]
+            logits, dim, fpc = inputs[0], dims[0],fpcs[0] # already logits, if good dim
+            logits = print_tensor(logits,"fc input")
             if dim != num_classes:
-                info("Converting dim with fc")
-                logits = convert_dim_fc(input, num_classes)
-            else:
-                logits = input
+                logits = convert_dim_fc(logits, num_classes)
             info("Converted! dim with fc")
             if fusion_type == defs.fusion_type.late and fpc > 1:
-                info("Late fusion")
+                info("Applying late fusion")
                 logits = aggregate_clip_vectors(logits, num_classes, fpc, fusion_method=fusion_method)
                 logits = print_tensor(logits, "Late fusion")
             return logits
             
-        if classif == defs.classifier.lstm and len(inputs) == 2:
-            input1, input2 = inputs
-            dim1, dim2 = int(input1.shape[-1]), int(input2.shape[-1])
-            fpc1, fpc2 = fpcs
+        if classif == defs.classifier.lstm:
             lstm_params = pipeline.lstm_params
-            # exactly one dataset needs to be frame-fused
-            if fpc1 == 1: error("The LSTM-dual classifier requires a main fpc greater than 1")
-            if fpc2 != 1: error("The LSTM-dual classifier requires an auxilliary fpc equal to 1, found [%d] instead." % fpc2)
             classifier = LSTM()
             self.tf_components.append(classifier)
             combo_type = lstm_params[3]
             if combo_type == defs.combo.sbias:
+                main, aux = inputs
+                mdim, adim = dims
+                mfpc, afpc = fpcs
+                mcpv, acpv = cpvs
                 # tile the aux, if necessary
-                tile_num = int(cpv1/cpv2)
-                if tile_num > 1:
-                    input2 = tf.reshape(input2, [1, -1])
-                    input2 = tf.tile(input2, [tile_num, 1])
-                    input2 = tf.reshape(input2, [-1, dim2])
+                aux = replicate_auxilliary_tensor(aux, adim, mcpv/acpv)
                 # supply inputs
-                io_params = (input1, dim1, input2, num_classes, fpc1, None, settings.get_dropout(), False)
+                io_params = (main, mdim, aux, num_classes, mfpc, None, settings.get_dropout(), False)
                 lstm_output, lstm_state = classifier.build(io_params, lstm_params)
             elif combo_type == defs.combo.conc:
                 # concat to input

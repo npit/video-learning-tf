@@ -47,7 +47,8 @@ def convert_dim_fc(input_tensor, output_dim, name="fc_convert", reuse = False):
     Make and apply a fully-connected layer to map the input_dim to the output_dim, if needed
     """
     # input_tensor = print_tensor(input_tensor, "Input to fc-convert with name %s : " % name)
-    input_dim = int(input_tensor.shape[1])
+    input_dim = int(input_tensor.shape[-1])
+    info("Converting dim %d to %d with fc layer" % (input_dim, output_dim))
     if input_dim  == output_dim:
         return input_tensor
     input_shape = input_tensor.shape
@@ -74,6 +75,7 @@ def convert_dim_fc(input_tensor, output_dim, name="fc_convert", reuse = False):
 def vectorize(input_tensor, depth_dim):
     return tf.reshape(input_tensor, [ -1, depth_dim])
 
+# dcnn helpers
 def make_fusion(input_tensor, window, strides, padding, name):
     """
     Pooling definition helper function
@@ -135,6 +137,7 @@ def vec_seq_concat(seq_tensor, vec_tensor, sequence_length, order = 'vecfirst'):
     return res
 
 def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
+    debug("Aggregating clip vectors, fpc:%d, dim:%d, inputshape:%s" % (fpc, encoded_dim, str(encoded_frames.shape)))
     encoded_frames = tf.reshape(encoded_frames, (-1, fpc, encoded_dim),
                                 name="aggregate_clips")
 
@@ -142,10 +145,52 @@ def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
     encoded_frames = apply_temporal_fusion(encoded_frames, encoded_dim, fpc, fusion_method)
     return encoded_frames
 
-def aggregate_tensor_list(inputs, fusion_method):
+
+def apply_tensor_list_fusion(inputs, fusion_method, dims, fpcs, cpvs):
     if fusion_method == defs.fusion_method.avg:
-        return tf.reduce_mean(inputs, axis=0)
+        return tf.reduce_mean(inputs, axis=0), dims[[0], fpcs[0], cpvs[0]
     elif fusion_method == defs.fusion_method.concat:
-        return tf.concat(inputs, axis=1)
+        return tf.concat(inputs, axis=1), sum(dims), fpcs[0], cpvs[0]
+
+    else if defs.check(fusion_method, defs.dual_fusion_method, do_boolean = True):
+        if len(inputs) != 2:
+            error("Requested dual fusion but supplied %d inputs" % len(inputs))
+        mdim, adim = dims
+        mfpc, afpc = fpcs
+        mcpv, acpv = cpvs
+        tile_num = int(mcpv/acpv)
+        main, aux = inputs
+        # duplicate aux to required fpc, if necessary
+        aux = replicate_auxilliary_tensor(aux, adim, tile_aux )
+
+        if fusion_method == defs.dual_fusion_method.ibias:
+            # reshape seq vector to numclips x fpc x dim
+            main= tf.reshape(input1, [-1, mfpc, mdim])
+            main = print_tensor(main,"reshaped seq")
+            # reshape the aux vectors to batch_size x fpc=1 x dim
+            aux = tf.reshape(aux, [-1, 1, adim])
+            aux = print_tensor(aux,"reshaped bias")
+            # insert the aux as the first item in the seq - may need tf.expand on the fused
+            combo = tf.concat([aux, main], axis=1)
+            # increase the seq len to account for the input bias extra timestep
+            combo_fpc = mfpc + 1
+            info("Input bias augmented fpc: %d + 1 = %d" % (fpc1, combo_fpc))
+            # restore to batchsize*seqlen x embedding_dim
+            combo = tf.reshape(combo ,[-1, mdim])
+            return combo, mdim, combo_fpc, mcpv
+
+        elif fusion_method == defs.dual_fusion_method.concat:
+            return  vec_seq_concat(main, aux, mfpc), mdim+adim, mfpc, mcpv
+        else:
+            error("Unknown dual fusion method: [%s]" % fusion_method)
     else:
         error("Unsupported tensor list aggregation method: [%s]" % fusion_method)
+
+def replicate_auxilliary_tensor(input, dim, tile_num):
+    # replicate each item in the input <tile_num> times, in place
+    if tile_num > 1:
+        input = tf.reshape(input, [1, -1])
+        input = tf.tile(input, [tile_num, 1])
+        input = tf.reshape(input, [-1, dim])
+    return input
+
