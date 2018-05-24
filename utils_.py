@@ -139,8 +139,8 @@ def print_tensor(tensor, message):
         debug("Non-tensor type: [%s], value:[%s] | %s" % (type(tensor), str(tensor), message))
         return tensor
 
-    tensor_cols = 20
-    tens = tf.Print(tensor,[tf.shape(tensor), tensor],summarize=2*tensor_cols ,message=message)
+    tensor_cols = 5
+    tens = tf.Print(tensor,[tf.shape(tensor), tensor],summarize=2*tensor_cols ,message="%-25s " % message)
     debug(message + str(tensor.shape))
     return tens
 

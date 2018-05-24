@@ -59,7 +59,7 @@ class defs:
 
     # sequence fusion methods
     class fusion_method:
-        avg, last, concat, reshape, ibias = "avg", "last", "concat", "reshape", "ibias"
+        avg, last, concat, reshape, state, ibias = "avg", "last", "concat", "reshape", "state", "ibias"
 
     # early/late fusion
     class fusion_type:

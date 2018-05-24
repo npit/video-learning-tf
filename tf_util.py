@@ -139,50 +139,52 @@ def apply_tensor_list_fusion(inputs, fusion_method, dims, fpcs, cpvs):
     else:
         cpv_ratio = None
 
-    if cpv_ratio == 1:
-        if fusion_method == defs.fusion_method.avg:
-            return tf.reduce_mean(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
-        elif fusion_method == defs.fusion_method.concat:
+    if fusion_method == defs.fusion_method.avg:
+        return tf.reduce_mean(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
+
+    elif fusion_method == defs.fusion_method.concat:
+        if cpv_ratio == 1:
             return tf.concat(inputs, axis=1), sum(dims), fpcs[0], cpvs[0]
-    else:
-        if len(inputs) != 2:
-            error("Adaptive cpv fusion works only for 2 inputs")
+        else:
+            inputs[1] = replicate_auxilliary_tensor(inputs, dims, cpvs, fpcs)
+            return vec_seq_concat(inputs[0], inputs[1], fpcs[0]), sum(dims), fpcs[0], cpvs[0]
+    elif fusion_method == defs.fusion_method.ibias:
+        if cpv_ratio != 1:
+            inputs[1] = replicate_auxilliary_tensor(inputs, dims, cpvs, fpcs)
+
         # adaptive fusion with expansion of the auxilliary tensor
         mdim, adim = dims
         mfpc, afpc = fpcs
         mcpv, acpv = cpvs
         main, aux = inputs
-        # duplicate aux to required fpc, if necessary
-        aux = replicate_auxilliary_tensor(aux, adim, cpv_ratio)
 
-        if fusion_method == defs.fusion_method.ibias:
-            # reshape seq vector to numclips x fpc x dim
-            main = tf.reshape(main, [-1, mfpc, mdim])
-            main = print_tensor(main,"reshaped seq")
-            # reshape the aux vectors to batch_size x fpc=1 x dim
-            aux = tf.reshape(aux, [-1, 1, adim])
-            aux = print_tensor(aux,"reshaped bias")
-            # insert the aux as the first item in the seq - may need tf.expand on the fused
-            combo = tf.concat([aux, main], axis=1)
-            # increase the seq len to account for the input bias extra timestep
-            combo_fpc = mfpc + 1
-            info("Input bias augmented fpc: %d + 1 = %d" % (mfpc, combo_fpc))
-            # restore to batchsize*seqlen x embedding_dim
-            combo = tf.reshape(combo ,[-1, mdim])
-            return combo, mdim, combo_fpc, mcpv
+        # reshape seq vector to numclips x fpc x dim
+        main = tf.reshape(main, [-1, mfpc, mdim])
+        main = print_tensor(main,"reshaped seq")
+        # reshape the aux vectors to batch_size x fpc=1 x dim
+        aux = tf.reshape(aux, [-1, 1, adim])
+        aux = print_tensor(aux,"reshaped bias")
+        # insert the aux as the first item in the seq - may need tf.expand on the fused
+        combo = tf.concat([aux, main], axis=1)
+        # increase the seq len to account for the input bias extra timestep
+        combo_fpc = mfpc + 1
+        info("Input bias augmented fpc: %d + 1 = %d" % (mfpc, combo_fpc))
+        # restore to batchsize*seqlen x embedding_dim
+        combo = tf.reshape(combo ,[-1, mdim])
+        return combo, mdim, combo_fpc, mcpv
 
-        elif fusion_method == defs.fusion_method.concat:
-            return vec_seq_concat(main, aux, mfpc), mdim+adim, mfpc, mcpv
-        else:
-            error("Unknown adaptive cpv fusion method: [%s]" % fusion_method)
+    else:
+        error("Unknown fusion method: [%s]" % fusion_method)
 
 
-def replicate_auxilliary_tensor(input, dim, tile_num):
+def replicate_auxilliary_tensor(inputs, dims, cpvs, fpcs):
     # replicate each item in the input <tile_num> times, in place
-    debug("Tiling tensor [%s] %d times" %(str(input.shape), tile_num))
+    _, aux_input = inputs
+    tile_num = int(cpvs[0]/cpvs[1])
+    dim_main, dim_aux = dims
+    debug("Tiling tensor [%s] %d times" %(str(aux_input.shape), tile_num))
     if tile_num > 1:
-        input = tf.reshape(input, [1, -1])
-        input = tf.tile(input, [tile_num, 1])
-        input = tf.reshape(input, [-1, dim])
-    return input
-
+        aux_input = tf.reshape(aux_input, [1, -1])
+        aux_input = tf.tile(aux_input, [tile_num, 1])
+        aux_input = tf.reshape(aux_input, [-1, dim])
+    return aux_input

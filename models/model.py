@@ -40,7 +40,6 @@ class Model:
         # define input
         for i in  range(len(pipeline_inputs)):
             input_name = pipeline_inputs[i]
-            debug("Resolving pipeline input: [%s]" % input_name)
             if input_name in settings.pipelines:
                 # get input from existing pipeline
                 input = self.pipeline_output[input_name]
@@ -57,10 +56,12 @@ class Model:
                     warning("Non equal clips per item")
                 cpv = cpv[0]
                 fpc = settings.feeder.get_dataset_by_tag(input_name)[0].num_frames_per_clip
+            dim = int(input.shape[-1])
             inputs.append(input)
             cpvs.append(cpv)
             fpcs.append(fpc)
-            dims.append(int(input.shape[-1]))
+            dims.append(dim)
+            debug("Resolved pipeline input: [%s] shape,cpv,fpc,dim: [%s, %d, %d, %d]" % (input_name, str(input.shape),cpv, fpc, dim))
 
         # if len(inputs) > 1:
         #     return self.build_multi_pipeline(inputs, cpvs, fpcs, pipeline_name, settings)
@@ -152,7 +153,6 @@ class Model:
         logits = print_tensor(logits, "Final logits")
         return logits
 
-
     def __init__(self, settings):
         for pname in settings.pipeline_names:
             pipeline_output = self.build_pipeline(pname, settings)
@@ -165,7 +165,6 @@ class Model:
 
     def get_ignorable_variable_names(self):
         ignorables = []
-
         for component in self.tf_components:
             if component.ignorable_variable_names:
                 ignorables.extend(component.ignorable_variable_names)
@@ -173,5 +172,3 @@ class Model:
             info("Getting raw ignorables: %s" % str(ignorables))
             ignorables = [drop_tensor_name_index(s) for s in ignorables]
         return list(set(ignorables))
-
-
