@@ -1,4 +1,5 @@
 from utils_ import Trainable, error, info
+from tf_util import convert_dim_fc
 from models.alexnet.alexnet import dcnn
 from models.lstm.lstm import lstm
 
@@ -67,3 +68,11 @@ class LSTM(Vectorizer, Trainable):
                                         output_dim, seqlen, nonzero_seq, dropout, omit_fc)
         return output, state
 
+class FC(Vectorizer, Trainable):
+    name="FC"
+    description="Fully-connected layer"
+    def __init__(self):
+        Vectorizer.__init__(self, FC.name, FC.description)
+
+    def build(self, input, output_dim):
+        return convert_dim_fc(input, output_dim)

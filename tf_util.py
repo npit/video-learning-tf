@@ -28,16 +28,6 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
         debug("Aggregated time-averaged output : %s" % str(output.shape))
     elif fusion_method == defs.fusion_method.reshape:
         output = tf.reshape(input_tensor,[-1, vector_dimension])
-    elif fusion_method == defs.fusion_method.lstm:
-        if lstm_encoder == None:
-            error("Did not provide an lstm encoder for fusion.")
-        # fuse via lstm encoding; simplest lstm setting: 1 layer, statedim = inputdim, outputdim = 8
-        # setting output dim to a dummy dim of 8, since we'll get the state
-        lstm_params = lstm_encoder.params
-        _, output = lstm_encoder.forward_pass_sequence(input_tensor, None, vector_dimension, lstm_params, 8, temporal_dimension, None, 0.5, omit_output_fc=True)
-        # get the state h vector
-        output = output[0].h
-        info("Aggregated lstm output [%s]" % str(output.shape))
     else:
         error("Undefined frame fusion type : %s" % str(fusion_method))
     return output
@@ -147,25 +137,30 @@ def aggregate_clip_vectors(encoded_frames, encoded_dim, fpc, fusion_method):
 
 
 def apply_tensor_list_fusion(inputs, fusion_method, dims, fpcs, cpvs):
-    if fusion_method == defs.fusion_method.avg:
-        return tf.reduce_mean(inputs, axis=0), dims[[0], fpcs[0], cpvs[0]
-    elif fusion_method == defs.fusion_method.concat:
-        return tf.concat(inputs, axis=1), sum(dims), fpcs[0], cpvs[0]
+    if len(inputs)  == 2:
+        cpv_ratio = int(cpvs[0] / cpvs[1])
+    else:
+        cpv_ratio = None
 
-    else if defs.check(fusion_method, defs.dual_fusion_method, do_boolean = True):
+    if cpv_ratio == 1:
+        if fusion_method == defs.fusion_method.avg:
+            return tf.reduce_mean(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
+        elif fusion_method == defs.fusion_method.concat:
+            return tf.concat(inputs, axis=1), sum(dims), fpcs[0], cpvs[0]
+    else:
         if len(inputs) != 2:
-            error("Requested dual fusion but supplied %d inputs" % len(inputs))
+            error("Adaptive cpv fusion works only for 2 inputs")
+        # adaptive fusion with expansion of the auxilliary tensor
         mdim, adim = dims
         mfpc, afpc = fpcs
         mcpv, acpv = cpvs
-        tile_num = int(mcpv/acpv)
         main, aux = inputs
         # duplicate aux to required fpc, if necessary
-        aux = replicate_auxilliary_tensor(aux, adim, tile_aux )
+        aux = replicate_auxilliary_tensor(aux, adim, cpv_ratio)
 
-        if fusion_method == defs.dual_fusion_method.ibias:
+        if fusion_method == defs.fusion_method.ibias:
             # reshape seq vector to numclips x fpc x dim
-            main= tf.reshape(input1, [-1, mfpc, mdim])
+            main = tf.reshape(main, [-1, mfpc, mdim])
             main = print_tensor(main,"reshaped seq")
             # reshape the aux vectors to batch_size x fpc=1 x dim
             aux = tf.reshape(aux, [-1, 1, adim])
@@ -174,20 +169,20 @@ def apply_tensor_list_fusion(inputs, fusion_method, dims, fpcs, cpvs):
             combo = tf.concat([aux, main], axis=1)
             # increase the seq len to account for the input bias extra timestep
             combo_fpc = mfpc + 1
-            info("Input bias augmented fpc: %d + 1 = %d" % (fpc1, combo_fpc))
+            info("Input bias augmented fpc: %d + 1 = %d" % (mfpc, combo_fpc))
             # restore to batchsize*seqlen x embedding_dim
             combo = tf.reshape(combo ,[-1, mdim])
             return combo, mdim, combo_fpc, mcpv
 
-        elif fusion_method == defs.dual_fusion_method.concat:
-            return  vec_seq_concat(main, aux, mfpc), mdim+adim, mfpc, mcpv
+        elif fusion_method == defs.fusion_method.concat:
+            return vec_seq_concat(main, aux, mfpc), mdim+adim, mfpc, mcpv
         else:
-            error("Unknown dual fusion method: [%s]" % fusion_method)
-    else:
-        error("Unsupported tensor list aggregation method: [%s]" % fusion_method)
+            error("Unknown adaptive cpv fusion method: [%s]" % fusion_method)
+
 
 def replicate_auxilliary_tensor(input, dim, tile_num):
     # replicate each item in the input <tile_num> times, in place
+    debug("Tiling tensor [%s] %d times" %(str(input.shape), tile_num))
     if tile_num > 1:
         input = tf.reshape(input, [1, -1])
         input = tf.tile(input, [tile_num, 1])

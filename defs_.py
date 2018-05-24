@@ -33,28 +33,14 @@ class defs:
         else:
             return curr_class
 
-    # checks full def names
-    def check_full(self,arg):
-        parts = arg.split(".")
-        if not parts[0] == "defs":
-            error("Invalid def : %s" % arg)
-        curr_class = defs
-        for part in parts[1:]:
-            curr_class = defs.check_part(part, curr_class)
-        return curr_class
-
 
     class representation:
-        dcnn, nop = "dcnn", "nop"
+        dcnn, fc, nop = "dcnn", "fc", "nop"
     class classifier:
         fc, lstm = "fc", "lstm"
-
-    class combo:
-        sbias, ibias, conc = "sbias", "ibias", "conc"
     # run phase
     class phase:
         train, val ="train", "val"
-
     # input mode is framewise dataset vs videowise, each video having n frames
     class input_mode:
         video, image, vectors = "video", "image", "vectors"
@@ -73,7 +59,7 @@ class defs:
 
     # sequence fusion methods
     class fusion_method:
-        avg, last, concat, reshape, state = "avg", "last", "concat", "reshape", "state"
+        avg, last, concat, reshape, ibias = "avg", "last", "concat", "reshape", "ibias"
 
     # early/late fusion
     class fusion_type:

@@ -182,13 +182,13 @@ class Settings:
         network.representation = self.read_field(pipeline_content, 'representation', required = True, validate = defs.representation)
         if network.representation == defs.representation.dcnn:
             network.frame_encoding_layer = self.read_field(pipeline_content, 'frame_encoding_layer', required = True)
+        if network.representation == defs.representation.fc:
+            network.fc_output_dim = self.read_field(pipeline_content, 'fc_output_dim', required = True)
 
         network.classifier = self.read_field(pipeline_content, 'classifier', validate = defs.classifier)
         if network.classifier == defs.classifier.lstm:
             params = self.read_field(pipeline_content,"lstm_params")
             network.lstm_params = [int(params[0]), int(params[1]), defs.check(params[2], defs.fusion_method)]
-            if len(params) > 3:
-                network.lstm_params.append(defs.check(params[3],defs.combo))
 
         network.weights_file = self.read_field(pipeline_content, 'weights_file')
         network.frame_fusion = self.read_field(pipeline_content, 'frame_fusion', validate = (defs.fusion_type, defs.fusion_method))

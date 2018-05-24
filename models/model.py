@@ -1,5 +1,5 @@
 from defs_ import defs
-from vectorizer import DCNN, NOP, LSTM
+from vectorizer import DCNN, NOP, LSTM, FC
 from utils_ import error, info, debug, drop_tensor_name_index, print_tensor
 from tf_util import *
 import tensorflow as tf
@@ -13,130 +13,6 @@ class Model:
     pipeline_output = {}
     pipeline_output_shapes = {}
 
-    def handle_input(self, settings):
-        # if not multi, input is single data and labels
-        if settings.workflow != defs.workflows.multi:
-            self.input = tf.placeholder(tf.float32, (None,) + settings.network.image_shape, name='input_frames')
-            #self.labels = tf.placeholder(tf.int32, (None, settings.network.num_classes), name='input_labels')
-            self.required_input.append((self.input, defs.net_input.visual, defs.dataset_tag.main))
-            #self.input_config.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
-        else:
-            # else, needs double that
-            pass
-
-
-    def get_cpv_information(self, pipeline, settings):
-        cpvs = []
-        input_names = pipeline.input
-        for inp in input_names:
-            if inp in settings.pipelines:
-                pass
-        return cpvs
-
-
-    def build_multi_pipeline(self, inputs, cpvs, fpcs, pipeline_name, settings):
-        # guaranteed not to have a representation operator
-        # this pipeline's sole purpose is to fuse multiple inputs to one.
-        # all other scenarios should be handled by the regular variant
-        # get settings
-        pipeline = settings.pipelines[pipeline_name]
-        input_names = pipeline.input
-        input_fusion = pipeline.input_fusion
-        classif = pipeline.classifier
-        num_classes = settings.num_classes
-        dims = [int(inp.shape[-1]) for inp in inputs]
-        cpv1, cpv2 = cpvs
-
-        if pipeline.frame_fusion:
-            fusion_type, fusion_method = pipeline.frame_fusion
-        else:
-            fusion_type, fusion_method = None, None
-
-        if input_fusion is not None:
-            info("Applying input fusion with [%s]"% input_fusion, dims, fpcs, cpvs)
-            inputs, dims, fpcs, cpvs = apply_tensor_list_fusion(inputs, fusion_method)
-
-        if classif == defs.classifier.fc:
-            info("Multi-classify with fc")
-            if len(inputs) > 1:
-                error("Arrived at fc-multi pipeline with multiple inputs")
-            logits, dim, fpc = inputs[0], dims[0],fpcs[0] # already logits, if good dim
-            logits = print_tensor(logits,"fc input")
-            if dim != num_classes:
-                logits = convert_dim_fc(logits, num_classes)
-            info("Converted! dim with fc")
-            if fusion_type == defs.fusion_type.late and fpc > 1:
-                info("Applying late fusion")
-                logits = aggregate_clip_vectors(logits, num_classes, fpc, fusion_method=fusion_method)
-                logits = print_tensor(logits, "Late fusion")
-            return logits
-            
-        if classif == defs.classifier.lstm:
-            lstm_params = pipeline.lstm_params
-            classifier = LSTM()
-            self.tf_components.append(classifier)
-            combo_type = lstm_params[3]
-            if combo_type == defs.combo.sbias:
-                main, aux = inputs
-                mdim, adim = dims
-                mfpc, afpc = fpcs
-                mcpv, acpv = cpvs
-                # tile the aux, if necessary
-                aux = replicate_auxilliary_tensor(aux, adim, mcpv/acpv)
-                # supply inputs
-                io_params = (main, mdim, aux, num_classes, mfpc, None, settings.get_dropout(), False)
-                lstm_output, lstm_state = classifier.build(io_params, lstm_params)
-            elif combo_type == defs.combo.conc:
-                # concat to input
-                tile_num = int(cpv1/cpv2)
-                if tile_num > 1:
-                    input2 = tf.reshape(input2, [1, -1])
-                    input2 = tf.tile(input2, [tile_num, 1])
-                    input2 = tf.reshape(input2, [-1, dim2])
-                input = vec_seq_concat(input1, input2, fpc1)
-                io_params = (input, dim1 + dim2, None, num_classes, fpc1, None, settings.get_dropout(), False)
-                lstm_output, lstm_state = classifier.build(io_params, lstm_params)
-            elif combo_type == defs.combo.ibias:
-                if dim2 != dim1:
-                    warning("Transforming with an fc the dim. of [%s] data to match the [%s]: [%d] -> [%d]" % (input_names[1],input_names[0], dim2, dim1))
-                    input2 = convert_dim_fc(input2, dim1, name="lstm_multi_fc_convert")
-                    dim2 = dim1
-                # reshape seq vector to numclips x fpc x dim
-                reshaped_seq_dset= tf.reshape(input1, [-1, fpc1, dim1])
-                reshaped_seq_dset = print_tensor(reshaped_seq_dset,"reshaped seq")
-                # duplicate bias vector to fpc
-                tile_num = int(cpv1/cpv2)
-                input2_tiled = tf.reshape(input2, [1, -1])
-                input2_tiled = tf.tile(input2_tiled, [tile_num, 1])
-                input2_tiled = print_tensor(input2_tiled,"tiled bias")
-                # reshape the bias dataset to batch_size x fpc=1 x dim
-                reshaped_bias_dset = tf.reshape(input2_tiled, [-1, 1, dim2])
-                reshaped_bias_dset = print_tensor(reshaped_bias_dset,"reshaped bias")
-                # insert the fused as the first item in the seq - may need tf.expand on the fused
-                input_biased_seq = tf.concat([reshaped_bias_dset, reshaped_seq_dset], axis=1)
-                # increase the seq len to account for the input bias extra timestep
-                augmented_fpc = fpc1 + 1
-                info("Input bias augmented fpc: %d + 1 = %d" % (fpc1, augmented_fpc))
-                # restore to batchsize*seqlen x embedding_dim
-                input_biased_seq = tf.reshape(input_biased_seq ,[-1, dim1])
-
-                # supply inputs
-                io_params = (input_biased_seq, dim1, None, num_classes, augmented_fpc, None, settings.get_dropout(), False)
-                lstm_output, lstm_state = classifier.build(io_params, lstm_params)
-            else:
-                error("Undefined combo type: [%s]" % combo_type)
-
-            if lstm_params[2] == defs.fusion_method.state:
-                logits = lstm_state[-1].h
-            else:
-                logits = lstm_output
-
-            if int(logits.shape[1]) != num_classes:
-                logits = convert_dim_fc(logits, num_classes)
-            self.pipeline_output[pipeline_name] = logits
-            self.pipeline_output_shapes[pipeline_name] = (logits.shape, cpv1, 1)
-        return logits
-
 
 
     def build_pipeline(self, pipeline_name, settings):
@@ -144,11 +20,11 @@ class Model:
         info("Building pipeline [%s]" % pipeline_name)
 
         # inits for multi-input layer
-        inputs, cpvs, fpcs = [], [], []
-
+        inputs, cpvs, fpcs, dims = [], [], [], []
         pipeline =settings.pipelines[pipeline_name]
         # get settings
         pipeline_inputs = pipeline.input
+        input_fusion = pipeline.input_fusion
         repr = pipeline.representation
         classif = pipeline.classifier
         num_classes = settings.num_classes
@@ -162,7 +38,6 @@ class Model:
             error("Specified late fusion with no classifier selected")
 
         # define input
-        # combination-only pipeline
         for i in  range(len(pipeline_inputs)):
             input_name = pipeline_inputs[i]
             debug("Resolving pipeline input: [%s]" % input_name)
@@ -185,13 +60,22 @@ class Model:
             inputs.append(input)
             cpvs.append(cpv)
             fpcs.append(fpc)
+            dims.append(int(input.shape[-1]))
 
-        if len(inputs) > 1:
-            return self.build_multi_pipeline(inputs, cpvs, fpcs, pipeline_name, settings)
-        else:
-            input = inputs[-1]
-            fpc = fpcs[-1]
-            output_fpc = fpc
+        # if len(inputs) > 1:
+        #     return self.build_multi_pipeline(inputs, cpvs, fpcs, pipeline_name, settings)
+        # else:
+
+        # input fusion: for combination of multiple tensors - for anything more complex just declare a dedicated pipeline
+        if input_fusion is not None:
+            info("Applying input fusion with [%s]"% input_fusion)
+            inputs, dims, fpcs, cpvs = apply_tensor_list_fusion(inputs, input_fusion, dims, fpcs, cpvs)
+            inputs, dims, fpcs, cpvs = [inputs], [dims], [fpcs], [cpvs]
+
+        # denote main pipeline inputs
+        input = inputs[0]
+        fpc = fpcs[0]
+        output_fpc = fpc
 
         # vectorizer
         if repr == defs.representation.dcnn:
@@ -201,6 +85,11 @@ class Model:
         elif repr == defs.representation.nop:
             repr_model = NOP()
             feature_vectors = repr_model.build(input, None)
+        elif repr == defs.representation.fc:
+            repr_model = FC()
+            outdim = pipeline.fc_output_dim
+            feature_vectors = repr_model.build(input, outdim)
+
         else:
             error("Undefined representation [%s]" % repr)
 
@@ -212,7 +101,7 @@ class Model:
             feature_vectors = aggregate_clip_vectors(feature_vectors, dim, fpc, fusion_method=fusion_method)
             feature_vectors = print_tensor(feature_vectors, "Early fusion")
             output_fpc = 1
-        elif fpc ==1 and fusion_type != defs.fusion_type.none:
+        elif fpc ==1 and fusion_type not in [defs.fusion_type.none, None]:
                 info("Omitting specified fusion [%s][%s] due to singular fpc" % (fusion_type, fusion_method))
 
         if classif is None:
@@ -227,10 +116,21 @@ class Model:
                 pass
         elif classif == defs.classifier.lstm:
             if fpc == 1: error("The LSTM classifier requires an fpc greater than 1")
-            if fusion_type != defs.fusion_type.none: error("The LSTM classifier should be used only with [%s] fusion" % defs.fusion_type.none)
+            if fusion_type is None:
+                debug("Unset fusion type, setting it to explicitly to the def [%s]" % defs.fusion_type.none )
+                fusion_type = defs.fusion_type.none
+            if fusion_type != defs.fusion_type.none: error("The LSTM classifier should be used only with [%s] fusion, but it's [%s]" % (defs.fusion_type.none, fusion_type))
             classifier = LSTM()
             self.tf_components.append(classifier)
-            io_params = (feature_vectors, dim, None, num_classes, fpc, None, settings.get_dropout(), False)
+            if len(inputs) > 1:
+                # consider the 2nd input as the state vector
+                state_tensor, state_dim = inputs[1], dims[1]
+                # check if the cpvs match, else tile (e.g. if input has 2 cpv and state 1)
+                cpv_ratio = int(cpvs[0]/cpvs[1])
+                state_tensor = replicate_auxilliary_tensor(state_tensor, state_dim, cpv_ratio)
+            else:
+                state_tensor = None
+            io_params = (feature_vectors, dim, state_tensor, num_classes, fpc, None, settings.get_dropout(), False)
             lstm_output, lstm_state = classifier.build(io_params, pipeline.lstm_params)
             if pipeline.lstm_params[-1] == defs.fusion_method.state:
                 logits = lstm_state[-1].h
@@ -253,107 +153,12 @@ class Model:
         return logits
 
 
-
-
     def __init__(self, settings):
         for pname in settings.pipeline_names:
             pipeline_output = self.build_pipeline(pname, settings)
             self.pipeline_output[pname] = pipeline_output
         # get last defined element for the output
         self.logits = self.pipeline_output[settings.pipeline_names[-1]]
-
-    def __init2__(self, settings):
-
-
-        """
-        each component is a list
-
-        if len > 1, gotta fuse somehow
-
-        temporal point of fusion depends on early or late
-
-        mutli workflow gr8ly simplified
-        """
-
-        # get settings
-        repr = settings.network.representation
-        classif = settings.network.classifier
-        num_classes = settings.network.num_classes
-        fpc = settings.feeder.get_dataset_by_tag(defs.dataset_tag.main)[0].num_frames_per_clip
-        fusion_type = settings.network.frame_fusion_type
-        fusion_method = settings.network.frame_fusion_method
-
-
-        if fpc ==1 and fusion_type != defs.fusion_type.none:
-            info("Omitting specified fusion [%s][%s] due to singular fpc" % (fusion_type, fusion_method))
-
-        # print model
-        components = [repr]
-        if components[-1] == DCNN.name: components[-1] += "-" + settings.network.frame_encoding_layer
-        if fusion_type == defs.fusion_type.early: components.append(fusion_method)
-        components.append(classif)
-        if components[-1] == LSTM.name: components[-1] += "-" + "-".join(map(str,settings.network.lstm_params))
-        if fusion_type == defs.fusion_type.late: components.append(fusion_method)
-        info("Model:[%s]" % ",".join(components))
-
-        # define input
-        # ------------
-        self.handle_input(settings)
-
-        # vectorizer
-        self.repr_model = None
-        self.feature_vectors = None
-
-        if repr == defs.representation.dcnn:
-            self.repr_model = DCNN()
-            self.tf_components.append(self.repr_model)
-        elif repr == defs.representation.nop:
-            self.repr_model = NOP()
-        else:
-            error("Undefined representation [%s]" % repr)
-
-        self.feature_vectors = self.repr_model.build(self.input, settings)
-        self.feature_dim = int(self.feature_vectors.shape[-1])
-        self.feature_vectors = print_tensor(self.feature_vectors, "Vectorized output")
-
-        # early fusion - aggregate before classification
-        if fusion_type == defs.fusion_type.early and fpc > 1:
-            self.feature_vectors = aggregate_clip_vectors(self.feature_vectors, self.feature_dim, fpc, fusion_method=fusion_method)
-            self.feature_vectors = print_tensor(self.feature_vectors, "Early fusion")
-
-        # classification
-        self.logits = None
-        if classif == defs.classifier.fc:
-            if self.feature_dim != num_classes:
-                self.classifier = None
-                self.logits = convert_dim_fc(self.feature_vectors,num_classes)
-            else:
-                self.logits = self.feature_vectors
-        elif classif == defs.classifier.lstm:
-            if fpc == 1: error("The LSTM classifier requires an fpc greater than 1")
-            if fusion_type != defs.fusion_type.none: error("The LSTM classifier should be used only with [%s] fusion" % defs.fusion_type.none)
-            self.classifier = LSTM()
-            self.tf_components.append(self.classifier)
-            io_params = (self.feature_vectors, self.feature_dim, None, num_classes, fpc, None, settings.get_dropout(), False)
-            output, state = self.classifier.build(io_params, settings)
-            if settings.network.lstm_params[-1] == defs.fusion_method.state:
-                self.logits = state[-1].h
-            else:
-                self.logits = output
-
-            if int(self.logits.shape[1]) != num_classes:
-                self.logits = convert_dim_fc(self.logits, num_classes)
-        else:
-            error("Undefined classifier [%s]" % repr)
-
-        self.logits = print_tensor(self.logits, "Post-classification logits")
-        # late fusion - aggregate after classification
-        if fusion_type == defs.fusion_type.late and fpc > 1:
-            self.logits = aggregate_clip_vectors(self.logits, num_classes, fpc, fusion_method=fusion_method)
-            self.logits = print_tensor(self.logits, "Late fusion")
-
-        self.logits = print_tensor(self.logits, "Final logits")
-
 
     def get_output(self):
         return self.logits

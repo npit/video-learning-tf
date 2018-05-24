@@ -140,7 +140,7 @@ def print_tensor(tensor, message):
         return tensor
 
     tensor_cols = 20
-    tens = tf.Print(tensor,[tensor, tf.shape(tensor)],summarize=2*tensor_cols ,message=message)
+    tens = tf.Print(tensor,[tf.shape(tensor), tensor],summarize=2*tensor_cols ,message=message)
     debug(message + str(tensor.shape))
     return tens
 
