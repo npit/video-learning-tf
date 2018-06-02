@@ -428,7 +428,7 @@ class Settings:
                 # load batch and epoch where training left off
                 info("Resuming training.")
                 # resume training metadata only in training
-                self.feeder.resume_snap(self.resume_file)
+                self.train.epoch_index, self.global_step =  self.feeder.resume_snap(self.resume_file)
             if self.val:
                 info("Evaluating trained network.")
         else:
