@@ -149,7 +149,7 @@ def main(init_file):
     # mop up
     tboard_writer.close()
     sess.close()
-    info("Run [%s] complete." % settings.run_id)
+    info("Run [%s] complete." % settings.run_id, email = True)
 
 
 if __name__ == "__main__":

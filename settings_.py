@@ -93,6 +93,7 @@ class Settings:
 
     # logging
     logger = None
+    email_notify = None
 
     # misc
     saver = None
@@ -220,7 +221,6 @@ class Settings:
         if type(self.phases) != list:
             self.phases = [self.phases]
         self.phase = self.phases[0]
-        print(self.phases, self.phase)
 
         trainval_str = ""
         if defs.phase.train in self.phases:
@@ -250,6 +250,12 @@ class Settings:
             error("Invalid logging level: %s" % (self.logging_level))
         self.tensorboard_folder = config['logging']['tensorboard_folder']
         self.print_tensors = config['logging']['print_tensors']
+        self.email_notify = config['logging']['email_notify']
+        if self.email_notify:
+            if len(self.email_notify)!=2:
+                error("Need a sender and recipient email address, got [%s] instead." % self.email_notify)
+            passw = getpass.getpass(prompt="Enter password for sender email [%s]: " % self.email_notify[0])
+            self.email_notify = (self.email_notify[0], passw, self.email_notify[1])
         self.configure_logging()
 
 
@@ -394,7 +400,7 @@ class Settings:
         logfile = os.path.join(self.run_folder, "log_" + self.run_id + "_" + self.timestamp + ".log")
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
-        self.logger.configure_logging(logfile, self.logging_level)
+        self.logger.configure_logging(logfile, self.logging_level, self.email_notify)
         sys.stdout.flush(), sys.stderr.flush()
 
     # initialize stuff

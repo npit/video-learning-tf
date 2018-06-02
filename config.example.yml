@@ -84,6 +84,8 @@ run:
     level : logging.DEBUG
     print_tensors : False
     tensorboard_folder : "tensorboard"
+    # only gmail support
+    email_notify: [sender@gmail.com, recipient@gmail.com] 
 
 
 

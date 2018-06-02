@@ -1,6 +1,9 @@
 import numpy as np
 import tensorflow as tf
 import time, configparser, os, logging, sys, re, math
+# email
+import smtplib
+import getpass
 
 # init from config file
 def init_config(init_file, tag_to_read):
@@ -36,6 +39,7 @@ def get_datetime_str():
 
 # logging setup
 class CustomLogger:
+    email_notify = None
     loggername='default'
     logging_level = logging.INFO
     instance = None
@@ -53,10 +57,8 @@ class CustomLogger:
             self.log_storage[storage_id] = []
         self.log_storage[storage_id].append(message)
 
-
-
     # configure logging settings
-    def configure_logging(self, logfile, logging_level):
+    def configure_logging(self, logfile, logging_level, email_notify):
         print("Initializing logging with level [%s] to logfile: %s" % (logging_level, logfile))
         sys.stdout.flush()
 
@@ -77,21 +79,74 @@ class CustomLogger:
         # add the handlers to the logger
         self.logger.addHandler(handler)
         self.logger.addHandler(consoleHandler)
+
+        # email notification
+        CustomLogger.email_notify = email_notify
+
     def get_logging_level():
         return CustomLogger.instance.logger.level
+    def email(message, message_type):
+        if CustomLogger.email_notify:
+            sender, passw, recipient = CustomLogger.email_notify
+            notify_email(sender, passw, recipient, message, message_type)
+        else:
+            print("No email notify on custom logger!")
+
+
+def notify_email(sender, passw, recipient, message, msgtype = ""):
+    info("Sending notification email to [%s]" % recipient)
+    TO = recipient
+    SUBJECT = 'video-learning-tf'
+    if msgtype:
+        SUBJECT += " : %s" % msgtype
+    TEXT = "video-learning-tf automated message:\n" + message 
+    # Gmail Sign In
+    gmail_sender = sender
+    gmail_passwd = passw
+
+    server = smtplib.SMTP('smtp.gmail.com', 587)
+    server.ehlo()
+    server.starttls()
+    server.login(gmail_sender, gmail_passwd)
+
+    BODY = '\r\n'.join(['To: %s' % TO,
+                        'From: %s' % gmail_sender,
+                        'Subject: %s' % SUBJECT,
+                        '', TEXT])
+    try:
+        server.sendmail(gmail_sender, [TO], BODY)
+        info('Email sent to [%s]' % recipient)
+    except:
+        warning('Error sending mail to [%s]' % recipient)
+    server.quit()
+
 
 # shortcut log functions
 def error(msg):
     error_(msg)
+    CustomLogger.email(msg, "ERROR")
     raise Exception(msg)
-def info(message):
+
+
+def info(message, email=False):
     logging.getLogger(CustomLogger.loggername).info(message)
-def warning(message):
+    if email:
+        CustomLogger.email(message, "INFO")
+
+
+def warning(message, email=False):
     logging.getLogger(CustomLogger.loggername).warning(message)
+    if email:
+        CustomLogger.email(message,"WARNING")
+
+
 def error_( message):
     logging.getLogger(CustomLogger.loggername).error(message)
+
+
 def debug(message):
     logging.getLogger(CustomLogger.loggername).debug(message)
+
 
 # onehot vector generation
 def labels_to_one_hot(labels,num_classes):

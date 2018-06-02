@@ -186,5 +186,5 @@ def replicate_auxilliary_tensor(inputs, dims, cpvs, fpcs):
     if tile_num > 1:
         aux_input = tf.reshape(aux_input, [1, -1])
         aux_input = tf.tile(aux_input, [tile_num, 1])
-        aux_input = tf.reshape(aux_input, [-1, dim])
+        aux_input = tf.reshape(aux_input, [-1, dim_aux])
     return aux_input
