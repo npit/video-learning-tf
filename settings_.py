@@ -206,12 +206,37 @@ class Settings:
             error("Undefined pipeline field(s):" + str(unread_fields))
         return network
 
-    def read_config(self, config):
+    def read_config(self, config, init_file):
         # read global stuff
         self.resume_file = config['resume_file']
         self.run_folder = config["run_folder"]
+
         if "run_id" in config:
             self.run_id = config["run_id"]
+
+        # read phase information
+        self.train, self.val = None, None
+        self.phases = defs.check(config["phase"], defs.phase)
+        if type(self.phases) != list:
+            self.phases = [self.phases]
+        self.phase = self.phases[0]
+        print(self.phases, self.phase)
+
+        trainval_str = ""
+        if defs.phase.train in self.phases:
+            trainval_str = "train"
+        if defs.phase.val in self.phases:
+            trainval_str = trainval_str + "val"
+        if self.should_resume():
+            trainval_str = trainval_str + "_resume"
+        else:
+            trainval_str = trainval_str + "_scratch"
+        if self.run_id:
+            run_identifiers = [self.run_id , trainval_str]
+        else:
+            # use the configuration filename
+            run_identifiers = [ os.path.basename(init_file), trainval_str]
+        self.run_id = "_".join(run_identifiers)
 
         if not os.path.exists(self.run_folder):
             warning("Non existent run folder %s - creating." % self.run_folder)
@@ -227,11 +252,6 @@ class Settings:
         self.print_tensors = config['logging']['print_tensors']
         self.configure_logging()
 
-        # read phase information
-        self.phases = defs.check(config["phase"], defs.phase)
-        if type(self.phases) != list:
-            self.phases = [self.phases]
-        self.phase = self.phases[0]
 
         # read network architecture stuff
         pipelines = list(reversed(config['network']['pipelines']))
@@ -245,8 +265,8 @@ class Settings:
 
         self.num_classes = config["network"]["num_classes"]
 
-        self.train, self.val = None, None
         for phase in self.phases:
+            print(phase, self.phases)
             if phase == defs.phase.train:
                 # read training opts
                 self.train = Settings.train()
@@ -361,27 +381,9 @@ class Settings:
 
         with open(init_file,"r") as f:
             config = yaml.load(f)[tag_to_read]
-            self.read_config(config)
+            self.read_config(config, init_file)
 
-        # set append the config.ini.xxx suffix to the run id
-        trainval_str = ""
-        if self.train:
-            trainval_str = "train"
-        if self.val:
-            trainval_str = trainval_str + "val"
-        if self.should_resume():
-            trainval_str = trainval_str + "_resume"
-        else:
-            trainval_str = trainval_str + "_scratch"
 
-        # if run id specified, use it
-        if self.run_id:
-            run_identifiers = [self.run_id , trainval_str]
-        else:
-            # use the configuration filename
-            run_identifiers = [ os.path.basename(init_file), trainval_str]
-
-        self.run_id = "_".join(run_identifiers)
         print("Initialized run [%s] from file %s" % (self.run_id, init_file))
         sys.stdout.flush()
 
