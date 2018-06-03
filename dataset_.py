@@ -808,15 +808,15 @@ class Dataset:
     # print active settings
     def tell(self):
         info("Dataset batch information per epoch:" )
-        header_fmt = "%-8s %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
-        values_fmt = "%-8s %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
-        info(header_fmt % ("bmode","items", "clips", "frames","b-size","b-num","b-index","imgprc"))
+        header_fmt = "%-8s %-6s %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
+        values_fmt = "%-8s %-6s %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
+        info(header_fmt % ("bmode", "tag", "items", "clips", "frames","b-size","b-num","b-index","imgprc"))
         imgproc = defs.imgproc.to_str(self.imgproc)
         items = self.num_items
         clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
         frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
         info(values_fmt %
-             ( self.batch_item, items, clips, frames,
+             ( self.batch_item, self.tag, items, clips, frames,
               self.batch_size, len(self.batches), self.batch_index, imgproc))
 
     # get the global step
