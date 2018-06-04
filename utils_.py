@@ -93,6 +93,13 @@ class CustomLogger:
             print("No email notify on custom logger!")
 
 
+def prep_email(tofrom):
+    if len(tofrom)!=2:
+        error("Need a sender and recipient email address, got [%s] instead." % tofrom)
+    passw = getpass.getpass(prompt="Enter password for sender email [%s]: " % tofrom[0])
+    return (tofrom[0], passw, tofrom[1])
+
+
 def notify_email(sender, passw, recipient, message, msgtype = ""):
     info("Sending notification email to [%s]" % recipient)
     TO = recipient

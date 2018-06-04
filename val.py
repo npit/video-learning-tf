@@ -13,7 +13,7 @@ class Validation:
         # clip / item - level logits
         self.item_logits = None
         self.validation_logits_save_counter = 0
-        self.validation_logits_save_interval = None
+        self.validation_logits_save_interval = settings.val.logits_save_interval
 
         # items refer to the primary unit we operate one, i.e. videos or frames
         self.item_logits = np.zeros([0, settings.num_classes], np.float32)

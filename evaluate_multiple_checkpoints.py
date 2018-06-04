@@ -2,6 +2,7 @@ import sys, yaml
 from os.path import join, basename
 import os
 import subprocess
+from utils_ import prep_email, notify_email
 
 """
 Function to run and evaluate the K last checkpoints of a given run.
@@ -25,10 +26,14 @@ with open(config_file,"r") as f:
 
 resume_file = config['resume_file']
 run_folder = config['run_folder']
+email_notify = config['logging']['email_notify']
+if email_notify:
+    sender, password, recipient = prep_email(email_notify)
 
 checkpoints = []
 with open(join(run_folder,"checkpoints","checkpoint"),"r") as f:
     for line in f:
+        print("Checkpoint file entry: [{}]".format(line))
         chkp = line.strip().split(maxsplit=1)[1:]
         if len(chkp) > 1:
             print("Parsed non-unit element from checkpoint file:", chkp)
@@ -58,6 +63,8 @@ for i in range(len(checkpoints)):
     config['resume_file'] = checkpoints[i]
     config['phase'] = "defs.phase.val"
     config['run_id'] = base_run_id + "multiple_eval_%d" % (i+1)
+    # no email notification
+    config['logging']['email_notify'] = ""
     run_ids.append(config['run_id'])
     curr_config = { "run" : config }
     if not "onlyprint" in opts:
@@ -85,3 +92,6 @@ for i,(conf, rid) in enumerate(zip(config_files, run_ids)):
     with open(join(run_folder,accfile),"r") as f:
         accuracy = f.read()
     print(rid,accfile,basename(checkpoints[i]),accuracy)
+
+if email_notify:
+    notify_email(sender, password, recipient, "Multi-chekcpoint evaluation complete.", msgtype="INFO")
