@@ -81,7 +81,6 @@ class serialization_settings:
             loglevels = ['logging.' + x for x in ['INFO','DEBUG','WARN']]
             if not self.logging_level in loglevels:
                 error("Invalid logging level: [%s]" % (self.logging_level))
-            self.logging_level = eval(self.logging_level)
         else:
             error("Need a yml initialization file")
 
@@ -92,10 +91,13 @@ class serialization_settings:
         else:
             print("Using explicit run id of [%s]" % self.run_id)
         # configure the logs
+        self.email_notify = config['email_notify']
+        if self.email_notify:
+            self.email_notify = prep_email(self.email_notify)
         self.logfile = "log_" + self.run_id + ".log"
         self.logger = CustomLogger()
         CustomLogger.instance = self.logger
-        self.logger.configure_logging(self.logfile, self.logging_level)
+        self.logger.configure_logging(self.logfile, self.logging_level, self.email_notify)
 
 
         if 'seed' in config:
@@ -889,6 +891,7 @@ def main():
     if settings.output_folder is not None and settings.do_serialize and all([not e for e in errors_per_file]):
         copyfile(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
         copyfile(settings.init_file, os.path.join(settings.output_folder, basename(settings.init_file)))
+    info("Serialization complete", email = True)
 
 
 if __name__ == '__main__':
