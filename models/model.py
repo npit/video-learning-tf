@@ -126,9 +126,8 @@ class Model:
             if len(inputs) > 1:
                 # consider the 2nd input as the state vector
                 state_tensor, state_dim = inputs[1], dims[1]
-                # check if the cpvs match, else tile (e.g. if input has 2 cpv and state 1)
-                cpv_ratio = int(cpvs[0]/cpvs[1])
-                state_tensor = replicate_auxilliary_tensor(state_tensor, state_dim, cpv_ratio)
+                # replicate
+                state_tensor = replicate_auxilliary_tensor(inputs, dims, cpvs, fpcs)
             else:
                 state_tensor = None
             io_params = (feature_vectors, dim, state_tensor, num_classes, fpc, None, settings.get_dropout(), False)

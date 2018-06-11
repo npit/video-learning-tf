@@ -252,7 +252,7 @@ class Settings:
         self.print_tensors = config['logging']['print_tensors']
         self.email_notify = config['logging']['email_notify']
         if self.email_notify:
-            email_notify = prep_email(email_notify)
+            self.email_notify = prep_email(self.email_notify)
         self.configure_logging()
 
 

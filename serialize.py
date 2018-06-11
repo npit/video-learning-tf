@@ -6,7 +6,7 @@ from random import shuffle, choice, random, seed
 from scipy.misc import imread, imresize, imsave
 
 import logging, time, threading, os, configparser, sys
-from os.path import basename
+from os.path import basename, exists, join, isfile
 from shutil import copyfile, move
 from utils_ import *
 import tqdm
@@ -51,7 +51,7 @@ class serialization_settings:
             self.init_file = argv[-1]
         if self.init_file is None:
             return
-        if not os.path.exists(self.init_file):
+        if not exists(self.init_file):
             error("Initialization file [%s] does not exist" % self.init_file)
             return
         tag_to_read = "serialize"
@@ -381,7 +381,7 @@ def get_sequential_clips(avail_frame_idxs, settings, path):
 def generate_frames_for_video(path, settings):
 
     debug("Generating frames for video [%s]" % path)
-    files = [ f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f))]
+    files = [ f for f in os.listdir(path) if isfile(join(path,f))]
     num_frames = len(files)
     avail_frame_idxs = list(range(num_frames))
 
@@ -402,7 +402,7 @@ def generate_frames_for_video(path, settings):
     for clip in clips:
         frame_paths=[]
         for fridx in clip:
-            frame_path = os.path.join(path, files[fridx])
+            frame_path = join(path, files[fridx])
             frame_paths.append(frame_path)
         clip_frame_paths.append(frame_paths)
     return clip_frame_paths
@@ -548,7 +548,7 @@ def read_file(inp, settings):
                         suffix, settings.frame_format))
 
             if settings.path_prepend_folder is not None:
-                path = os.path.join(settings.path_prepend_folder, path)
+                path = join(settings.path_prepend_folder, path)
             paths.append(path)
             labels.append(label)
     return paths, labels, mode, max_num_labels
@@ -663,8 +663,8 @@ def write_serialization(settings):
         if settings.do_serialize:
             output_file = inp + ".tfrecord"
             if settings.output_folder is not None:
-                output_file = os.path.join(settings.output_folder, basename(output_file))
-                if not os.path.exists(settings.output_folder):
+                output_file = join(settings.output_folder, basename(output_file))
+                if not exists(settings.output_folder):
                     os.makedirs(settings.output_folder)
             info("Serializing to %s " % (output_file))
             serialize_multithread(item_paths, clips_per_item, paths_to_serialize, labels_to_serialize,
@@ -685,8 +685,8 @@ def validate(written_data, errors, settings):
 
         output_file = inp + ".tfrecord"
         if settings.output_folder is not None:
-            output_file = os.path.join(settings.output_folder, basename(output_file))
-        if not os.path.isfile(output_file):
+            output_file = join(settings.output_folder, basename(output_file))
+        if not isfile(output_file):
             error("TFRecord file %s does not exist." % output_file)
 
         info('Validating %s' % output_file)
@@ -773,7 +773,7 @@ def write_paths_file(data, errors, settings):
 
         item_paths, item_labels, paths, labels, mode = data[i]
         if settings.output_folder is not None:
-            output_file = os.path.join(settings.output_folder, basename(inp))
+            output_file = join(settings.output_folder, basename(inp))
         else:
             output_file = inp
 
@@ -798,6 +798,10 @@ def write_paths_file(data, errors, settings):
                         else:
                             f.write("%d" % item_labels[v])
                         f.write("\n")
+        else:
+            # if not shuffle, copy the paths in the same name, if an output folder is defined
+            if settings.output_folder is not None:
+                copyfile(inp, soutput_file)
 
         if mode == defs.input_mode.vectors:
             info("Will not write clip information, as input is vectors")
@@ -849,8 +853,8 @@ def serialize_ascii(input_file, settings):
 
     # output folder
     if settings.output_folder:
-        outfile = os.path.join(settings.output_folder, os.path.basename(feature_file) + ".tfrecord")
-        if not os.path.exists(settings.output_folder):
+        outfile = join(settings.output_folder, basename(feature_file) + ".tfrecord")
+        if not exists(settings.output_folder):
             info("Creating output folder [%s]" % settings.output_folder)
             os.mkdir(settings.output_folder)
     else:
@@ -889,8 +893,8 @@ def main():
         validate(written_data, errors_per_file, settings)
     # move log and config files to output directory, if specified and serialization happened
     if settings.output_folder is not None and settings.do_serialize and all([not e for e in errors_per_file]):
-        copyfile(settings.logfile, os.path.join(settings.output_folder, basename(settings.logfile)))
-        copyfile(settings.init_file, os.path.join(settings.output_folder, basename(settings.init_file)))
+        copyfile(settings.logfile, join(settings.output_folder, basename(settings.logfile)))
+        copyfile(settings.init_file, join(settings.output_folder, basename(settings.init_file)))
     info("Serialization complete", email = True)
 
 

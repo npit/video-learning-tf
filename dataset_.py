@@ -69,6 +69,7 @@ class Dataset:
 
     # read paths to images
     def read_frames_metadata(self):
+        debug("Reading frame metadata from [%s]" % self.path)
         # read paths and labels
         self.frames = []
         self.labels = []
@@ -579,6 +580,7 @@ class Dataset:
         return int(self.embedding_matrix.shape[-1])
 
     def calculate_batches(self, batch_size, input_mode):
+        debug("Calculating batch information for dataset")
         self.batch_size = batch_size
         self.input_mode = input_mode
         # do initialization
