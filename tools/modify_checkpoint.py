@@ -69,13 +69,18 @@ def rename(checkpoint, delete_list, rename_list, create_list, outpath):
             sess.run(tf.global_variables_initializer())
             print("Saving modified model to", outpath)
             saver.save(sess, outpath)
-            # potentially copy associated files
-            additional_suffixes = [".snap"]
-            for suff in additional_suffixes:
-                s_orig = checkpoint + suff
-                s_dest = outpath + suff
-                print("Saving %s suffix file to [%s]" % (suff, s_dest))
-                shutil.copyfile(s_orig, s_dest)
+            if outpath != checkpoint:
+                # potentially copy associated files, if not overwriting existing
+                additional_suffixes = [".snap"]
+                for suff in additional_suffixes:
+                    s_orig = checkpoint + suff
+                    s_dest = outpath + suff
+                    if suff != s_dest:
+                        print("Saving %s suffix file to [%s]" % (suff, s_dest))
+                        shutil.copyfile(s_orig, s_dest)
+                    else:
+                        print("%s suffix file [%s] already in destination" % (suff, s_dest))
+
         else:
             print("Will not overwrite model (simulation run)")
 
@@ -84,8 +89,6 @@ def rename(checkpoint, delete_list, rename_list, create_list, outpath):
 
 
 if __name__ == '__main__':
-    usage_str = 'python %s path/to/checkpt/ ' % sys.argv[0] + \
-                ' rename source_name target_name addprefix source_name  prefix add varname varvalue vartype delete varname overwrite'
 
     parser = argparse.ArgumentParser()
     parser.add_argument("checkpoint")
@@ -102,6 +105,9 @@ if __name__ == '__main__':
     operations = ["delete","rename","create"]
     delete_list, rename_list, create_list = [], {}, []
     for op in args.operations:
+        if len(op) < 2:
+            print("Operation needs at least one operand.")
+            exit(1)
         operation, opargs = op[0],op[1:]
         if operation not in operations:
             print("Undefined operation:",operation)

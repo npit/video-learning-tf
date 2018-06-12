@@ -241,6 +241,7 @@ class Feeder:
                     missing_unignorables = [n for n in names_missing_from_chkpt if not n in ignorable_variable_names]
                     warning("Found %d unignorable variables missing from checkpoint:[%s]" %
                             (len(missing_unignorables),missing_unignorables))
+                    warning("Tensor names in checkpoint:\n" + "\n".join(chkpt_names))
                     # Better warn the user and await input
                     ans = input("Continue? (y/n)")
                     if ans != "y":
