@@ -2,6 +2,7 @@ import sys, yaml, argparse
 from os.path import join, basename
 import os
 import subprocess
+import re
 from utils_ import prep_email, notify_email
 
 """
@@ -13,6 +14,7 @@ parser.add_argument("configfile")
 parser.add_argument("--onlyprint", action="store_true")
 # number of checkpoints to evaluate. Note that tensorflow has a similar param, keeping at most k checkpoints.
 parser.add_argument("-num_checkpoints", type=int)
+parser.add_argument("-omit_epochs", nargs="*", dest="omit" type=int)
 args = parser.parse_args()
 
 
@@ -27,6 +29,8 @@ email_notify = config['logging']['email_notify']
 if email_notify:
     sender, password, recipient = prep_email(email_notify)
 
+if args.omit:
+    args.omit = ["_ep_{}_".format(x) for x in args.omit]
 checkpoints = []
 with open(join(run_folder,"checkpoints","checkpoint"),"r") as f:
     for line in f:
@@ -39,6 +43,9 @@ with open(join(run_folder,"checkpoints","checkpoint"),"r") as f:
         chkp = chkp[0]
         if chkp.startswith('"') or chkp.startswith("'"):
             chkp = chkp[1:-1]
+        if any([x in chkp for x in args.omit]):
+            print("Omitting {} due to epoch restriction arguments.".format(chkp))
+            continue
         checkpoints.append(chkp)
 
 # skip first line on the 'checkpoints' file

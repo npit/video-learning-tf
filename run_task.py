@@ -77,7 +77,7 @@ def do_train(settings, train, feeder, model, sess, tboard_writer, summaries):
     # if we did not save already at the just completed batch, do it now at the end of training
     if run_batch_count > 0 and not feeder.should_save(run_batch_count):
         info("Saving model checkpoint out of turn, since training's finished.")
-        progress_str = "ep_%d_btch_%d_gs_%d" % (1 + settings.train.epoch_index, settings.get_num_batches(), settings.global_step)
+        progress_str = "ep_%d_btch_%d_gs_%d" % (1 + settings.train.epoch_index, feeder.get_num_batches(), settings.global_step)
         feeder.save(sess, progress_str, settings.global_step)
 
 
