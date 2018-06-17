@@ -4,6 +4,7 @@ import numpy as np
 import os
 import argparse
 import shutil
+import re
 
 '''
 Script to modify checkpoint files. Based on the gist: https://gist.github.com/batzner/7c24802dd9c5e15870b4b56e22135c96
@@ -11,8 +12,9 @@ Script to modify checkpoint files. Based on the gist: https://gist.github.com/ba
 
 
 
-def rename(checkpoint, delete_list, rename_list, create_list, outpath):
+def rename(checkpoint, delete_list, rename_list, create_list, regex_list, outpath):
 
+    
     with tf.Session() as sess:
         # cycle through variables
         variable_names = []
@@ -34,6 +36,15 @@ def rename(checkpoint, delete_list, rename_list, create_list, outpath):
                 print('Rename [%s]  => [%s].' % (curr_name, rename_list[curr_name]))
                 curr_name = rename_list[curr_name]
                 numren += 1
+            else:
+                matches = [i for i in range(len(regex_list)) if re.match(regex_list[i][0], curr_name)]
+                if matches:
+                    if len(matches) > 1:
+                        print("Variable name {} matches more than one input regex: {}".format(var_name, str([regex_list[i][0] for i in matches])))
+                    idx = matches[0]
+                    regexed_name = re.sub(regex_list[idx][0], regex_list[idx][1], curr_name)
+                    print('Regex rename [%s]  => [%s] from regex [%s],[%s].' % (curr_name, regexed_name, regex_list[idx][0], regex_list[idx][1]))
+                    curr_name = regexed_name
 
             # Declare the variable in the session
             var = tf.Variable(var, name=curr_name)
@@ -102,8 +113,8 @@ if __name__ == '__main__':
     if not args.operations:
         print("No operation specified.")
         exit(1)
-    operations = ["delete","rename","create"]
-    delete_list, rename_list, create_list = [], {}, []
+    operations = ["delete","rename","create","regex"]
+    delete_list, rename_list, create_list, regex_list = [], {}, [], []
     for op in args.operations:
         if len(op) < 2:
             print("Operation needs at least one operand.")
@@ -127,6 +138,16 @@ if __name__ == '__main__':
                     print("Specified a rename operation for variable [%s] more than once. (new names: %s, %s)" % (origname, rename_list[origname], newname))
                     exit(1)
                 rename_list[origname] = newname
+        elif operation == "regex":
+            if len(opargs) % 2 != 0:
+                print("Regex requires tuples for arguments.")
+                exit(1)
+            tuplelist = [tuple(opargs[x:x + 2]) for x in range(0, len(opargs), 2)]
+            for (origname,newname) in tuplelist:
+                if origname in regex_list:
+                    print("Specified a regex operation for variable [%s] more than once. (new names: %s, %s)" % (origname, regex_list[origname], newname))
+                    exit(1)
+                regex_list.append((origname, newname))
         elif operation == "create":
             name, value, type = tuple(opargs)
             create_list.append((name, eval(value), eval(type)))
@@ -140,4 +161,4 @@ if __name__ == '__main__':
         outpath = args.outpath
 
 
-    rename(args.checkpoint, delete_list, rename_list, create_list, outpath)
+    rename(args.checkpoint, delete_list, rename_list, create_list, regex_list, outpath)

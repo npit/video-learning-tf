@@ -14,7 +14,7 @@ parser.add_argument("configfile")
 parser.add_argument("--onlyprint", action="store_true")
 # number of checkpoints to evaluate. Note that tensorflow has a similar param, keeping at most k checkpoints.
 parser.add_argument("-num_checkpoints", type=int)
-parser.add_argument("-omit_epochs", nargs="*", dest="omit" type=int)
+parser.add_argument("-omit_epochs", nargs="*", dest="omit")
 args = parser.parse_args()
 
 
@@ -43,7 +43,7 @@ with open(join(run_folder,"checkpoints","checkpoint"),"r") as f:
         chkp = chkp[0]
         if chkp.startswith('"') or chkp.startswith("'"):
             chkp = chkp[1:-1]
-        if any([x in chkp for x in args.omit]):
+        if args.omit and any([x in chkp for x in args.omit]):
             print("Omitting {} due to epoch restriction arguments.".format(chkp))
             continue
         checkpoints.append(chkp)

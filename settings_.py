@@ -170,7 +170,7 @@ class Settings:
         # input has to be either a dataset or a pipeline output - if it's a pipeline, if that has not been read, bail and retry later
         network.input = self.read_field(pipeline_content, 'input', validate=None, listify=True)
         if any([x is None for x in network.input]):
-            error("<None> input in pipeline: %s" % pipeline_content)
+            error("<None> or undefined <input> tag in pipeline: %s" % pipeline_content)
         for inp in network.input:
             if inp not in self.pipelines:
                 idx = network.input.index(inp)
