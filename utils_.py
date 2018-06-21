@@ -102,8 +102,9 @@ def prep_email(tofrom):
 
 def notify_email(sender, passw, recipient, message, msgtype = ""):
     info("Sending notification email to [%s]" % recipient)
+    machinename = os.uname()[1]
     TO = recipient
-    SUBJECT = 'video-learning-tf'
+    SUBJECT = 'video-learning-tf | %s' % machinename
     if msgtype:
         SUBJECT += " : %s" % msgtype
     TEXT = "video-learning-tf automated message:\n" + message 
@@ -217,6 +218,17 @@ def read_file_lines(filename):
         for line in ff:
             contents.append(line.strip())
     return contents
+
+
+def get_run_checkpoints(run_folder):
+    folder = os.path.join(run_folder, "checkpoints")
+    files = [os.path.join(folder, x) for x in os.listdir(folder)]
+    # keep single instances and files
+    files = [f for f in files if os.path.isfile(f) and f.endswith(".meta")]
+    # drop the meta, sort by epoch 
+    files = sorted([f[:-5] for f in files], key = lambda x : "_".join(x.split()[2:]))
+    return files
+
 
 # read dictionary-line lines from text file, in the format key\tvalue
 def read_file_dict(filename):

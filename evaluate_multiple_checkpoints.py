@@ -3,7 +3,7 @@ from os.path import join, basename
 import os
 import subprocess
 import re
-from utils_ import prep_email, notify_email
+from utils_ import prep_email, notify_email, get_run_checkpoints
 
 """
 Function to run and evaluate the K last checkpoints of a given run.
@@ -31,30 +31,21 @@ if email_notify:
 
 if args.omit:
     args.omit = ["_ep_{}_".format(x) for x in args.omit]
+raw_checkpoints = get_run_checkpoints(run_folder)
 checkpoints = []
-with open(join(run_folder,"checkpoints","checkpoint"),"r") as f:
-    for line in f:
-        line = line.strip()
-        print("Checkpoint file entry: [{}]".format(line))
-        chkp = line.split(maxsplit=1)[1:]
-        if len(chkp) > 1:
-            print("Parsed non-unit element from checkpoint file:", chkp)
-            exit(1)
-        chkp = chkp[0]
-        if chkp.startswith('"') or chkp.startswith("'"):
-            chkp = chkp[1:-1]
-        if args.omit and any([x in chkp for x in args.omit]):
-            print("Omitting {} due to epoch restriction arguments.".format(chkp))
-            continue
-        checkpoints.append(chkp)
+for chkp in raw_checkpoints:
+    if chkp.startswith('"') or chkp.startswith("'"):
+        chkp = chkp[1:-1]
+    if args.omit and any([x in chkp for x in args.omit]):
+        print("Omitting {} due to epoch restriction arguments.".format(chkp))
+        continue
+    checkpoints.append(chkp)
 
-# skip first line on the 'checkpoints' file
-checkpoints = checkpoints[1:]
 if args.num_checkpoints:
-    if len(checkpoints) != args.num_checkpoints:
-        print("Limiting number to %d checkpoints available" % len(checkpoints))
-        num_checkpoints = min(args.num_checkpoints, len(checkpoints))
-        checkpoints = checkpoints[-num_checkpoints:]
+    if len(checkpoints) < args.num_checkpoints: print("Unable to run for {} checkpoints, as there are only {}".format(args.num_checkpoints, len(checkpoints)))
+    if len(checkpoints) < args.num_checkpoints: print("Limiting evaluation from {} to the {} last checkpoints".format(len(checkpoints), args.num_checkpoints))
+    num_checkpoints = min(args.num_checkpoints, len(checkpoints))
+    checkpoints = checkpoints[-num_checkpoints:]
 print("Checkpoints:")
 for line in checkpoints:
     print(line)

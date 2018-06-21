@@ -19,7 +19,7 @@ def rename(checkpoint, delete_list, rename_list, create_list, regex_list, outpat
         # cycle through variables
         variable_names = []
         variable_data = []
-        numdel, numcre, numren = 0,0,0
+        numdel, numcre, numren, numreg = 0,0,0,0
         print("Reading checkpoint",checkpoint)
         for var_name, _ in tf.contrib.framework.list_variables(checkpoint):
             # Load the variable, if it's not to be deleted
@@ -45,6 +45,7 @@ def rename(checkpoint, delete_list, rename_list, create_list, regex_list, outpat
                     regexed_name = re.sub(regex_list[idx][0], regex_list[idx][1], curr_name)
                     print('Regex rename [%s]  => [%s] from regex [%s],[%s].' % (curr_name, regexed_name, regex_list[idx][0], regex_list[idx][1]))
                     curr_name = regexed_name
+                    numreg +=1
 
             # Declare the variable in the session
             var = tf.Variable(var, name=curr_name)
@@ -67,15 +68,16 @@ def rename(checkpoint, delete_list, rename_list, create_list, regex_list, outpat
                 numcre +=1
 
         # print resulting graph
-        print("Created %d, renamed %d, deleted %d." % (numcre, numren, numdel))
+        print("Created %d, renamed %d, regexed %d, deleted %d." % (numcre, numren, numreg, numdel))
         print()
         print("Resulting graph:")
         for i,(name, data) in enumerate(zip(variable_names, variable_data)):
             print(i+1,":",name,data)
         print()
 
-        # Save the variables
-        if outpath is not None:
+        
+        # Save the variables, if any change occurred
+        if outpath is not None and any([x > 0 for x in [numdel, numcre, numren, numreg]]):
             saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
             print("Saving modified model to", outpath)

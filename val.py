@@ -105,6 +105,9 @@ class Validation:
                     error("Logits and/or labels non empty at the end of video item mode aggregation!")
                 debug("Video logits and labels accumulation is now %d,%d video in video batch mode." %
                       (len(self.item_logits), len(self.item_labels)))
+                # print accuracy of current item accumulation
+                current_accuracy = np.mean(self.get_chunk_accuracy(self.item_logits, self.item_labels))
+                info("Incremental accuracy up to current batch: %2.3f" % current_accuracy)
             else:
                 # frames, simply append
                 self.add_item_logits_labels(logits,labels)

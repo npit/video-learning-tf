@@ -4,6 +4,7 @@ import pickle
 from utils_ import  *
 from tools.inspect_checkpoint import get_checkpoint_tensor_names
 import dataset_
+import os
 
 class Feeder:
     """
@@ -204,14 +205,8 @@ class Feeder:
         if self.resume:
             debug("Handling resume options")
             if resume_file == defs.names.latest_savefile:
-                checkpoints_file = os.path.join(self.run_folder,"checkpoints","checkpoint")
-                if not os.path.exists(checkpoints_file):
-                    error("Specified resume file: [%s], but the checkpoints file does not exist." % resume_file)
-                with open(checkpoints_file ,"r") as f:
-                    for line in f:
-                        savefile_graph = line.strip().split(maxsplit=1)[-1].strip()
-                        msg = "Resuming latest tf graph: [%s]" % savefile_graph
-                        break
+                savefile_graph = get_run_checkpoints(self.run_folder)[-1]
+                msg = "Resuming latest tf graph: [%s]" % savefile_graph
             else:
                 savefile_graph = os.path.join(resume_file)
                 msg = "Resuming specified tf graph: [%s]" % savefile_graph
