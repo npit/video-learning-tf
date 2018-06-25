@@ -85,7 +85,8 @@ else:
 print("Getting results from",run_folder)
 dirfiles = [ff for ff in os.listdir(run_folder)]
 for i,(conf, rid) in enumerate(zip(config_files, run_ids)):
-    accfiles = [f for f in dirfiles if rid in  f and "accuracy" in f]
+    run_epoch_id = "_{}_".format(rid)
+    accfiles = [f for f in dirfiles if run_epoch_id % rid in  f and "accuracy" in f]
     if len(accfiles) > 1:
         print("(!) Multiple accuracy files for",rid,":",accfiles)
     if not accfiles:
