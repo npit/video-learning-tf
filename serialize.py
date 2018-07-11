@@ -801,7 +801,7 @@ def write_paths_file(data, errors, settings):
         else:
             # if not shuffle, copy the paths in the same name, if an output folder is defined
             if settings.output_folder is not None:
-                copyfile(inp, soutput_file)
+                copyfile(inp, output_file)
 
         if mode == defs.input_mode.vectors:
             info("Will not write clip information, as input is vectors")

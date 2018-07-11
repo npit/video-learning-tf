@@ -75,6 +75,8 @@ if not args.onlyprint:
         cmd = ("python3 run_task.py " + conf).split(maxsplit=2)
         print("Running %d/%d validation, with command:" % (i+1, len(config_files)),cmd)
         subprocess.run(cmd)
+        # delete the config file locally
+        os.remove(conf)
         
 else:
     for i, conf in enumerate(config_files):

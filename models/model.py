@@ -114,7 +114,7 @@ class Model:
             if dim != num_classes:
                 logits = convert_dim_fc(feature_vectors, num_classes)
             else:
-                pass
+                logits = feature_vectors
         elif classif == defs.classifier.lstm:
             if fpc == 1: error("The LSTM classifier requires an fpc greater than 1")
             if fusion_type is None:
