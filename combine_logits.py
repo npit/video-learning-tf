@@ -3,14 +3,21 @@ import numpy as np
 import pickle
 import os
 
+def labels_consistent(labels):
+    labels1, labels2 = labels
+    for l1,l2  in zip(labels1, labels2):
+        if l1 != l2:
+            return False
+    return True
+
 def get_accuracy(logits, labels):
     log_amax = np.argmax(logits, 1)
     return np.sum(np.equal(log_amax, labels)) / len(labels)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-paths",nargs='+')
-parser.add_argument("-gt", nargs='+',help="Path to configuration file or dataset file")
-parser.add_argument("-lbl", nargs='+',help="Path to label indexing file")
+parser.add_argument("-paths",nargs='+', help = "Path to the input logit(s) file.")
+parser.add_argument("-gt", nargs='+',help="Path to configuration or dataset file(s), one per input logits")
+parser.add_argument("-lbl", nargs='+',help="Path to label indexing file", required=False)
 parser.add_argument("-align", help="Align labels")
 compromises=["intersect"]
 parser.add_argument("-compromise", help="Fix mismatches")
@@ -24,27 +31,28 @@ classname2idx=[]
 idx2classname=[]
 label_index = []
 
-for i, lblpath in enumerate(args.lbl):
-    print(i+1,":", lblpath)
-    print("Reading lbl file", lblpath)
-    c2i, i2c = {}, {}
-    with open(lblpath) as f:
-        for line in f:
-            line = line.strip()
-            #print(line)
-            classname, classidx = line.split()
-            c2i[classname] = int(classidx)
-            i2c[int(classidx)] = classname
-            if int(classidx)==30:
-                print("name for 30:",classname)
-    print("Read {} classes ".format(len(c2i)))
-    print("Read {} classes ".format(len(i2c)))
-    assert len(c2i) == len(i2c), "classnames dict lengths error"
-    print(sorted(i2c.keys()))
-    classname2idx.append(c2i)
-    idx2classname.append(i2c)
-#    for k,v in idx2classname[-1].items():
-#        print(k, v)
+if args.lbl:
+    for i, lblpath in enumerate(args.lbl):
+        print(i+1,":", lblpath)
+        print("Reading lbl file", lblpath)
+        c2i, i2c = {}, {}
+        with open(lblpath) as f:
+            for line in f:
+                line = line.strip()
+                #print(line)
+                classname, classidx = line.split()
+                c2i[classname] = int(classidx)
+                i2c[int(classidx)] = classname
+                if int(classidx)==30:
+                    print("name for 30:",classname)
+        print("Read {} classes ".format(len(c2i)))
+        print("Read {} classes ".format(len(i2c)))
+        assert len(c2i) == len(i2c), "classnames dict lengths error"
+        print(sorted(i2c.keys()))
+        classname2idx.append(c2i)
+        idx2classname.append(i2c)
+    #    for k,v in idx2classname[-1].items():
+    #        print(k, v)
 
 
 # read logits
@@ -62,7 +70,7 @@ for i, path in enumerate(args.paths):
 
 # read gt
 labels, vids = [], []
-print("Labels file:", args.gt)
+print("GT files:", args.gt)
 for gtfile in args.gt:
     print("Reading gt file", gtfile)
     file_labels = []
@@ -114,10 +122,9 @@ assert len(logits[1]) == len(labels[1]), "Mismatch in logits / labels #2 lengths
 
 
 print("Marginal accuracies:")
-accuracy = get_accuracy(logits[0], labels[0])
-print("Logits #0:", round(accuracy,5))
-accuracy = get_accuracy(logits[1], labels[1])
-print("Logits #1:", round(accuracy,5))
+for i in range(len(args.paths)):
+    accuracy = get_accuracy(logits[i], labels[i])
+    print("Logits # %d/%d:" % (i+1, len(args.paths)), args.paths[i], round(accuracy,5))
 
 
 if len(logits[0]) != len(logits[1]):
@@ -157,6 +164,11 @@ if len(logits[0]) != len(logits[1]):
     else:
         print("No compromise selected to fix mismatch, exiting.")
         exit()
+else: 
+    # check consistency of labels
+    assert labels_consistent(labels), "Inconsistent labels."
+    # label gt is identical. Pick one.
+    labels = labels[0]
 
 # dual combine
 weights = [ round(x * 0.1,1) for x in range(0,11)]

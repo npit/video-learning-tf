@@ -770,6 +770,9 @@ class Dataset:
 
     # move up an iterator
     def fast_forward_iter(self, index = None):
+        if len(self.batches) <= self.batch_index:
+            info("Fast-forward not necessary for batch index {} with a total of {} batches.".format(self.batch_index+1, len(self.batches)))
+            return
         # fast forward to batch index
         if index is None:
             num_forward = self.batch_index
