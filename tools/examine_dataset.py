@@ -16,6 +16,7 @@ if __name__ == '__main__':
 
     hist= {}
     length_hist = {}
+    min_label = ("", sys.maxsize)
     with open(filename,"r") as f:
         for line in f:
             line = line.strip().split()
@@ -29,6 +30,14 @@ if __name__ == '__main__':
             length_hist[len(labels)] += 1
 
     # print frequencies of each label
+    print("Min label samples:")
+    print("{}".format(min(list(hist.items()), key = lambda x : x[1])))
+    print("Max label samples:")
+    mx = max(list(hist.items()), key = lambda x : x[1])
+    print("{}".format(mx))
+    print("Accuracy of picking most frequent class:")
+    print("%2.3f %%" % (mx[1] / (sum(hist.values())) * 100 ))
+
     print("Samples per label:")
     for i,label in enumerate(hist):
         print("%d/%d : %s | %d" % (i+1, len(hist), " ".join(label), hist[label]))
