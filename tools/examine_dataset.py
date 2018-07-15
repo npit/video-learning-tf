@@ -1,15 +1,17 @@
 import os
 import sys
+import argparse
 
 """
 Script to check the distribution of labels in a dataset
 """
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Filename needed.")
-        exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path")
+    parser.add_argument("-write", required=False)
+    args = parser.parse_args()
 
-    filename = sys.argv[-1]
+    filename = args.path
     if not os.path.exists(filename):
         print("Filename does not exist.")
         exit(1)
@@ -29,6 +31,12 @@ if __name__ == '__main__':
                 length_hist[len(labels)] = 0
             length_hist[len(labels)] += 1
 
+    # write output next to input file
+    if args.write:
+        outfile = open(filename + ".stats.txt", "w")
+        oldstdout = sys.stdout
+        sys.stdout = outfile
+
     # print frequencies of each label
     print("Min label samples:")
     print("{}".format(min(list(hist.items()), key = lambda x : x[1])))
@@ -37,6 +45,8 @@ if __name__ == '__main__':
     print("{}".format(mx))
     print("Accuracy of picking most frequent class:")
     print("%2.3f %%" % (mx[1] / (sum(hist.values())) * 100 ))
+    print("Chance accuracy:")
+    print("%2.3f %%" % (1 / (len(hist)) * 100 ))
 
     print("Samples per label:")
     for i,label in enumerate(hist):
@@ -46,6 +56,11 @@ if __name__ == '__main__':
     print("\nSamples per label length:")
     for llen in length_hist:
         print("%d | %d" % (llen, length_hist[llen]))
+
+    if args.write:
+        outfile.close()
+        sys.stdout = oldstdout
+        print("Wrote stats in ", outfile.name)
 
 
 
