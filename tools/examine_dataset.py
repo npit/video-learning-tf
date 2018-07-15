@@ -8,7 +8,7 @@ Script to check the distribution of labels in a dataset
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("path")
-    parser.add_argument("-write", required=False)
+    parser.add_argument("-write", action = "store_true", required=False)
     args = parser.parse_args()
 
     filename = args.path
