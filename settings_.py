@@ -169,16 +169,15 @@ class Settings:
         self.pipeline_field_cache = []
         # input has to be either a dataset or a pipeline output - if it's a pipeline, if that has not been read, bail and retry later
         network.input = self.read_field(pipeline_content, 'input', validate=None, listify=True)
+
         if any([x is None for x in network.input]):
-            error("<None> or undefined <input> tag in pipeline: %s" % pipeline_content)
+            error("<None> or undefined <input> field in pipeline: %s" % pipeline_content)
         for inp in network.input:
             if inp not in self.pipelines:
+                # if not defined as a pipeline, it's gotta be a dataset
                 idx = network.input.index(inp)
-                is_dataset_tag, tagname = defs.check(inp,  defs.dataset_tag, do_boolean = True)
-                if is_dataset_tag:
-                    network.input[idx] = tagname
-                else:
-                    error("Input identifier [%s] is not a dataset tag, but no such pipeline has been declared yet." % (inp))
+                if not self.feeder.dataset_is_defined(inp):
+                    error("Input identifier [%s] is not a declared dataset and no such pipeline has been declared yet." % (inp))
 
         network.representation = self.read_field(pipeline_content, 'representation', required = True, validate = defs.representation)
         if network.representation == defs.representation.dcnn:
@@ -255,17 +254,7 @@ class Settings:
             self.email_notify = prep_email(self.email_notify)
         self.configure_logging()
 
-
-        # read network architecture stuff
-        pipelines = list(reversed(config['network']['pipelines']))
-        while pipelines:
-            pipeline = pipelines.pop()
-            pname, content = list(pipeline.items())[0]
-            debug("Reading network [%s]" % (pname))
-            parsed_pipeline = self.read_network(content)
-            self.pipelines[pname] = parsed_pipeline
-            self.pipeline_names.append(pname)
-
+        # read number of classes
         self.num_classes = config["network"]["num_classes"]
 
         for phase in self.phases:
@@ -302,68 +291,75 @@ class Settings:
         self.feeder = Feeder(defs.input_mode.video, self.phases, (self.train, self.val), self.save_freq_per_epoch, self.run_folder, self.should_resume())
 
         for dataid in config['data']:
-            dataobj = config['data'][dataid]
+            dataobj_phases = config['data'][dataid]
 
-            id = dataid
-            # phase to run the dataset in
-            dataset_phase = defs.check(dataobj['phase'], defs.phase)
-            if not dataset_phase in self.phases:
-                info("Omitting dataset [%s] due to its phase [%s]" % (id, dataset_phase))
-                continue
+            dataset_id = dataid
+            for dataset_phase in dataobj_phases:
+                # phase to run the dataset in
+                if not dataset_phase in self.phases:
+                    info("Omitting dataset phase [%s] of [%s]." % (dataset_phase, dataset_id))
+                    continue
+                if not dataobj_phases[dataset_phase]:
+                    info("Omitting empty dataset-phase: [%s] [%s]" % (id, dataset_phase))
+                dataobj = dataobj_phases[dataset_phase]
 
-            # imgproc options
-            path = dataobj['data_path']
-            mean_image = parse_seq(dataobj['mean_image']) if 'mean_image' in dataobj else None
-            batch_item = defs.check(dataobj['batch_item'], defs.batch_item) if 'batch_item' in dataobj else defs.batch_item.default
-            prepend_folder = dataobj['prepend_folder'] if 'prepend_folder' in dataobj else None
-            image_shape = parse_seq(dataobj['image_shape']) if 'image_shape' in dataobj else None
-            imgproc_raw = parse_seq(dataobj['imgproc']) if 'imgproc' in dataobj else []
-            imgproc = []
-            for opt in imgproc_raw:
-                imgproc.append(defs.check(opt, defs.imgproc))
-            if defs.imgproc.sub_mean in imgproc and not mean_image:
-                error("[%s] option requires a supplied mean image intensity." % defs.imgproc.raw_resize)
-            raw_image_shape = parse_seq(dataobj['raw_image_shape']) if 'raw_image_shape' in dataobj else None
-            data_format = defs.check(dataobj['data_format'], defs.data_format)
-            frame_format = dataobj['frame_format'] if 'frame_format' in dataobj else None
-            tag = defs.check(dataobj['tag'], defs.dataset_tag)
+                # imgproc options
+                path = dataobj['data_path']
+                mean_image = parse_seq(dataobj['mean_image']) if 'mean_image' in dataobj else None
+                batch_item = defs.check(dataobj['batch_item'], defs.batch_item) if 'batch_item' in dataobj else defs.batch_item.default
+                prepend_folder = dataobj['prepend_folder'] if 'prepend_folder' in dataobj else None
+                image_shape = parse_seq(dataobj['image_shape']) if 'image_shape' in dataobj else None
+                imgproc_raw = parse_seq(dataobj['imgproc']) if 'imgproc' in dataobj else []
+                imgproc = []
+                for opt in imgproc_raw:
+                    imgproc.append(defs.check(opt, defs.imgproc))
+                if defs.imgproc.sub_mean in imgproc and not mean_image:
+                    error("[%s] option requires a supplied mean image intensity." % defs.imgproc.raw_resize)
+                raw_image_shape = parse_seq(dataobj['raw_image_shape']) if 'raw_image_shape' in dataobj else None
+                data_format = defs.check(dataobj['data_format'], defs.data_format)
+                frame_format = dataobj['frame_format'] if 'frame_format' in dataobj else None
 
-            # read image processing params
-            do_random_cropping = defs.imgproc.rand_crop in imgproc
-            do_center_cropping = defs.imgproc.center_crop in imgproc
-            do_resize = defs.imgproc.resize in imgproc
-            do_random_mirroring = defs.imgproc.rand_mirror in imgproc
+                # read image processing params
+                do_random_cropping = defs.imgproc.rand_crop in imgproc
+                do_center_cropping = defs.imgproc.center_crop in imgproc
+                do_resize = defs.imgproc.resize in imgproc
+                do_random_mirroring = defs.imgproc.rand_mirror in imgproc
 
-            if raw_image_shape is not None:
-                imgproc.append(defs.imgproc.raw_resize)
-            if mean_image is not None:
-                imgproc.append(defs.imgproc.sub_mean)
+                if raw_image_shape is not None:
+                    imgproc.append(defs.imgproc.raw_resize)
+                if mean_image is not None:
+                    imgproc.append(defs.imgproc.sub_mean)
 
-            # fix potential inconsistencies
-            if sum([do_random_cropping, do_center_cropping, do_resize]) > 1:
-                error("Need at most one image processing parameter. Imgproc params : %s" % imgproc)
-            if self.val:
-                if do_random_cropping or do_random_cropping:
-                    if do_random_cropping:
-                        warning("Random cropping is enabled in validation mode.")
-                    if do_random_mirroring:
-                        warning("Random mirroring is enabled in validation mode.")
-                    ans = input("continue? (y/n) : ")
-                    if ans != "y":
-                        error("Aborted.")
+                # fix potential inconsistencies
+                if sum([do_random_cropping, do_center_cropping, do_resize]) > 1:
+                    error("Need at most one image processing parameter. Imgproc params : %s" % imgproc)
+                if self.val:
+                    if do_random_cropping or do_random_cropping:
+                        if do_random_cropping:
+                            warning("Random cropping is enabled in validation mode.")
+                        if do_random_mirroring:
+                            warning("Random mirroring is enabled in validation mode.")
+                        ans = input("continue? (y/n) : ")
+                        if ans != "y":
+                            error("Aborted.")
 
-            val = int(dataobj["read_tries"]) if "read_tries" in dataobj else 1
-            read_tries = val
+                val = int(dataobj["read_tries"]) if "read_tries" in dataobj else 1
+                read_tries = val
 
-            if 'captioning' in dataobj:
-                captioning = dataobj['captioning']
-                captioning_config = (captioning['word_embeddings_file'], captioning['caption_ground_truth'], \
-                                     captioning['eval_type'], captioning['caption_search'])
-            else:
-                captioning_config = None
+                self.feeder.add_dataset(dataset_phase, dataset_id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
+                                frame_format, batch_item, self.num_classes, read_tries)
 
-            self.feeder.add_dataset(dataset_phase, id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
-                            frame_format, batch_item, self.num_classes, tag, read_tries, captioning_config)
+        # read network architecture stuff
+        pipelines = list(reversed(config['network']['pipelines']))
+        while pipelines:
+            pipeline = pipelines.pop()
+            pname, content = list(pipeline.items())[0]
+            debug("Reading network [%s]" % (pname))
+            parsed_pipeline = self.read_network(content)
+            self.pipelines[pname] = parsed_pipeline
+            self.pipeline_names.append(pname)
+
+
 
     # should resume, if set and non-empty
     def should_resume(self):

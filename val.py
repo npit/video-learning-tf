@@ -5,7 +5,7 @@ import json
 
 class Validation:
     required_input = []
-    def __init__(self, settings, logits):
+    def __init__(self, settings, feeder, logits):
         if not settings.val:
             return
         # frame-level logits
@@ -23,7 +23,7 @@ class Validation:
         self.clip_labels = np.zeros([0, settings.num_classes], np.float32)
 
         self.labels = tf.placeholder(tf.int32, [None, settings.num_classes], name="input_labels")
-        self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
+        self.required_input.append((self.labels, defs.net_input.labels, feeder.get_dataset_names()[0] ))
         self.run_folder = settings.run_folder
         self.run_id = settings.run_id
         self.timestamp = settings.timestamp
@@ -56,9 +56,10 @@ class Validation:
             cumulative_offset = cumulative_offset + cap_len
 
     # validation accuracy computation
-    def process_validation_logits(self, tag, settings, logits, fdict, padding):
+    def process_validation_logits(self, feeder, settings, logits, fdict):
         labels = fdict[self.labels]
-        dataset = settings.feeder.get_dataset_by_tag(tag)[0]
+        #dataset = settings.feeder.get_dataset_by_tag(tag)[0]
+        dataset = settings.feeder.get_datasets()[0]
 
         # batch item contains logits that correspond to whole clips. Accumulate to clip storage, and check for aggregation.
         if dataset.batch_item == defs.batch_item.clip:

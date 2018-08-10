@@ -23,6 +23,10 @@ def apply_temporal_fusion(input_tensor, vector_dimension, temporal_dimension, fu
         # average per-timestep results
         output = tf.reduce_mean(input_tensor, axis=1)
         debug("Aggregated time-averaged output : %s" % str(output.shape))
+    elif fusion_method == defs.fusion_method.maximum:
+        # average per-timestep results
+        output = tf.reduce_max(input_tensor, axis=1)
+        debug("Aggregated time-averaged output : %s" % str(output.shape))
     elif fusion_method == defs.fusion_method.reshape:
         output = tf.reshape(input_tensor,[-1, vector_dimension])
     else:
@@ -141,6 +145,8 @@ def apply_tensor_list_fusion(inputs, fusion_method, dims, fpcs, cpvs):
 
     if fusion_method == defs.fusion_method.avg:
         return tf.reduce_mean(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
+    if fusion_method == defs.fusion_method.maximum:
+        return tf.reduce_max(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
 
     elif fusion_method == defs.fusion_method.concat:
         if cpv_ratio == 1:

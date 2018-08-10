@@ -47,15 +47,15 @@ class Model:
             else:
                 shp = pipeline.input_shape[i]
                 if shp is None:
-                    shp = settings.feeder.get_dataset_by_tag(input_name)[0].get_image_shape()
+                    shp = settings.feeder.get_dataset_by_name(input_name).get_image_shape()
                 # shp has to be the same as the image shape in the dataset configuration
                 input = tf.placeholder(tf.float32, (None,) + shp, name='%s_%s_input' % (pipeline_name, input_name))
                 self.required_input.append((input, defs.net_input.visual, input_name))
-                cpv = settings.feeder.get_dataset_by_tag(input_name)[0].clips_per_video
+                cpv = settings.feeder.get_dataset_by_name(input_name).clips_per_video
                 if not all(cpv[0] == c for c in cpv):
                     warning("Non equal clips per item")
                 cpv = cpv[0]
-                fpc = settings.feeder.get_dataset_by_tag(input_name)[0].num_frames_per_clip
+                fpc = settings.feeder.get_dataset_by_name(input_name).num_frames_per_clip
             dim = int(input.shape[-1])
             inputs.append(input)
             cpvs.append(cpv)

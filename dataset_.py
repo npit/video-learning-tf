@@ -500,10 +500,10 @@ class Dataset:
                 image = image[:,::-1,:]
         return image
 
-    def initialize(self, id, path, mean_image, prepend_folder, desired_image_shape, imgproc, raw_image_shape,
-                   data_format, frame_format, batch_item, num_classes, tag, read_tries):
-        info("Initializing dataset [%s]" % id)
-        self.id = id
+    def initialize(self, dataset_id, path, mean_image, prepend_folder, desired_image_shape, imgproc, raw_image_shape,
+                   data_format, frame_format, batch_item, num_classes, read_tries):
+        info("Initializing dataset [%s]" % dataset_id)
+        self.dataset_id = dataset_id
         self.path = path
         self.data_format = data_format
         self.frame_format = frame_format
@@ -514,7 +514,6 @@ class Dataset:
         self.batch_item = batch_item
         self.raw_image_shape = raw_image_shape
         self.num_classes = num_classes
-        self.tag = tag
         self.read_tries = read_tries
 
 
@@ -536,6 +535,9 @@ class Dataset:
         self.epoch_index = epoch_index
         #self.sequence_length = sequence_length
         self.fast_forward_iter()
+
+    def get_dataset_id(self):
+        return self.dataset_id
 
     def initialize_imgproc(self):
         if self.input_mode == defs.input_mode.vectors:
@@ -753,7 +755,7 @@ class Dataset:
         self.max_sequence_length = self.max_caption_length + 1
 
         info("Read [%s] data, count: %d, cpv: %s, fpc: %s, type: %s, lblcount: %d" %
-             (str(self.id), self.num_items, cpv_str, str(self.num_frames_per_clip), self.input_mode, self.max_caption_length))
+             (str(self.get_dataset_id()), self.num_items, cpv_str, str(self.num_frames_per_clip), self.input_mode, self.max_caption_length))
 
     # set iterator to point to the beginning of the tfrecord file, per phase
     def reset_iterator(self):
@@ -813,15 +815,15 @@ class Dataset:
     # print active settings
     def tell(self):
         info("Dataset batch information per epoch:" )
-        header_fmt = "%-8s %-6s %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
-        values_fmt = "%-8s %-6s %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
-        info(header_fmt % ("bmode", "tag", "items", "clips", "frames","b-size","b-num","b-index","imgprc"))
+        header_fmt = "%-8s  %-8s %-10s %-6s %-6s %-8s %-8s %-7s"
+        values_fmt = "%-8s  %-8s %-10d %-6d %-6d %-8s %-8d %-7s"
+        info(header_fmt % ("bmode", "items", "clips", "frames","b-size","b-num","b-index","imgprc"))
         imgproc = defs.imgproc.to_str(self.imgproc)
         items = self.num_items
         clips = 0 if self.clips_per_video is None else sum(self.clips_per_video)
         frames = items if self.num_frames_per_clip is None else clips * self.num_frames_per_clip
         info(values_fmt %
-             ( self.batch_item, self.tag, items, clips, frames,
+             ( self.batch_item, items, clips, frames,
               self.batch_size, len(self.batches), self.batch_index, imgproc))
 
     # get the global step

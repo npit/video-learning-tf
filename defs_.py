@@ -48,9 +48,6 @@ class defs:
     class net_input:
         visual, labels = "visual", "labels"
 
-    class dataset_tag:
-        main, aux = "main", "aux"
-
     # direct reading from disk or from packed tfrecord format
     class data_format:
         raw, tfrecord = "raw", "tfrecord"
@@ -59,7 +56,7 @@ class defs:
 
     # sequence fusion methods
     class fusion_method:
-        avg, last, concat, reshape, state, ibias = "avg", "last", "concat", "reshape", "state", "ibias"
+        avg, last, concat, reshape, state, ibias, maximum = "avg", "last", "concat", "reshape", "state", "ibias", "maximum"
 
     # early/late fusion
     class fusion_type:

@@ -28,14 +28,14 @@ class Feeder:
         self.save_freq_per_epoch = save_freq_per_epoch
 
 
-    def add_dataset(self, dataset_phase, id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
-                    frame_format, batch_item, num_classes, tag, read_tries, captioning_config = None):
+    def add_dataset(self, dataset_phase, did, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
+                    frame_format, batch_item, num_classes, read_tries):
         dset = dataset_.Dataset()
         if not dataset_phase in self.datasets:
             self.datasets[dataset_phase] = []
         self.datasets[dataset_phase].append(dset)
-        dset.initialize(id, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
-                            frame_format, batch_item, num_classes, tag, read_tries)
+        dset.initialize(did, path, mean_image, prepend_folder, image_shape, imgproc, raw_image_shape, data_format,
+                            frame_format, batch_item, num_classes, read_tries)
 
     def set_phase(self, phase):
         self.phase = phase
@@ -47,7 +47,7 @@ class Feeder:
             error("No dataset configured to active phase [%s]" % self.phase)
         for phase in self.phases:
             for i, dset in enumerate(self.datasets[phase]):
-                info("Reading dataset %d / %d : [%s]" % (i+1, len(self.datasets[phase]), dset.id))
+                info("Reading dataset %d / %d : [%s]" % (i+1, len(self.datasets[phase]), dset.get_dataset_id()))
                 if defs.phase.train in self.phases and self.train:
                     dset.calculate_batches(self.train.batch_size, self.input_mode)
                 elif defs.phase.val in self.phases and self.val:
@@ -57,53 +57,46 @@ class Feeder:
         # it is assumed that all datasets are loop-synchronized
         return self.datasets[self.phase][0].loop()
 
-    def get_dataset_by_tag(self, tag):
-        dsets = [dset for dset in self.datasets[self.phase] if dset.tag == tag]
-        return dsets
-
     def get_num_batches(self):
         if not self.datasets:
             return -1
         return len(self.datasets[self.phase][0].batches)
 
 
-    def validation_logits_to_captions(self, logits_chunk, num_processed_logits):
-        return self.datasets[self.phase].validation_logits_to_captions(logits_chunk, num_processed_logits)
-
-
     def get_next_batch(self):
-        images, ground_truth, ids = [],[],[]
+        data, ground_truth, ids = [],[],[]
         for dset in self.datasets[self.phase]:
             im, g = dset.get_next_batch()
-            images.append(im)
+            data.append(im)
             ground_truth.append(g)
-            ids.append(dset.id)
-        return images, ground_truth, ids
+            ids.append(dset.get_dataset_id())
+        return data, ground_truth, ids
 
+
+    def get_dataset_by_name(self, name):
+        for dset in self.datasets[self.phase]:
+            if dset.get_dataset_id() == name:
+                return dset
+        error("Required dataset [%s] not found in feeder." % name)
 
     def get_feed_dict(self, required_input):
 
-        images, ground_truth, dataset_ids = self.get_next_batch()
+        data, ground_truth, dataset_ids = self.get_next_batch()
         fdict = {}
         num_labels = None
-        num_data = [len(im) for im in images]
+        num_data = [len(im) for im in data]
         # get the required input(s) from the batch
         for req_input in required_input:
-            i_tens, i_type, i_datatag = req_input
-            dataset_id = [ dset.id for dset in self.datasets[self.phase] if dset.tag == i_datatag]
-            if not (len(dataset_id) == 1):
-                error("%d datasets satisfy the following network input requirement, but exactly one must. %s." % (len(dataset_id), str(required_input)))
-            dataset_idx = dataset_ids.index(dataset_id[0])
+            i_tens, i_type, i_dataset_name = req_input
+            dataset_idx = dataset_ids.index(i_dataset_name)
             if i_type == defs.net_input.visual:
-                fdict[i_tens] = images[dataset_idx]
+                fdict[i_tens] = data[dataset_idx]
             elif i_type == defs.net_input.labels:
                 fdict[i_tens] = ground_truth[dataset_idx]
                 num_labels = len(ground_truth[dataset_idx])
 
         assert num_labels is not None, "Unset num. labels in feed dict!"
-        padding = 0
-
-        return fdict, num_data, num_labels, padding
+        return fdict, num_data, num_labels
 
 
 
@@ -137,7 +130,15 @@ class Feeder:
     def get_datasets(self):
         return self.datasets[self.phase]
 
+    def get_dataset_names(self):
+        return [d.get_dataset_id() for d in self.datasets[self.phase]]
 
+    def dataset_is_defined(self, dataset_id):
+        for phase in self.datasets:
+            for dset in self.datasets[phase]:
+                if dset.get_dataset_id() == dataset_id:
+                    return True
+        return False
 
     # restore dataset meta parameters
     def resume_snap(self, resume_file):

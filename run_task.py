@@ -12,12 +12,11 @@ from defs_ import defs
 
 
 # print information on current iteration
-def print_iter_info(settings, feeder, num_images, num_labels, padding):
+def print_iter_info(settings, feeder, num_images, num_labels):
     dataset = feeder.datasets[settings.phase][0]
-    padinfo = "(%d padding)" % padding if padding > 0 else ""
     epoch_str = "" if settings.val else "epoch: %2d/%2d," % (settings.train.epoch_index+1, settings.train.epochs)
-    msg = "Mode: [%s], %s batch %4d / %4d : %s images%s, %3d labels" % \
-          (settings.phase, epoch_str , dataset.batch_index, len(dataset.batches), str(num_images), padinfo, num_labels)
+    msg = "Mode: [%s], %s batch %4d / %4d : %s images, %3d labels" % \
+          (settings.phase, epoch_str , dataset.batch_index, len(dataset.batches), str(num_images), num_labels)
     info(msg)
 
 
@@ -36,8 +35,8 @@ def do_train(settings, train, feeder, model, sess, tboard_writer, summaries):
         while feeder.loop():
             # read  batch
             #images, ground_truth, dataset_ids = feeder.get_next_batch()
-            fdict, num_data, num_labels, padding = feeder.get_feed_dict(required_input)
-            print_iter_info(settings, feeder, num_data, num_labels, padding)
+            fdict, num_data, num_labels = feeder.get_feed_dict(required_input)
+            print_iter_info(settings, feeder, num_data, num_labels)
 
             # count batch iterations
             run_batch_count += 1
@@ -90,10 +89,10 @@ def do_test(settings, val, feeder, model, sess, tboard_writer, summaries):
     # validation
     while feeder.loop():
         # get images and labels
-        fdict, num_data, num_labels, padding = feeder.get_feed_dict(required_input)
-        print_iter_info(settings, feeder, num_data, num_labels, padding)
+        fdict, num_data, num_labels = feeder.get_feed_dict(required_input)
+        print_iter_info(settings, feeder, num_data, num_labels)
         logits = sess.run(model.logits, feed_dict=fdict)
-        val.process_validation_logits( defs.dataset_tag.main, settings, logits, fdict, padding)
+        val.process_validation_logits( feeder, settings, logits, fdict)
         val.save_validation_logits_chunk()
     # save the complete output logits
     val.save_validation_logits_chunk(save_all = True)
@@ -125,7 +124,7 @@ def main(init_file):
     # create and configure the model
     model = Model(settings)
     train = Train(settings, feeder, model.get_output(), summaries)
-    val = Validation(settings, model.get_output())
+    val = Validation(settings, feeder, model.get_output())
 
 
     # create and init. session and visualization

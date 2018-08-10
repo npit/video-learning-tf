@@ -115,7 +115,8 @@ class Train:
         info("Creating training: { %s }" % settings.get_train_str())
 
         self.labels = tf.placeholder(tf.int32, [None, settings.num_classes], name="input_labels")
-        self.required_input.append((self.labels, defs.net_input.labels, defs.dataset_tag.main))
+        # just get one dataset for the labels
+        self.required_input.append((self.labels, defs.net_input.labels, feeder.get_dataset_names()[0]))
         # configure loss
         with tf.name_scope("cross_entropy_loss"):
             loss_per_vid = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=self.labels, name="loss")
