@@ -141,6 +141,8 @@ def apply_tensor_list_fusion(inputs, fusion_method, dims, fpcs, cpvs):
 
     if fusion_method == defs.fusion_method.avg:
         return tf.reduce_mean(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
+    elif fusion_method == defs.fusion_method.maximum:
+        return tf.reduce_max(inputs, axis=0), dims[0], fpcs[0], cpvs[0]
 
     elif fusion_method == defs.fusion_method.concat:
         if cpv_ratio == 1:
