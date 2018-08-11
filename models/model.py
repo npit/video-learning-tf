@@ -47,6 +47,8 @@ class Model:
             else:
                 shp = pipeline.input_shape[i]
                 if shp is None:
+                    if not settings.feeder.get_dataset_by_tag(input_name):
+                        error("Could not find a dataset with the tag {}, required by the pipeline {}".format(input_name, pipeline_name))
                     shp = settings.feeder.get_dataset_by_tag(input_name)[0].get_image_shape()
                 # shp has to be the same as the image shape in the dataset configuration
                 input = tf.placeholder(tf.float32, (None,) + shp, name='%s_%s_input' % (pipeline_name, input_name))

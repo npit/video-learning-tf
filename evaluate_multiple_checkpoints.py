@@ -15,6 +15,7 @@ parser.add_argument("--onlyprint", action="store_true")
 # number of checkpoints to evaluate. Note that tensorflow has a similar param, keeping at most k checkpoints.
 parser.add_argument("-num_checkpoints", type=int)
 parser.add_argument("-omit_epochs", nargs="*", dest="omit")
+parser.add_argument("-only_epochs", nargs="*", dest="only")
 args = parser.parse_args()
 
 
@@ -31,12 +32,22 @@ if email_notify:
 
 if args.omit:
     args.omit = ["_ep_{}_".format(x) for x in args.omit]
+elif args.only:
+    args.only = ["_ep_{}_".format(x) for x in args.only]
+
+if args.omit and args.only:
+    print("Cannot specify [only] and [commit] flags at the same time")
+    exit(1)
+
 raw_checkpoints = get_run_checkpoints(run_folder)
 checkpoints = []
 for chkp in raw_checkpoints:
     if chkp.startswith('"') or chkp.startswith("'"):
         chkp = chkp[1:-1]
     if args.omit and any([x in chkp for x in args.omit]):
+        print("Omitting {} due to epoch omission arguments.".format(chkp))
+        continue
+    if args.only and (not any([x in chkp for x in args.only])):
         print("Omitting {} due to epoch restriction arguments.".format(chkp))
         continue
     checkpoints.append(chkp)
