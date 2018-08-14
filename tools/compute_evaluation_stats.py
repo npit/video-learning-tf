@@ -7,6 +7,7 @@ import yaml
 
 parser = argparse.ArgumentParser()
 parser.add_argument("logits_path")
+parser.add_argument("--verbose", action="store_true")
 
 args = parser.parse_args()
 path_logits= args.logits_path
@@ -18,23 +19,31 @@ run_folder = os.path.dirname(path_logits)
 config_file = [x for x in os.listdir(run_folder) if x.startswith("config") and x.endswith(".yml") and "graph-" not in x]
 assert len(config_file) == 1, "Multiple config files deduced: %s" % config_file
 config_file = os.path.join(run_folder, config_file[0])
-print("Deduced base config file:", config_file)
+if args.verbose:
+    print("Deduced base config file:", config_file)
 
 with open(config_file, "r") as f:
     data = yaml.load(f)["run"]["data"]
     for datname in data:
-        print("Checking data path:", datname)
+        if args.verbose:
+            print("Checking data path:", datname)
         dat = data[datname]
+        if "phase" not in dat:
+            print("Missing phase information in dataset definitions")
+            exit()
         if dat["phase"] != "defs.phase.val":
             continue
         if dat["tag"] != "defs.dataset_tag.main":
             continue
         if path_dset is not None:
-            print("Path already configured to", path_dset)
-        print("Deduced dataset identifier:", datname)
+            if args.verbose:
+                print("Path already configured to", path_dset)
+        if args.verbose:
+            print("Deduced dataset identifier:", datname)
         path_dset = dat["data_path"]
 
-print("Deduced data path:", path_dset)
+if args.verbose:
+    print("Deduced data path:", path_dset)
 
 # read labels
 labels=[]
@@ -49,9 +58,9 @@ with open(path_logits,"rb") as f:
 
 amax = numpy.argmax(logits, axis=1)
 
-print("Accuracy:")
+# print("Accuracy:")
+sep=","
 for avg in ["macro", "micro"]:
-    print(avg)
-    print("\tF1:", f1_score(labels, amax.tolist(),average=avg), sep="\t")
-    print("\tP:", precision_score(labels, amax.tolist(),average=avg), sep="\t")
-    print("\tR:", recall_score(labels, amax.tolist(),average=avg), sep="\t")
+    print(avg, "F1:", f1_score(labels, amax.tolist(),average=avg), sep=sep)
+    print(avg, "P:", precision_score(labels, amax.tolist(),average=avg), sep=sep)
+    print(avg, "R:", recall_score(labels, amax.tolist(),average=avg), sep=sep)
